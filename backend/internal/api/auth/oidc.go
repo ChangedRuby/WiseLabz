@@ -321,7 +321,10 @@ func setOIDCFlowCookie(w http.ResponseWriter, r *http.Request, trustedProxies, p
 		Path:     "/api/auth",
 		MaxAge:   300,
 		HttpOnly: true,
-		Secure:   httputil.IsSecureRequest(r, trustedProxies),
+		// Secure is derived, not literal true, so CodeQL can't verify it;
+		// IsSecureRequest returns true for both direct TLS and a trusted
+		// TLS-terminating proxy.
+		Secure:   httputil.IsSecureRequest(r, trustedProxies), // codeql[go/cookie-secure-not-set]
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -348,7 +351,7 @@ func clearOIDCFlowCookie(w http.ResponseWriter, r *http.Request, trustedProxies,
 		Path:     "/api/auth",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   httputil.IsSecureRequest(r, trustedProxies),
+		Secure:   httputil.IsSecureRequest(r, trustedProxies), // codeql[go/cookie-secure-not-set]
 		SameSite: http.SameSiteLaxMode,
 	})
 }
