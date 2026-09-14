@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"encoding/base64"
 	"testing"
 )
 
@@ -96,5 +97,60 @@ func TestDeriveKeyDifferent(t *testing.T) {
 	k2 := DeriveKey("secret-b")
 	if string(k1) == string(k2) {
 		t.Fatal("DeriveKey produced same key for different inputs")
+	}
+}
+
+func TestDecodeKey(t *testing.T) {
+	valid32 := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	short16 := base64.StdEncoding.EncodeToString(make([]byte, 16))
+	long64 := base64.StdEncoding.EncodeToString(make([]byte, 64))
+
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{name: "valid 32-byte key", in: valid32, wantErr: false},
+		{name: "empty string", in: "", wantErr: true},
+		{name: "malformed base64", in: "not-valid-base64!!!", wantErr: true},
+		{name: "too short (16 bytes)", in: short16, wantErr: true},
+		{name: "too long (64 bytes)", in: long64, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, err := DecodeKey(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("DecodeKey(%q) = nil error, want error", tt.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DecodeKey(%q) unexpected error: %v", tt.in, err)
+			}
+			if len(key) != 32 {
+				t.Fatalf("DecodeKey(%q) returned %d bytes, want 32", tt.in, len(key))
+			}
+		})
+	}
+}
+
+func TestDecodeKeyUsableForEncryptDecrypt(t *testing.T) {
+	b64 := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	key, err := DecodeKey(b64)
+	if err != nil {
+		t.Fatalf("DecodeKey failed: %v", err)
+	}
+	encrypted, err := Encrypt("payload", key)
+	if err != nil {
+		t.Fatalf("Encrypt with decoded key failed: %v", err)
+	}
+	decrypted, err := Decrypt(encrypted, key)
+	if err != nil {
+		t.Fatalf("Decrypt with decoded key failed: %v", err)
+	}
+	if decrypted != "payload" {
+		t.Fatalf("Decrypt returned %q, want %q", decrypted, "payload")
 	}
 }

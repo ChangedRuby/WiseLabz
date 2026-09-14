@@ -1,0 +1,145 @@
+package changes
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/WiseLabz/wiselabz/internal/ai"
+	"github.com/WiseLabz/wiselabz/internal/api/apitest"
+	"github.com/WiseLabz/wiselabz/internal/api/settings"
+	"github.com/WiseLabz/wiselabz/internal/config"
+)
+
+func newTestHandler(t *testing.T) *Handler {
+	t.Helper()
+	s := apitest.NewStore(t)
+	settingsH := settings.NewHandler(s, &config.Config{}, ai.NewRegistry())
+	return NewHandler(s, settingsH, ai.NewRegistry(), nil)
+}
+
+func TestListEmpty(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/changes", nil)
+	rr := httptest.NewRecorder()
+	h.List(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+}
+
+func TestGetNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/changes/missing", nil)
+	req.SetPathValue("id", "missing")
+	rr := httptest.NewRecorder()
+	h.Get(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestAcknowledgeNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/changes/missing/ack", nil)
+	req.SetPathValue("id", "missing")
+	rr := httptest.NewRecorder()
+	h.Acknowledge(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestDismissNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/changes/missing/dismiss", nil)
+	req.SetPathValue("id", "missing")
+	rr := httptest.NewRecorder()
+	h.Dismiss(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestAIUpdate(t *testing.T) {
+	h := newTestHandler(t)
+
+	t.Run("change not found", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/missing/ai-update", nil)
+		req.SetPathValue("id", "missing")
+		rr := httptest.NewRecorder()
+		h.AIUpdate(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+}
+
+func TestBulkResolve(t *testing.T) {
+	h := newTestHandler(t)
+
+	t.Run("invalid json", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/bulk-resolve", strings.NewReader(`{`))
+		rr := httptest.NewRecorder()
+		h.BulkResolve(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("invalid status", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/bulk-resolve", strings.NewReader(`{"ids":["a"],"status":"deleted"}`))
+		rr := httptest.NewRecorder()
+		h.BulkResolve(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("empty ids", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/bulk-resolve", strings.NewReader(`{"ids":[],"status":"acknowledged"}`))
+		rr := httptest.NewRecorder()
+		h.BulkResolve(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("too many ids", func(t *testing.T) {
+		ids := make([]string, 501)
+		for i := range ids {
+			ids[i] = `"id` + strconv.Itoa(i) + `"`
+		}
+		body := `{"ids":[` + strings.Join(ids, ",") + `],"status":"acknowledged"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/bulk-resolve", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		h.BulkResolve(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("unknown ids reported per-item, not fatal", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/bulk-resolve", strings.NewReader(`{"ids":["missing-1"],"status":"acknowledged"}`))
+		rr := httptest.NewRecorder()
+		h.BulkResolve(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		results, _ := resp["results"].([]any)
+		if len(results) != 1 {
+			t.Fatalf("len(results) = %d, want 1", len(results))
+		}
+		first, _ := results[0].(map[string]any)
+		if first["reason"] != "not_found" {
+			t.Errorf("reason = %v, want not_found", first["reason"])
+		}
+	})
+}
