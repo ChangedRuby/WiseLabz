@@ -87,7 +87,7 @@ WiseLabz/
 | State management | Zustand                                                   | minimal boilerplate, works cleanly alongside React Query                                                                                                             |
 | Server state     | React Query                                               | caching, background refetch, loading/error states for REST data                                                                                                      |
 | Styling          | Tailwind CSS                                              | productive, dark mode built-in, low barrier for contributors                                                                                                         |
-| API client       | generated via `orval` (OpenAPI → typed React Query hooks) | contract-first from `docs/openapi.yaml`; frontend/backend types stay in sync, and MSW mocks generated from the same spec let the frontend build ahead of the backend. Output (`web/src/api/generated`, `web/src/api/model`) is committed; CI regenerates and fails the build if it drifts from the spec, so run `npm run gen:api` after editing `docs/openapi.yaml` and commit the result |
+| API client       | generated via `orval` (OpenAPI → typed React Query hooks) | contract-first from `docs/openapi.yaml`; frontend/backend types stay in sync, and MSW mocks generated from the same spec let the frontend build ahead of the backend. Output (`web/src/api/generated`, `web/src/api/model`) is committed; CI regenerates and fails the build if it drifts from the spec, so run `bun run gen:api` after editing `docs/openapi.yaml` and commit the result |
 
 ### Infrastructure
 
@@ -104,7 +104,7 @@ WiseLabz/
 
 The production build uses a multi-stage Dockerfile:
 
-1. **Stage 1 (`web`)** — Node.js Alpine image runs `npm ci` and `npm run build`, producing a
+1. **Stage 1 (`web`)** — Bun Alpine image runs `bun install` and `bun run build`, producing a
    static SPA in `/web/dist`.
 2. **Stage 2 (`builder`)** — Go image copies the SPA output into `internal/web/dist/` (where
    `go:embed` expects it) and compiles a static binary with `CGO_ENABLED=0`.
