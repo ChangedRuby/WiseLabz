@@ -261,3 +261,174 @@ func TestGetUserRoleStatus(t *testing.T) {
 		t.Fatalf("GetUserRoleStatus(missing) error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestUserHasPermission(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	u := &User{Username: "perm-user", CanManageDashboardDefaults: true}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("CreateUser() error: %v", err)
+	}
+
+	t.Run("has permission", func(t *testing.T) {
+		has, err := s.UserHasPermission(ctx, u.ID, "can_manage_dashboard_defaults")
+		if err != nil || !has {
+			t.Fatalf("UserHasPermission(has) = %v, %v; want true, nil", has, err)
+		}
+	})
+
+	t.Run("denies permission", func(t *testing.T) {
+		u2 := &User{Username: "no-perm-user", CanManageDashboardDefaults: false}
+		if err := s.CreateUser(ctx, u2); err != nil {
+			t.Fatalf("CreateUser(u2) error: %v", err)
+		}
+		has, err := s.UserHasPermission(ctx, u2.ID, "can_manage_dashboard_defaults")
+		if err != nil || has {
+			t.Fatalf("UserHasPermission(denied) = %v, %v; want false, nil", has, err)
+		}
+	})
+
+	t.Run("unknown permission", func(t *testing.T) {
+		has, err := s.UserHasPermission(ctx, u.ID, "unknown_permission")
+		if err != nil || has {
+			t.Fatalf("UserHasPermission(unknown) = %v, %v; want false, nil", has, err)
+		}
+	})
+
+	t.Run("missing user", func(t *testing.T) {
+		has, err := s.UserHasPermission(ctx, "missing-user-id", "can_manage_dashboard_defaults")
+		if err != nil || has {
+			t.Fatalf("UserHasPermission(missing) = %v, %v; want false, nil", has, err)
+		}
+	})
+}
+
+func TestDeleteSession(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	u := &User{Username: "delete-session-user"}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("CreateUser() error: %v", err)
+	}
+
+	t.Run("happy path", func(t *testing.T) {
+		sess := &Session{UserID: u.ID, TokenHash: "test-hash"}
+		if err := s.CreateSession(ctx, sess); err != nil {
+			t.Fatalf("CreateSession() error: %v", err)
+		}
+		if err := s.DeleteSession(ctx, sess.ID); err != nil {
+			t.Fatalf("DeleteSession() error: %v", err)
+		}
+		// Verify deleted
+		_, err := s.GetSession(ctx, sess.ID)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("GetSession(deleted) error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("session not found", func(t *testing.T) {
+		if err := s.DeleteSession(ctx, "missing-id"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("DeleteSession(missing) error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestUpdateUserErrors(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	u := &User{Username: "update-user"}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("CreateUser() error: %v", err)
+	}
+
+	t.Run("successful update", func(t *testing.T) {
+		if err := s.UpdateUser(ctx, u.ID, map[string]any{"role": "operator"}); err != nil {
+			t.Fatalf("UpdateUser() error: %v", err)
+		}
+		updated, err := s.GetUserByID(ctx, u.ID)
+		if err != nil || updated.Role != "operator" {
+			t.Fatalf("GetUserByID() after update = %q, %v; want operator, nil", updated.Role, err)
+		}
+	})
+
+	t.Run("user not found", func(t *testing.T) {
+		if err := s.UpdateUser(ctx, "missing-id", map[string]any{"role": "viewer"}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("UpdateUser(missing) error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("empty updates", func(t *testing.T) {
+		if err := s.UpdateUser(ctx, u.ID, map[string]any{}); err != nil {
+			t.Fatalf("UpdateUser(empty) error: %v", err)
+		}
+	})
+
+	t.Run("duplicate username", func(t *testing.T) {
+		u2 := &User{Username: "other-user"}
+		if err := s.CreateUser(ctx, u2); err != nil {
+			t.Fatalf("CreateUser(u2) error: %v", err)
+		}
+		if err := s.UpdateUser(ctx, u.ID, map[string]any{"username": u2.Username}); !errors.Is(err, ErrConflict) {
+			t.Fatalf("UpdateUser(duplicate username) error = %v, want ErrConflict", err)
+		}
+	})
+}
+
+func TestDeleteUserErrors(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	u := &User{Username: "delete-user"}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("CreateUser() error: %v", err)
+	}
+
+	t.Run("successful delete", func(t *testing.T) {
+		if err := s.DeleteUser(ctx, u.ID); err != nil {
+			t.Fatalf("DeleteUser() error: %v", err)
+		}
+		_, err := s.GetUserByID(ctx, u.ID)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("GetUserByID(deleted) error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("user not found", func(t *testing.T) {
+		if err := s.DeleteUser(ctx, "missing-id"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("DeleteUser(missing) error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestRotateSessionTokenErrors(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	u := &User{Username: "rotate-user"}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("CreateUser() error: %v", err)
+	}
+
+	t.Run("successful rotation", func(t *testing.T) {
+		if err := s.CreateSession(ctx, &Session{UserID: u.ID, TokenHash: "old"}); err != nil {
+			t.Fatalf("CreateSession() error: %v", err)
+		}
+		if err := s.RotateSessionToken(ctx, u.ID, "old", "new"); err != nil {
+			t.Fatalf("RotateSessionToken() error: %v", err)
+		}
+	})
+
+	t.Run("wrong old hash", func(t *testing.T) {
+		if err := s.RotateSessionToken(ctx, u.ID, "nonexistent", "newer"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("RotateSessionToken(wrong hash) error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("no session for user", func(t *testing.T) {
+		u2 := &User{Username: "no-session-user"}
+		if err := s.CreateUser(ctx, u2); err != nil {
+			t.Fatalf("CreateUser(u2) error: %v", err)
+		}
+		if err := s.RotateSessionToken(ctx, u2.ID, "any", "hash"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("RotateSessionToken(no session) error = %v, want ErrNotFound", err)
+		}
+	})
+}
