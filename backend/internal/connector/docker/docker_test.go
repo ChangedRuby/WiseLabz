@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -429,5 +430,100 @@ func TestNewSSHDockerClientRejectsWrongHostKey(t *testing.T) {
 		"ssh_host_key": otherHostKey,
 	}); err == nil {
 		t.Fatal("newSSHDockerClient() error = nil, want rejection for mismatched host key")
+	}
+}
+
+func TestDoRequestErrorCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantErr    bool
+	}{
+		{
+			name:       "502 BadGateway returns ServiceUnavailableError",
+			statusCode: http.StatusBadGateway,
+			wantErr:    true,
+		},
+		{
+			name:       "503 ServiceUnavailable returns ServiceUnavailableError",
+			statusCode: http.StatusServiceUnavailable,
+			wantErr:    true,
+		},
+		{
+			name:       "504 GatewayTimeout returns ServiceUnavailableError",
+			statusCode: http.StatusGatewayTimeout,
+			wantErr:    true,
+		},
+		{
+			name:       "500 InternalServerError returns generic error",
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte("error response"))
+			}))
+			defer server.Close()
+
+			c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+			_, err := c.doRequest(context.Background(), "/info")
+
+			if !tt.wantErr && err != nil {
+				t.Errorf("doRequest() error = %v, wantErr = false", err)
+				return
+			}
+			if tt.wantErr && err == nil {
+				t.Errorf("doRequest() error = nil, wantErr = true")
+				return
+			}
+		})
+	}
+}
+
+func TestDoRequestContextTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(1 * time.Second)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err := c.doRequest(ctx, "/info")
+	var timeoutErr *connector.TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Errorf("doRequest() error = %v, want *connector.TimeoutError", err)
+	}
+}
+
+func TestValidateAndFetchWithMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+
+	// Validate returns nil on successful connection even with malformed JSON
+	// (Validate only checks that the endpoint is reachable, not that it returns valid JSON)
+	err := c.Validate(context.Background(), nil)
+	if err != nil {
+		t.Errorf("Validate() error = %v, want nil (Validate only checks connectivity)", err)
+	}
+
+	// Fetch should handle malformed /info by creating a malformed response section
+	snap, err := c.Fetch(context.Background(), nil)
+	if err != nil {
+		t.Errorf("Fetch() error = %v, want nil (tolerates malformed JSON as placeholder)", err)
+		return
+	}
+	if !strings.Contains(snap.Sections[0].Content, "malformed response") {
+		t.Errorf("System section = %q, want malformed response placeholder", snap.Sections[0].Content)
 	}
 }

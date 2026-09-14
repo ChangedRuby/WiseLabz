@@ -3,10 +3,13 @@ package custom
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
@@ -54,3 +57,121 @@ func TestValidateSurfacesAuthError(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want *connector.AuthError", err)
 	}
 }
+
+func TestValidateAndFetchTimeoutError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Second)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	c := &Connector{client: &http.Client{Timeout: 10 * time.Millisecond}}
+	err := c.Validate(context.Background(), map[string]any{"url": server.URL})
+	var timeoutErr *connector.TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Errorf("Validate() error = %v, want *connector.TimeoutError", err)
+	}
+
+	err = c.Validate(context.Background(), map[string]any{"url": server.URL})
+	if !errors.As(err, &timeoutErr) {
+		t.Errorf("Fetch() error = %v, want *connector.TimeoutError", err)
+	}
+}
+
+func TestValidateAndFetchServiceUnavailableError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"502 BadGateway", http.StatusBadGateway},
+		{"503 ServiceUnavailable", http.StatusServiceUnavailable},
+		{"504 GatewayTimeout", http.StatusGatewayTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte("unavailable"))
+			}))
+			defer server.Close()
+
+			c := &Connector{client: server.Client()}
+			err := c.Validate(context.Background(), map[string]any{"url": server.URL})
+			var unavailErr *connector.ServiceUnavailableError
+			if !errors.As(err, &unavailErr) {
+				t.Errorf("Validate() error = %v, want *connector.ServiceUnavailableError", err)
+			}
+
+			// Fetch doesn't check status codes - it just returns the response as-is
+			snap, err := c.Fetch(context.Background(), map[string]any{"url": server.URL})
+			if err != nil {
+				t.Errorf("Fetch() error = %v, want nil (Fetch tolerates any status code)", err)
+				return
+			}
+			if snap.Metadata["status_code"] != fmt.Sprintf("%d", tt.statusCode) {
+				t.Errorf("Fetch() status_code = %s, want %d", snap.Metadata["status_code"], tt.statusCode)
+			}
+		})
+	}
+}
+
+func TestGuardedClientRejectsLoopback(t *testing.T) {
+	c := &Connector{client: newGuardedClient()}
+	err := c.Validate(context.Background(), map[string]any{"url": "http://127.0.0.1:8080/status"})
+	if err == nil {
+		t.Error("Validate(loopback) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "Loopback") {
+		t.Errorf("Validate(loopback) error = %v, want 'blocked' or 'Loopback' message", err)
+	}
+}
+
+func TestGuardedClientRejectsLinkLocal(t *testing.T) {
+	c := &Connector{client: newGuardedClient()}
+	err := c.Validate(context.Background(), map[string]any{"url": "http://169.254.169.254/metadata"})
+	if err == nil {
+		t.Error("Validate(link-local) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "link") {
+		t.Errorf("Validate(link-local) error = %v, want 'blocked' or 'link' message", err)
+	}
+}
+
+func TestFetchMalformedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	c := &Connector{client: server.Client()}
+	snap, err := c.Fetch(context.Background(), map[string]any{"url": server.URL})
+	if err != nil {
+		t.Errorf("Fetch(malformed) error = %v, want nil (tolerates invalid JSON)", err)
+		return
+	}
+	if !strings.Contains(snap.Sections[0].Content, "not json") {
+		t.Errorf("Fetch(malformed) content = %q, want malformed JSON in output", snap.Sections[0].Content)
+	}
+}
+
+func TestIsTimeoutDetectsContextDeadlineExceeded(t *testing.T) {
+	if !isTimeout(context.DeadlineExceeded) {
+		t.Error("isTimeout(context.DeadlineExceeded) = false, want true")
+	}
+}
+
+func TestIsTimeoutDetectsNetTimeout(t *testing.T) {
+	// Create a net.Error that reports Timeout() == true
+	err := &net.OpError{Op: "read", Net: "tcp", Err: timeoutError{}}
+	if !isTimeout(err) {
+		t.Errorf("isTimeout(net.OpError with Timeout=true) = false, want true")
+	}
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return false }
