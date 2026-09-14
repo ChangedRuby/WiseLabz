@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/store"
 	_ "modernc.org/sqlite"
@@ -374,5 +375,53 @@ func TestRetryDueDeliveries_RecoversAfterFailure(t *testing.T) {
 	}
 	if after.Attempts != before.Attempts+1 {
 		t.Errorf("expected attempts %d, got %d", before.Attempts+1, after.Attempts)
+	}
+}
+
+// TestNotifyAlertCreated_NoChannelsConfigured verifies that NotifyAlertCreated works correctly
+// when no notification channels are configured, creating only an in-app notification.
+func TestNotifyAlertCreated_NoChannelsConfigured(t *testing.T) {
+	s := newTestStore(t)
+	d := NewDispatcher(s, nil)
+
+	// Do NOT configure any channels, ensuring the notification system gracefully handles
+	// a zero-channel setup.
+
+	// Create a user to receive the alert.
+	u := &store.User{
+		Email: "test@example.com",
+	}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Dispatch alert to all users.
+	d.NotifyAlertCreated(context.Background(), "alert-1", "Test Alert", "This is a test alert")
+
+	// Give any goroutines time to complete.
+	// ponytail: simple sleep; in production, would use a sync.WaitGroup or channels.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify notification was created for the user.
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) != 1 {
+		t.Fatalf("expected 1 notification for user, got %d", len(notifs))
+	}
+
+	// Verify only in-app delivery was recorded (no external channels).
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	if len(deliveries) != 1 {
+		t.Errorf("expected 1 delivery (in-app only), got %d", len(deliveries))
+	}
+
+	inApp, ok := findDelivery(deliveries, "in_app")
+	if !ok {
+		t.Fatalf("expected in_app delivery row, got %+v", deliveries)
+	}
+	if inApp.Status != store.DeliveryStatusSent {
+		t.Errorf("expected in_app status sent, got %s", inApp.Status)
 	}
 }
