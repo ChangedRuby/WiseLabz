@@ -3,19 +3,19 @@
 # =============================================================================
 # Stage 1/3: frontend — build the Vite/React/TS SPA -> web/dist/
 # =============================================================================
-FROM node:lts-alpine AS frontend
+FROM oven/bun:1-alpine AS frontend
 WORKDIR /repo/web
 
-# Install deps first, isolated from source changes, so `npm ci` is cached.
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+# Install deps first, isolated from source changes, so `bun install` is cached.
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
 
-# `npm run build` runs orval codegen via the npm "prebuild" lifecycle hook
+# `bun run build` runs orval codegen via the npm "prebuild" lifecycle hook
 # before tsc/vite, and orval.config.ts points at ../docs/openapi.yaml — so
 # the spec must be present at that exact relative path before building.
 COPY web/ ./
 COPY docs/openapi.yaml /repo/docs/openapi.yaml
-RUN npm run build
+RUN bun run build
 
 # =============================================================================
 # Stage 2/3: backend — build the static Go binary

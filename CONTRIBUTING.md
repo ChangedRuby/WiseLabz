@@ -8,7 +8,7 @@ follow our conventions, and get your changes merged.
 ## Prerequisites
 
 - **Go 1.23+** — backend and CLI tooling
-- **Node.js 22+ and npm 10+** — frontend (React + Vite)
+- **[Bun](https://bun.sh) 1.3+** — frontend (React + Vite)
 - **Docker and Docker Compose** — running the full stack and testing connectors
 - **[lefthook](https://github.com/evilmartians/lefthook)** — commit hooks (install with
   `go install github.com/evilmartians/lefthook@latest` or your package manager)
@@ -120,7 +120,7 @@ up over time:
 
 - **Backend** (`go test -coverpkg=./... -coverprofile=coverage.out ./...`):
   floor is 60% total statement coverage (CI fails under it).
-- **Frontend** (`npm run test:coverage`, v8 provider): floor is set in
+- **Frontend** (`bun run test:coverage`, v8 provider): floor is set in
   `web/vitest.config.ts` (`test.coverage.thresholds`) — currently 40%
   statements/lines, 25% functions/branches.
 
