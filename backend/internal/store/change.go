@@ -36,6 +36,31 @@ type ChangeRecord struct {
 // changeColumns is the shared column list for every change SELECT.
 const changeColumns = `id, service_id, change_type, severity, summary, diff, status, detected_at, affected_doc_ids, related_service_ids, pattern_id`
 
+// scanChange scans one changeColumns row. Used by ListChanges's paginatedQuery.
+func scanChange(row rowScanner) (ChangeRecord, error) {
+	var c ChangeRecord
+	err := row.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary,
+		&c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID)
+	return c, err
+}
+
+// alertColumns is the shared column list for every alert SELECT.
+const alertColumns = `id, change_id, service_id, severity, title, description, status, snoozed_until, created_at`
+
+// scanAlert scans one alertColumns row. Used by ListAlerts's paginatedQuery.
+func scanAlert(row rowScanner) (AlertRecord, error) {
+	var a AlertRecord
+	var changeID, snoozedUntil sql.NullString
+	err := row.Scan(&a.ID, &changeID, &a.ServiceID, &a.Severity, &a.Title,
+		&a.Description, &a.Status, &snoozedUntil, &a.CreatedAt)
+	if err != nil {
+		return AlertRecord{}, err
+	}
+	a.ChangeID = changeID.String
+	a.SnoozedUntil = snoozedUntil.String
+	return a, nil
+}
+
 // AlertRecord represents a row in the alerts table.
 type AlertRecord struct {
 	ID           string `json:"id"`
@@ -194,37 +219,7 @@ func (s *Store) ListChanges(ctx context.Context, serviceID, severity string, off
 		args = append(args, severity)
 	}
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM changes " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count changes: %w", err)
-	}
-
-	query := `SELECT ` + changeColumns + `
-		FROM changes ` + where + ` ORDER BY detected_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list changes: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var changes []ChangeRecord
-	for rows.Next() {
-		var c ChangeRecord
-		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID); err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		changes = append(changes, c)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate changes: %w", err)
-	}
-	if changes == nil {
-		changes = []ChangeRecord{}
-	}
-	return changes, total, nil
+	return paginatedQuery(ctx, s.db, "changes", changeColumns, where, args, "detected_at DESC", limit, offset, scanChange)
 }
 
 // CountChanges returns the total number of change records.
@@ -372,41 +367,7 @@ func (s *Store) ListAlerts(ctx context.Context, serviceID, severity, status, sin
 		args = append(args, since)
 	}
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM alerts " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count alerts: %w", err)
-	}
-
-	query := `SELECT id, change_id, service_id, severity, title, description, status, snoozed_until, created_at
-		FROM alerts ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list alerts: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var alerts []AlertRecord
-	for rows.Next() {
-		var a AlertRecord
-		var changeID, snoozedUntil sql.NullString
-		if err := rows.Scan(&a.ID, &changeID, &a.ServiceID, &a.Severity, &a.Title, &a.Description,
-			&a.Status, &snoozedUntil, &a.CreatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		a.ChangeID = changeID.String
-		a.SnoozedUntil = snoozedUntil.String
-		alerts = append(alerts, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate alerts: %w", err)
-	}
-	if alerts == nil {
-		alerts = []AlertRecord{}
-	}
-	return alerts, total, nil
+	return paginatedQuery(ctx, s.db, "alerts", alertColumns, where, args, "created_at DESC", limit, offset, scanAlert)
 }
 
 // GetExpiredSnoozedAlerts returns alerts where snoozed_until has passed.

@@ -261,6 +261,20 @@ func (s *Store) ListDocsGroupedByService(ctx context.Context) (map[string][]DocR
 	return docsByService, nil
 }
 
+// docColumns is the shared column list for the ListAllDocs SELECT.
+const docColumns = `id, title, kind, service_id, content, current_version, created_at, updated_at`
+
+func scanDoc(row rowScanner) (DocRecord, error) {
+	var d DocRecord
+	var svcID sql.NullString
+	err := row.Scan(&d.ID, &d.Title, &d.Kind, &svcID, &d.Content, &d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt)
+	if err != nil {
+		return DocRecord{}, err
+	}
+	d.ServiceID = svcID.String
+	return d, nil
+}
+
 // ListAllDocs returns a paginated, optionally search-filtered list of all docs.
 func (s *Store) ListAllDocs(ctx context.Context, search string, offset, limit int) ([]DocRecord, int, error) {
 	where := "WHERE 1=1"
@@ -270,40 +284,7 @@ func (s *Store) ListAllDocs(ctx context.Context, search string, offset, limit in
 		args = append(args, "%"+search+"%")
 	}
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM docs " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count docs: %w", err)
-	}
-
-	query := `SELECT id, title, kind, service_id, content, current_version, created_at, updated_at
-		FROM docs ` + where + ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list all docs: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var docs []DocRecord
-	for rows.Next() {
-		var d DocRecord
-		var svcID sql.NullString
-		if err := rows.Scan(&d.ID, &d.Title, &d.Kind, &svcID, &d.Content,
-			&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		d.ServiceID = svcID.String
-		docs = append(docs, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate docs: %w", err)
-	}
-	if docs == nil {
-		docs = []DocRecord{}
-	}
-	return docs, total, nil
+	return paginatedQuery(ctx, s.db, "docs", docColumns, where, args, "updated_at DESC", limit, offset, scanDoc)
 }
 
 // --- Doc versions ---
@@ -498,40 +479,22 @@ func (s *Store) DeleteTemplate(ctx context.Context, id string) error {
 	return nil
 }
 
+func scanTemplate(row rowScanner) (TemplateRecord, error) {
+	var t TemplateRecord
+	var appliesTo sql.NullString
+	err := row.Scan(&t.ID, &t.Name, &t.Description, &appliesTo, &t.CurrentVersion, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return TemplateRecord{}, err
+	}
+	t.AppliesTo = appliesTo.String
+	return t, nil
+}
+
 // ListTemplates returns a paginated list of template records.
 func (s *Store) ListTemplates(ctx context.Context, offset, limit int) ([]TemplateRecord, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM templates`).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count templates: %w", err)
-	}
-
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, description, applies_to, current_version, created_at, updated_at
-		FROM templates ORDER BY created_at DESC LIMIT ? OFFSET ?
-	`, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list templates: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var templates []TemplateRecord
-	for rows.Next() {
-		var t TemplateRecord
-		var appliesTo sql.NullString
-		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &appliesTo, &t.CurrentVersion,
-			&t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		t.AppliesTo = appliesTo.String
-		templates = append(templates, t)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate templates: %w", err)
-	}
-	if templates == nil {
-		templates = []TemplateRecord{}
-	}
-	return templates, total, nil
+	return paginatedQuery(ctx, s.db, "templates",
+		"id, name, description, applies_to, current_version, created_at, updated_at",
+		"", nil, "created_at DESC", limit, offset, scanTemplate)
 }
 
 // --- Template versions ---

@@ -100,12 +100,11 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Elevate(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Password string `json:"password"`
 		Action   string `json:"action"` // e.g. "connector.delete"
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Password == "" || req.Action == "" {

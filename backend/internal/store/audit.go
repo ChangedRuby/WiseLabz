@@ -127,27 +127,7 @@ func (s *Store) RecordAuditFromContext(ctx context.Context, action, targetType, 
 func (s *Store) ListAuditRecords(ctx context.Context, action, targetType, createdAfter, createdBefore string, offset, limit int) ([]AuditRecord, int, error) {
 	where, args := auditFilterClause(action, targetType, createdAfter, createdBefore)
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM audit_log " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count audit records: %w", err)
-	}
-
-	query := `SELECT id, actor_user_id, actor_role, action, target_type, target_id, detail, created_at
-		FROM audit_log ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list audit records: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	records, err := scanAuditRecords(rows)
-	if err != nil {
-		return nil, 0, err
-	}
-	return records, total, nil
+	return paginatedQuery(ctx, s.db, "audit_log", auditColumns, where, args, "created_at DESC", limit, offset, scanAuditRecord)
 }
 
 // ListAllAuditRecords returns every audit record matching the given filters
@@ -159,7 +139,7 @@ func (s *Store) ListAuditRecords(ctx context.Context, action, targetType, create
 func (s *Store) ListAllAuditRecords(ctx context.Context, action, targetType, createdAfter, createdBefore string) ([]AuditRecord, error) {
 	where, args := auditFilterClause(action, targetType, createdAfter, createdBefore)
 
-	query := `SELECT id, actor_user_id, actor_role, action, target_type, target_id, detail, created_at
+	query := `SELECT ` + auditColumns + `
 		FROM audit_log ` + where + ` ORDER BY created_at DESC`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -168,7 +148,7 @@ func (s *Store) ListAllAuditRecords(ctx context.Context, action, targetType, cre
 	}
 	defer rows.Close() //nolint:errcheck
 
-	return scanAuditRecords(rows)
+	return scanAuditRecordRows(rows)
 }
 
 // auditFilterClause builds the shared WHERE clause + args for
@@ -195,22 +175,28 @@ func auditFilterClause(action, targetType, createdAfter, createdBefore string) (
 	return where, args
 }
 
-// scanAuditRecords scans all rows of an audit_log query into []AuditRecord,
+// auditColumns is the shared column list for every audit_log SELECT.
+const auditColumns = `id, actor_user_id, actor_role, action, target_type, target_id, detail, created_at`
+
+func scanAuditRecord(row rowScanner) (AuditRecord, error) {
+	var a AuditRecord
+	err := row.Scan(&a.ID, &a.ActorUserID, &a.ActorRole, &a.Action, &a.TargetType, &a.TargetID, &a.Detail, &a.CreatedAt)
+	return a, err
+}
+
+// scanAuditRecordRows scans all rows of an audit_log query into []AuditRecord,
 // returning a non-nil empty slice (never nil) when there are no rows.
-func scanAuditRecords(rows *sql.Rows) ([]AuditRecord, error) {
-	var records []AuditRecord
+func scanAuditRecordRows(rows *sql.Rows) ([]AuditRecord, error) {
+	records := make([]AuditRecord, 0)
 	for rows.Next() {
-		var a AuditRecord
-		if err := rows.Scan(&a.ID, &a.ActorUserID, &a.ActorRole, &a.Action, &a.TargetType, &a.TargetID, &a.Detail, &a.CreatedAt); err != nil {
+		a, err := scanAuditRecord(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		records = append(records, a)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate audit records: %w", err)
-	}
-	if records == nil {
-		records = []AuditRecord{}
 	}
 	return records, nil
 }

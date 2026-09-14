@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -33,13 +32,12 @@ const oidcFlowCookie = "oidc_flow"
 // Exchanges an OIDC authorization code for identity, creates or finds the user,
 // and returns a JWT token pair.
 func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		ProviderID string `json:"providerId"`
 		Code       string `json:"code"`
 		State      string `json:"state"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.ProviderID == "" || req.Code == "" || req.State == "" {

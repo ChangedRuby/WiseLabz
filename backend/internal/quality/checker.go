@@ -37,19 +37,28 @@ func NewChecker(s *store.Store, hub *ws.Hub) *Checker {
 
 // RunForConnector runs every quality check for one connector.
 func (c *Checker) RunForConnector(ctx context.Context, connectorID string) error {
+	docs, err := c.store.ListDocsByService(ctx, connectorID)
+	if err != nil {
+		return fmt.Errorf("list docs: %w", err)
+	}
+
 	checks := []struct {
 		name string
-		run  func(context.Context, string) (*store.QualityFindingRecord, error)
+		run  func(context.Context, string, []store.DocRecord) (*store.QualityFindingRecord, error)
 	}{
 		{name: "stale", run: c.checkStale},
 		{name: "empty", run: c.checkEmpty},
-		{name: "failing", run: c.checkFailing},
-		{name: "ownership", run: c.checkOwnership},
+		{name: "failing", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
+			return c.checkFailing(ctx, connectorID)
+		}},
+		{name: "ownership", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
+			return c.checkOwnership(ctx, connectorID)
+		}},
 	}
 
 	var errs []error
 	for _, check := range checks {
-		finding, err := check.run(ctx, connectorID)
+		finding, err := check.run(ctx, connectorID, docs)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s check: %w", check.name, err))
 			continue
@@ -75,12 +84,7 @@ func (c *Checker) broadcastChanged(connectorID string) {
 	}
 }
 
-func (c *Checker) checkStale(ctx context.Context, connectorID string) (*store.QualityFindingRecord, error) {
-	docs, err := c.store.ListDocsByService(ctx, connectorID)
-	if err != nil {
-		return nil, err
-	}
-
+func (c *Checker) checkStale(ctx context.Context, connectorID string, docs []store.DocRecord) (*store.QualityFindingRecord, error) {
 	var selected *store.DocRecord
 	var selectedUpdatedAt time.Time
 	now := c.now().UTC()
@@ -115,12 +119,7 @@ func (c *Checker) checkStale(ctx context.Context, connectorID string) (*store.Qu
 	return c.upsert(ctx, finding)
 }
 
-func (c *Checker) checkEmpty(ctx context.Context, connectorID string) (*store.QualityFindingRecord, error) {
-	docs, err := c.store.ListDocsByService(ctx, connectorID)
-	if err != nil {
-		return nil, err
-	}
-
+func (c *Checker) checkEmpty(ctx context.Context, connectorID string, docs []store.DocRecord) (*store.QualityFindingRecord, error) {
 	var selected *store.DocRecord
 	selectedLength := 0
 	for i := range docs {
@@ -216,7 +215,12 @@ func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, logger 
 		return
 	}
 	for _, connector := range connectors {
-		finding, err := checker.checkStale(ctx, connector.ID)
+		docs, err := checker.store.ListDocsByService(ctx, connector.ID)
+		if err != nil {
+			logger.Error("list docs for stale sweep", "connector", connector.ID, "error", err)
+			continue
+		}
+		finding, err := checker.checkStale(ctx, connector.ID, docs)
 		if err != nil {
 			logger.Error("quality stale check failed", "connector", connector.ID, "error", err)
 			continue

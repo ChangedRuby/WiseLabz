@@ -94,9 +94,8 @@ type BackupScheduleRequest struct {
 // UpdateBackupSchedule handles PUT /api/system/backup/schedule. Operator-only.
 // Updates the backup schedule and re-registers the cron job.
 func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
-	var req BackupScheduleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	req, ok := httputil.DecodeJSON[BackupScheduleRequest](w, r)
+	if !ok {
 		return
 	}
 
@@ -231,7 +230,7 @@ func (h *Handler) CreateBackupRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply pruning (same as scheduled backups)
-	h.pruneBackups()
+	h.pruneBackups(r.Context())
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
 		"id":          run.ID,
@@ -244,8 +243,8 @@ func (h *Handler) CreateBackupRun(w http.ResponseWriter, r *http.Request) {
 
 // pruneBackups applies the current backup retention policy, deleting old/excess files.
 // Errors are logged but don't fail the request.
-func (h *Handler) pruneBackups() {
-	sched, err := h.Store.GetBackupSchedule(context.Background())
+func (h *Handler) pruneBackups(ctx context.Context) {
+	sched, err := h.Store.GetBackupSchedule(ctx)
 	if err != nil {
 		slog.Error("get backup schedule for pruning", "error", err)
 		return
@@ -256,7 +255,7 @@ func (h *Handler) pruneBackups() {
 	cutoff := cutoffTime.Format(time.RFC3339)
 
 	// Find and delete old runs
-	pruned, err := h.Store.PruneBackupRuns(context.Background(), sched.MaxBackups, cutoff)
+	pruned, err := h.Store.PruneBackupRuns(ctx, sched.MaxBackups, cutoff)
 	if err != nil {
 		slog.Error("prune backup runs", "error", err)
 		return
@@ -271,7 +270,7 @@ func (h *Handler) pruneBackups() {
 
 	// Audit if anything was pruned
 	if len(pruned) > 0 {
-		if err := h.Store.RecordAuditFromContext(context.Background(), "backup.run.pruned", "backup_schedule", "default", map[string]any{
+		if err := h.Store.RecordAuditFromContext(ctx, "backup.run.pruned", "backup_schedule", "default", map[string]any{
 			"prunedCount": len(pruned),
 		}); err != nil {
 			slog.Error("audit backup pruning", "error", err)

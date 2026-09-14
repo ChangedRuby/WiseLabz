@@ -198,9 +198,8 @@ type bulkResolveItemResult struct {
 // audit record is written per successfully-resolved item (not one for the
 // whole batch) so provenance stays per-change.
 func (h *Handler) BulkResolve(w http.ResponseWriter, r *http.Request) {
-	var req bulkResolveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	req, ok := httputil.DecodeJSON[bulkResolveRequest](w, r)
+	if !ok {
 		return
 	}
 	auditAction, ok := lowRiskBulkStatuses[req.Status]

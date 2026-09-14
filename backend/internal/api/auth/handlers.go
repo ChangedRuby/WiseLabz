@@ -2,7 +2,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -54,15 +53,14 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 // CreateUser handles POST /api/users.
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Username                   string `json:"username"`
 		Password                   string `json:"password"`
 		Email                      string `json:"email"`
 		Role                       string `json:"role"`
 		CanManageDashboardDefaults bool   `json:"canManageDashboardDefaults"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Username == "" || req.Password == "" {
@@ -116,16 +114,15 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Username                   *string `json:"username"`
 		DisplayName                *string `json:"displayName"`
 		Email                      *string `json:"email"`
 		Role                       *string `json:"role"`
 		Disabled                   *bool   `json:"disabled"`
 		CanManageDashboardDefaults *bool   `json:"canManageDashboardDefaults"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -243,11 +240,10 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		NewPassword string `json:"newPassword"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.NewPassword == "" {
