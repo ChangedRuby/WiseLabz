@@ -110,6 +110,13 @@ func (s *Store) CreateConnector(ctx context.Context, c *ConnectorRecord) error {
 	return nil
 }
 
+// ExistingConnectorIDs returns the subset of ids that already exist as
+// connectors, in one query — used by backup import to check N records
+// without N round-trips.
+func (s *Store) ExistingConnectorIDs(ctx context.Context, ids []string) (map[string]bool, error) {
+	return existingIDs(ctx, s.db, "connectors", ids)
+}
+
 // GetConnector retrieves a connector by ID.
 func (s *Store) GetConnector(ctx context.Context, id string) (*ConnectorRecord, error) {
 	c := &ConnectorRecord{}

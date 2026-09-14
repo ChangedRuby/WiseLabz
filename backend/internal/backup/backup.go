@@ -121,26 +121,18 @@ func exportWithin(ctx context.Context, s *store.Store) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("export docs: %w", err)
 	}
-	var docVersions []store.DocVersionRecord
-	for _, d := range docs {
-		versions, err := s.GetDocVersions(ctx, d.ID)
-		if err != nil {
-			return nil, fmt.Errorf("export doc versions for %s: %w", d.ID, err)
-		}
-		docVersions = append(docVersions, versions...)
+	docVersions, err := s.GetAllDocVersions(ctx, docIDs(docs))
+	if err != nil {
+		return nil, fmt.Errorf("export doc versions: %w", err)
 	}
 
 	templates, err := exportTemplates(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("export templates: %w", err)
 	}
-	var sections []store.TemplateSectionRecord
-	for _, t := range templates {
-		s2, err := s.GetTemplateSections(ctx, t.ID)
-		if err != nil {
-			return nil, fmt.Errorf("export template sections for %s: %w", t.ID, err)
-		}
-		sections = append(sections, s2...)
+	sections, err := s.GetAllTemplateSections(ctx, templateIDs(templates))
+	if err != nil {
+		return nil, fmt.Errorf("export template sections: %w", err)
 	}
 
 	return &Bundle{
@@ -304,8 +296,13 @@ func exportTemplates(ctx context.Context, s *store.Store) ([]store.TemplateRecor
 
 func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error) {
 	var res Result
+
+	existingConnectors, err := s.ExistingConnectorIDs(ctx, connectorIDs(b.Connectors))
+	if err != nil {
+		return res, fmt.Errorf("check existing connectors: %w", err)
+	}
 	for _, c := range b.Connectors {
-		if _, err := s.GetConnector(ctx, c.ID); err == nil {
+		if existingConnectors[c.ID] {
 			res.Connectors.Skipped++
 			continue
 		}
@@ -315,8 +312,12 @@ func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error
 		res.Connectors.Imported++
 	}
 
+	existingDocs, err := s.ExistingDocIDs(ctx, docIDs(b.Docs))
+	if err != nil {
+		return res, fmt.Errorf("check existing docs: %w", err)
+	}
 	for _, d := range b.Docs {
-		if _, err := s.GetDoc(ctx, d.ID); err == nil {
+		if existingDocs[d.ID] {
 			res.Docs.Skipped++
 			continue
 		}
@@ -327,20 +328,17 @@ func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error
 	}
 
 	// No Get-by-ID for doc versions; check existence against the versions
-	// already stored for each doc instead (cheap: one query per doc, not per
-	// version, since versions naturally group by doc in the bundle).
-	existingVersions := make(map[string]bool)
-	for _, d := range b.Docs {
-		versions, err := s.GetDocVersions(ctx, d.ID)
-		if err != nil {
-			return res, fmt.Errorf("check doc versions for %q: %w", d.ID, err)
-		}
-		for _, v := range versions {
-			existingVersions[v.ID] = true
-		}
+	// already stored for the bundle's docs instead, in one bulk query.
+	existingVersions, err := s.GetAllDocVersions(ctx, docIDs(b.Docs))
+	if err != nil {
+		return res, fmt.Errorf("check doc versions: %w", err)
+	}
+	existingVersionIDs := make(map[string]bool, len(existingVersions))
+	for _, v := range existingVersions {
+		existingVersionIDs[v.ID] = true
 	}
 	for _, v := range b.DocVersions {
-		if existingVersions[v.ID] {
+		if existingVersionIDs[v.ID] {
 			res.DocVersions.Skipped++
 			continue
 		}
@@ -350,8 +348,12 @@ func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error
 		res.DocVersions.Imported++
 	}
 
+	existingTemplates, err := s.ExistingTemplateIDs(ctx, templateIDs(b.Templates))
+	if err != nil {
+		return res, fmt.Errorf("check existing templates: %w", err)
+	}
 	for _, t := range b.Templates {
-		if _, err := s.GetTemplate(ctx, t.ID); err == nil {
+		if existingTemplates[t.ID] {
 			res.Templates.Skipped++
 			continue
 		}
@@ -361,18 +363,16 @@ func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error
 		res.Templates.Imported++
 	}
 
-	existingSections := make(map[string]bool)
-	for _, t := range b.Templates {
-		sections, err := s.GetTemplateSections(ctx, t.ID)
-		if err != nil {
-			return res, fmt.Errorf("check template sections for %q: %w", t.ID, err)
-		}
-		for _, sec := range sections {
-			existingSections[sec.ID] = true
-		}
+	existingSections, err := s.GetAllTemplateSections(ctx, templateIDs(b.Templates))
+	if err != nil {
+		return res, fmt.Errorf("check template sections: %w", err)
+	}
+	existingSectionIDs := make(map[string]bool, len(existingSections))
+	for _, sec := range existingSections {
+		existingSectionIDs[sec.ID] = true
 	}
 	for _, sec := range b.TemplateSections {
-		if existingSections[sec.ID] {
+		if existingSectionIDs[sec.ID] {
 			res.TemplateSections.Skipped++
 			continue
 		}
@@ -383,6 +383,30 @@ func importBundle(ctx context.Context, s *store.Store, b *Bundle) (Result, error
 	}
 
 	return res, nil
+}
+
+func docIDs(docs []store.DocRecord) []string {
+	ids := make([]string, len(docs))
+	for i, d := range docs {
+		ids[i] = d.ID
+	}
+	return ids
+}
+
+func templateIDs(templates []store.TemplateRecord) []string {
+	ids := make([]string, len(templates))
+	for i, t := range templates {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
+func connectorIDs(connectors []store.ConnectorRecord) []string {
+	ids := make([]string, len(connectors))
+	for i, c := range connectors {
+		ids[i] = c.ID
+	}
+	return ids
 }
 
 // Run describes one backup that was created (stored in the database for
