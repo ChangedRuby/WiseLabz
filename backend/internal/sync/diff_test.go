@@ -7,6 +7,44 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
 
+func TestCompareOrderIsDeterministic(t *testing.T) {
+	prev := &connector.ServiceSnapshot{
+		Sections: []connector.SnapshotSection{
+			{Title: "Z", Content: "old-z"},
+			{Title: "A", Content: "old-a"},
+			{Title: "M", Content: "old-m"},
+		},
+	}
+	curr := &connector.ServiceSnapshot{
+		Sections: []connector.SnapshotSection{
+			{Title: "Z", Content: "new-z"},
+			{Title: "A", Content: "new-a"},
+			{Title: "M", Content: "new-m"},
+		},
+	}
+
+	var firstOrder []string
+	for i := 0; i < 20; i++ {
+		results := Compare(prev, curr)
+		order := make([]string, len(results))
+		for j, r := range results {
+			order[j] = r.Summary
+		}
+		if firstOrder == nil {
+			firstOrder = order
+			continue
+		}
+		if len(order) != len(firstOrder) {
+			t.Fatalf("run %d: got %d results, want %d", i, len(order), len(firstOrder))
+		}
+		for j := range order {
+			if order[j] != firstOrder[j] {
+				t.Fatalf("run %d: order = %v, want %v (non-deterministic)", i, order, firstOrder)
+			}
+		}
+	}
+}
+
 func TestCompareTagsRelatedServiceIDs(t *testing.T) {
 	now := time.Now()
 	prev := &connector.ServiceSnapshot{

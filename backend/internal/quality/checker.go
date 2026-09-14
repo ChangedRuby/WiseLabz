@@ -87,7 +87,8 @@ func (c *Checker) checkStale(ctx context.Context, connectorID string) (*store.Qu
 	for i := range docs {
 		updatedAt, err := time.Parse(time.RFC3339, docs[i].UpdatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("parse updated_at for doc %s: %w", docs[i].ID, err)
+			slog.Warn("skipping doc with malformed updated_at", "doc", docs[i].ID, "error", err)
+			continue
 		}
 		if now.Sub(updatedAt) <= StaleThreshold {
 			continue

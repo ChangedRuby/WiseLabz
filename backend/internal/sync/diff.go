@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
@@ -48,8 +49,12 @@ func Compare(prev, curr *connector.ServiceSnapshot) []DiffResult {
 	currRelated := relatedServiceIDs(curr)
 	prevRelated := relatedServiceIDs(prev)
 
+	currTitles := sortedKeys(currSections)
+	prevTitles := sortedKeys(prevSections)
+
 	// Check for added sections
-	for title, cs := range currSections {
+	for _, title := range currTitles {
+		cs := currSections[title]
 		if _, ok := prevSections[title]; !ok {
 			results = append(results, DiffResult{
 				Type:     "added",
@@ -66,7 +71,8 @@ func Compare(prev, curr *connector.ServiceSnapshot) []DiffResult {
 	}
 
 	// Check for removed sections
-	for title, ps := range prevSections {
+	for _, title := range prevTitles {
+		ps := prevSections[title]
 		if _, ok := currSections[title]; !ok {
 			results = append(results, DiffResult{
 				Type:     "removed",
@@ -83,7 +89,8 @@ func Compare(prev, curr *connector.ServiceSnapshot) []DiffResult {
 	}
 
 	// Check for modified sections
-	for title, cs := range currSections {
+	for _, title := range currTitles {
+		cs := currSections[title]
 		ps, ok := prevSections[title]
 		if !ok {
 			continue // already handled as "added"
@@ -123,6 +130,17 @@ func relatedServiceIDs(snap *connector.ServiceSnapshot) []string {
 		ids = append(ids, d.Ref)
 	}
 	return ids
+}
+
+// sortedKeys returns a section map's titles in deterministic order, so
+// change records for a single sync are always produced in the same order.
+func sortedKeys(m map[string]connector.SnapshotSection) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func lineCount(s string) int {
