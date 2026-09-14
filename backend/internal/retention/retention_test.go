@@ -95,6 +95,55 @@ func TestRunCleanupSkipsDisabledCategories(t *testing.T) {
 	}
 }
 
+// TestRunCleanupAllDBErrors verifies that when every delete call errors
+// (closed DB), RunCleanupOnce logs and returns without panicking.
+func TestRunCleanupAllDBErrors(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.DB().Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	cfg := store.RetentionSettings{
+		SnapshotDays: 30, DocVersionDays: 30, AlertDays: 30, SyncRunDays: 30, AuditDays: 30,
+	}
+
+	RunCleanupOnce(ctx, s, cfg, testLogger()) // must not panic
+}
+
+// TestRunCleanupPartialFailure verifies that an error in one category
+// (sync_runs table dropped, simulating a DB error) does not stop the other
+// enabled categories from running.
+func TestRunCleanupPartialFailure(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	c := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
+	if err := s.CreateConnector(ctx, c); err != nil {
+		t.Fatalf("CreateConnector() error: %v", err)
+	}
+	old := time.Now().UTC().AddDate(0, 0, -365).Format(time.RFC3339)
+	if err := s.CreateAuditRecord(ctx, &store.AuditRecord{ActorUserID: "u1", ActorRole: "operator", Action: "test.action", CreatedAt: old}); err != nil {
+		t.Fatalf("CreateAuditRecord() error: %v", err)
+	}
+
+	if _, err := s.DB().ExecContext(ctx, `DROP TABLE sync_runs`); err != nil {
+		t.Fatalf("drop sync_runs table: %v", err)
+	}
+
+	cfg := store.RetentionSettings{SyncRunDays: 30, AuditDays: 30}
+
+	RunCleanupOnce(ctx, s, cfg, testLogger()) // sync_runs errors, audit_log must still run
+
+	_, auditTotal, err := s.ListAuditRecords(ctx, "", "", "", "", 0, 20)
+	if err != nil {
+		t.Fatalf("ListAuditRecords() error: %v", err)
+	}
+	if auditTotal != 0 {
+		t.Fatalf("audit records after cleanup = %d, want 0 (audit cleanup must still run after sync_runs error)", auditTotal)
+	}
+}
+
 // TestRunCleanupIdempotent verifies a second pass with the same config
 // deletes nothing further.
 func TestRunCleanupIdempotent(t *testing.T) {
