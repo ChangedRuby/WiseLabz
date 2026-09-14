@@ -152,11 +152,25 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 
 	attempt := rec.RetryCount + 1
 
-	// finish records this run's outcome as a sync_runs history row and, for
-	// non-skipped runs, persists the resulting retry/backoff + next_run_at
+	// finish records this run's outcome as a sync_runs history row, broadcasts
+	// EventSyncComplete so the UI progress indicator always resolves, and for
+	// non-skipped runs persists the resulting retry/backoff + next_run_at
 	// schedule state on the connector (see computeNextRun). Called from every
 	// exit path below once rec has been loaded.
 	finish := func(status string, runErr error) {
+		if status != "skipped" && e.hub != nil {
+			payload := map[string]any{
+				"serviceId":       connectorID,
+				"jobId":           jobID,
+				"changesDetected": result.ChangesCount,
+				"alertsRaised":    result.AlertsCount,
+				"durationMs":      time.Since(start).Milliseconds(),
+			}
+			if runErr != nil {
+				payload["error"] = runErr.Error()
+			}
+			e.hub.Broadcast(ws.EventSyncComplete, payload)
+		}
 		durationMs := int(time.Since(start).Milliseconds())
 		errMsg := ""
 		if runErr != nil {
@@ -254,14 +268,6 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 				"percent":   0,
 				"message":   err.Error(),
 			})
-			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
-				"serviceId":       connectorID,
-				"jobId":           jobID,
-				"changesDetected": 0,
-				"alertsRaised":    0,
-				"durationMs":      time.Since(start).Milliseconds(),
-				"error":           err.Error(),
-			})
 		}
 		finish("error", err)
 		return markError(result, start, fmt.Errorf("get connector impl: %w", err))
@@ -346,14 +352,6 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 				"percent":   0,
 				"message":   err.Error(),
 			})
-			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
-				"serviceId":       connectorID,
-				"jobId":           jobID,
-				"changesDetected": 0,
-				"alertsRaised":    0,
-				"durationMs":      time.Since(start).Milliseconds(),
-				"error":           err.Error(),
-			})
 		}
 		finish("error", err)
 		return markError(result, start, fmt.Errorf("fetch: %w", err))
@@ -380,14 +378,6 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 				"percent":   0,
 				"message":   wrapped.Error(),
 			})
-			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
-				"serviceId":       connectorID,
-				"jobId":           jobID,
-				"changesDetected": 0,
-				"alertsRaised":    0,
-				"durationMs":      time.Since(start).Milliseconds(),
-				"error":           wrapped.Error(),
-			})
 		}
 		finish("error", wrapped)
 		return markError(result, start, wrapped)
@@ -409,14 +399,6 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 				"phase":     "error",
 				"percent":   0,
 				"message":   err.Error(),
-			})
-			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
-				"serviceId":       connectorID,
-				"jobId":           jobID,
-				"changesDetected": 0,
-				"alertsRaised":    0,
-				"durationMs":      time.Since(start).Milliseconds(),
-				"error":           err.Error(),
 			})
 		}
 		finish("error", err)
@@ -526,16 +508,6 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	result.Status = "success"
 	result.Duration = time.Since(start).String()
 	finish("success", nil)
-
-	if e.hub != nil {
-		e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
-			"serviceId":       connectorID,
-			"jobId":           jobID,
-			"changesDetected": result.ChangesCount,
-			"alertsRaised":    result.AlertsCount,
-			"durationMs":      time.Since(start).Milliseconds(),
-		})
-	}
 
 	return result, nil
 }

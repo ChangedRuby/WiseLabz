@@ -207,7 +207,7 @@ func TestCheckOwnershipDetectsAndAutoResolves(t *testing.T) {
 	}
 }
 
-func TestRunForConnectorContinuesAfterCheckError(t *testing.T) {
+func TestRunForConnectorSkipsDocWithMalformedTimestamp(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	connector := createConnector(t, s, "")
@@ -219,13 +219,23 @@ func TestRunForConnectorContinuesAfterCheckError(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateDoc() error: %v", err)
 	}
+	if err := s.CreateDoc(ctx, &store.DocRecord{
+		Title:     "Forgotten runbook",
+		ServiceID: connector.ID,
+		Content:   strings.Repeat("documented ", 5),
+		UpdatedAt: time.Now().UTC().Add(-StaleThreshold - time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("CreateDoc() error: %v", err)
+	}
 
-	err := NewChecker(s, nil).RunForConnector(ctx, connector.ID)
-	if err == nil || !strings.Contains(err.Error(), "stale check") {
-		t.Fatalf("RunForConnector() error = %v, want stale check error", err)
+	if err := NewChecker(s, nil).RunForConnector(ctx, connector.ID); err != nil {
+		t.Fatalf("RunForConnector() error = %v, want nil", err)
+	}
+	if got := findings(t, s, connector.ID, "stale", "open"); len(got) != 1 {
+		t.Fatalf("stale findings = %d, want 1 (malformed doc skipped, other doc still checked)", len(got))
 	}
 	if got := findings(t, s, connector.ID, "ownership_incomplete", "open"); len(got) != 1 {
-		t.Fatalf("ownership findings after stale error = %d, want 1", len(got))
+		t.Fatalf("ownership findings = %d, want 1", len(got))
 	}
 }
 
