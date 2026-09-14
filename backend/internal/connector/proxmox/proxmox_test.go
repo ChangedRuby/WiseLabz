@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
@@ -107,5 +108,93 @@ func TestFetchSurfacesMalformedNodesResponse(t *testing.T) {
 	var malformedErr *connector.MalformedResponseError
 	if !errors.As(err, &malformedErr) {
 		t.Fatalf("Fetch() error = %v, want *connector.MalformedResponseError", err)
+	}
+}
+
+func TestDoRequestErrorCases(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		checkAuthError bool
+		checkUnavail   bool
+	}{
+		{
+			name:           "401 Unauthorized returns AuthError",
+			statusCode:     http.StatusUnauthorized,
+			checkAuthError: true,
+		},
+		{
+			name:           "403 Forbidden returns AuthError",
+			statusCode:     http.StatusForbidden,
+			checkAuthError: true,
+		},
+		{
+			name:         "502 BadGateway returns ServiceUnavailableError",
+			statusCode:   http.StatusBadGateway,
+			checkUnavail: true,
+		},
+		{
+			name:         "503 ServiceUnavailable returns ServiceUnavailableError",
+			statusCode:   http.StatusServiceUnavailable,
+			checkUnavail: true,
+		},
+		{
+			name:         "504 GatewayTimeout returns ServiceUnavailableError",
+			statusCode:   http.StatusGatewayTimeout,
+			checkUnavail: true,
+		},
+		{
+			name:       "500 InternalServerError returns generic error",
+			statusCode: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte("error response"))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, tokenID: "user@pam!token", tokenSecret: "secret", client: server.Client()}
+			_, err := c.doRequest(context.Background(), "GET", "/nodes", nil)
+
+			if err == nil {
+				t.Errorf("doRequest() error = nil, want error")
+				return
+			}
+
+			if tt.checkAuthError {
+				var authErr *connector.AuthError
+				if !errors.As(err, &authErr) {
+					t.Errorf("doRequest() error = %T, want *connector.AuthError", err)
+				}
+			}
+			if tt.checkUnavail {
+				var unavailErr *connector.ServiceUnavailableError
+				if !errors.As(err, &unavailErr) {
+					t.Errorf("doRequest() error = %T, want *connector.ServiceUnavailableError", err)
+				}
+			}
+		})
+	}
+}
+
+func TestDoRequestContextTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(1 * time.Second)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	c := &Connector{url: server.URL, tokenID: "user@pam!token", tokenSecret: "secret", client: server.Client()}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err := c.doRequest(ctx, "GET", "/nodes", nil)
+	var timeoutErr *connector.TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Errorf("doRequest() error = %v, want *connector.TimeoutError", err)
 	}
 }
