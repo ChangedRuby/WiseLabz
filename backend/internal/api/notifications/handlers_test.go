@@ -13,6 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -146,4 +147,111 @@ func TestListDeliveriesEmpty(t *testing.T) {
 // out.Items above, so this checks the raw wire format.
 func jsonHasEmptyArrayItems(body string) bool {
 	return !strings.Contains(body, `"items":null`)
+}
+
+func TestListSuccess(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s)
+	userID, token, wrapped := apitest.AuthedUser(t, s, "viewer", http.HandlerFunc(h.List))
+
+	// Seed a notification for this user
+	n := &store.NotificationRecord{
+		UserID:    userID,
+		EventType: "test",
+		Title:     "Test",
+		Message:   "Test notification",
+		Read:      false,
+	}
+	if err := s.CreateNotification(context.Background(), n); err != nil {
+		t.Fatalf("seed notification: %v", err)
+	}
+
+	// Make a request with auth
+	r := httptest.NewRequest(http.MethodGet, "/api/notifications", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+	out := decodePaginated(t, rec)
+	if out.Total != 1 {
+		t.Fatalf("total = %d, want 1", out.Total)
+	}
+}
+
+func TestMarkReadSuccess(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s)
+	userID, token, wrapped := apitest.AuthedUser(t, s, "viewer", http.HandlerFunc(h.MarkRead))
+
+	// Seed a notification
+	n := &store.NotificationRecord{
+		UserID:    userID,
+		EventType: "test",
+		Title:     "Test",
+		Message:   "Test notification",
+		Read:      false,
+	}
+	if err := s.CreateNotification(context.Background(), n); err != nil {
+		t.Fatalf("seed notification: %v", err)
+	}
+
+	// Mark it as read
+	r := httptest.NewRequest(http.MethodPost, "/api/notifications/"+n.ID+"/read", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.SetPathValue("id", n.ID)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMarkReadNotFound(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s)
+	_, token, wrapped := apitest.AuthedUser(t, s, "viewer", http.HandlerFunc(h.MarkRead))
+
+	r := httptest.NewRequest(http.MethodPost, "/api/notifications/missing/read", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.SetPathValue("id", "missing")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestReadAllSuccess(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s)
+	userID, token, wrapped := apitest.AuthedUser(t, s, "viewer", http.HandlerFunc(h.ReadAll))
+
+	// Seed multiple notifications
+	for i := 0; i < 3; i++ {
+		n := &store.NotificationRecord{
+			UserID:    userID,
+			EventType: "test",
+			Title:     "Test",
+			Message:   "Test notification",
+			Read:      false,
+		}
+		if err := s.CreateNotification(context.Background(), n); err != nil {
+			t.Fatalf("seed notification: %v", err)
+		}
+	}
+
+	// Mark all as read
+	r := httptest.NewRequest(http.MethodPost, "/api/notifications/read-all", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body = %s", rec.Code, rec.Body)
+	}
 }

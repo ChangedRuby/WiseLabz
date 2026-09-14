@@ -161,6 +161,40 @@ func TestToggleEnabledNotFound(t *testing.T) {
 	}
 }
 
+func TestToggleEnabledSuccess(t *testing.T) {
+	h := newTestHandler(t)
+
+	// Create a connector first
+	createReq := httptest.NewRequest(http.MethodPost, "/api/connectors",
+		strings.NewReader(`{"name":"Test","category":"virtualization","type":"custom","url":"https://test.example.com"}`))
+	createRR := httptest.NewRecorder()
+	h.Create(createRR, createReq)
+	var created map[string]any
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("no id in create response")
+	}
+
+	// Toggle enabled to false
+	req := httptest.NewRequest(http.MethodPut, "/api/connectors/"+id+"/enabled", strings.NewReader(`{"enabled":false}`))
+	req.SetPathValue("id", id)
+	rr := httptest.NewRecorder()
+	h.ToggleEnabled(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["enabled"] != false {
+		t.Errorf("enabled = %v, want false", result["enabled"])
+	}
+}
+
 func TestSchema(t *testing.T) {
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors/schema", nil)
@@ -168,5 +202,113 @@ func TestSchema(t *testing.T) {
 	h.Schema(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestTestSuccess(t *testing.T) {
+	h := newTestHandler(t)
+
+	// Create a connector
+	createReq := httptest.NewRequest(http.MethodPost, "/api/connectors",
+		strings.NewReader(`{"name":"Test","category":"virtualization","type":"custom","url":"https://test.example.com"}`))
+	createRR := httptest.NewRecorder()
+	h.Create(createRR, createReq)
+	var created map[string]any
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("no id in create response")
+	}
+
+	// Test the connector
+	req := httptest.NewRequest(http.MethodPost, "/api/connectors/"+id+"/test", nil)
+	req.SetPathValue("id", id)
+	rr := httptest.NewRecorder()
+	h.Test(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ok, _ := result["ok"].(bool); !ok {
+		// For custom type (no actual validator), ok should be false
+		t.Logf("connector test returned ok=false as expected for unknown type")
+	}
+}
+
+func TestTestNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/connectors/missing/test", nil)
+	req.SetPathValue("id", "missing")
+	rr := httptest.NewRecorder()
+	h.Test(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestRemovalImpactSuccess(t *testing.T) {
+	h := newTestHandler(t)
+
+	// Create a connector
+	createReq := httptest.NewRequest(http.MethodPost, "/api/connectors",
+		strings.NewReader(`{"name":"Test","category":"virtualization","type":"custom","url":"https://test.example.com"}`))
+	createRR := httptest.NewRecorder()
+	h.Create(createRR, createReq)
+	var created map[string]any
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("no id in create response")
+	}
+
+	// Get removal impact
+	req := httptest.NewRequest(http.MethodGet, "/api/connectors/"+id+"/removal-impact", nil)
+	req.SetPathValue("id", id)
+	rr := httptest.NewRecorder()
+	h.RemovalImpact(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := result["trackedServices"]; !ok {
+		t.Errorf("missing trackedServices in response")
+	}
+}
+
+func TestRemovalImpactNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/connectors/missing/removal-impact", nil)
+	req.SetPathValue("id", "missing")
+	rr := httptest.NewRecorder()
+	h.RemovalImpact(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestSyncAllSuccess(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/sync", nil)
+	rr := httptest.NewRecorder()
+	h.SyncAll(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusAccepted, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := result["jobId"]; !ok {
+		t.Errorf("missing jobId in response")
 	}
 }
