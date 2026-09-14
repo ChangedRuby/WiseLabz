@@ -2,19 +2,16 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
@@ -22,6 +19,15 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
+
+// oidcFlowCookie is set on the browser that starts an OIDC login (from
+// Providers) and read back on OIDCCallback, binding the state/nonce to that
+// specific browser instead of trusting the caller-supplied state alone.
+// GET /api/auth/providers is unauthenticated, so a self-contained signed
+// state token can be handed to anyone and replayed from a different
+// browser/session (CSRF / authorization-code injection); the cookie closes
+// that gap.
+const oidcFlowCookie = "oidc_flow"
 
 // OIDCCallback handles POST /api/auth/oidc/callback.
 // Exchanges an OIDC authorization code for identity, creates or finds the user,
@@ -41,7 +47,9 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyOIDCState(h.Config.Auth.Secret, req.State, req.ProviderID) {
+	cookieState, nonce, ok := readOIDCFlowCookie(r, req.ProviderID)
+	clearOIDCFlowCookie(w, r, h.Config.Server.TrustedProxies, req.ProviderID)
+	if !ok || subtle.ConstantTimeCompare([]byte(cookieState), []byte(req.State)) != 1 {
 		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Invalid or expired state")
 		return
 	}
@@ -65,7 +73,7 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Exchange code for claims
-	claims, err := prov.Exchange(r.Context(), req.Code)
+	claims, err := prov.Exchange(r.Context(), req.Code, nonce)
 	if err != nil {
 		slog.Error("OIDC exchange failed", "error", err, "provider", logsafe.Sanitize(req.ProviderID))
 		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Failed to authenticate with provider")
@@ -148,7 +156,7 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setRefreshCookie(w, r, pair.RefreshToken, h.Config.Auth.RefreshTokenTTLDuration())
+	setRefreshCookie(w, r, h.Config.Server.TrustedProxies, pair.RefreshToken, h.Config.Auth.RefreshTokenTTLDuration())
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
 		"accessToken": pair.AccessToken,
@@ -168,7 +176,7 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+	if httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies) {
 		scheme = "https"
 	}
 	redirectURL := fmt.Sprintf("%s://%s/auth/callback", scheme, r.Host)
@@ -185,8 +193,18 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		state := signOIDCState(h.Config.Auth.Secret, p.ID)
-		authURL := prov.AuthURL(state, redirectURL)
+		state, err := randomOIDCToken()
+		if err != nil {
+			httputil.Errorf(w, err)
+			return
+		}
+		nonce, err := randomOIDCToken()
+		if err != nil {
+			httputil.Errorf(w, err)
+			return
+		}
+		setOIDCFlowCookie(w, r, h.Config.Server.TrustedProxies, p.ID, state, nonce)
+		authURL := prov.AuthURL(state, nonce, redirectURL)
 		oidc = append(oidc, providerInfo{
 			ID:          p.ID,
 			DisplayName: p.DisplayName,
@@ -277,42 +295,63 @@ func oidcRoleForGroups(groups []string, mapping map[string]string) string {
 	return role
 }
 
-// signOIDCState produces a signed, self-contained CSRF state token for the OIDC
-// login flow: no server-side session storage needed, since the provider and
-// expiry are embedded and HMAC-signed with the auth secret.
-func signOIDCState(secret, providerID string) string {
-	expiry := time.Now().Add(5 * time.Minute).Unix()
-	payload := fmt.Sprintf("%s:%d", providerID, expiry)
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(payload))
-	sig := hex.EncodeToString(mac.Sum(nil))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload + ":" + sig))
+// randomOIDCToken returns a random URL-safe token used as an OIDC state or
+// nonce value.
+func randomOIDCToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate oidc token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// verifyOIDCState validates a state token produced by signOIDCState: signature,
-// embedded provider ID, and expiry must all check out.
-func verifyOIDCState(secret, state, providerID string) bool {
-	raw, err := base64.RawURLEncoding.DecodeString(state)
-	if err != nil {
-		return false
-	}
-	parts := strings.Split(string(raw), ":")
-	if len(parts) < 3 {
-		return false
-	}
-	sig := parts[len(parts)-1]
-	expiryStr := parts[len(parts)-2]
-	pid := strings.Join(parts[:len(parts)-2], ":")
-	if pid != providerID {
-		return false
-	}
-	expiry, err := strconv.ParseInt(expiryStr, 10, 64)
-	if err != nil || time.Now().Unix() > expiry {
-		return false
-	}
+// oidcFlowCookieName derives a per-provider cookie name so concurrent login
+// attempts against different providers don't clobber each other's cookie.
+func oidcFlowCookieName(providerID string) string {
+	sum := sha256.Sum256([]byte(providerID))
+	return oidcFlowCookie + "_" + base64.RawURLEncoding.EncodeToString(sum[:12])
+}
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(pid + ":" + expiryStr))
-	expectedSig := hex.EncodeToString(mac.Sum(nil))
-	return subtle.ConstantTimeCompare([]byte(sig), []byte(expectedSig)) == 1
+// setOIDCFlowCookie stores the state/nonce generated for this browser's login
+// attempt in a short-lived HttpOnly cookie, scoped to the auth endpoints.
+func setOIDCFlowCookie(w http.ResponseWriter, r *http.Request, trustedProxies, providerID, state, nonce string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcFlowCookieName(providerID),
+		Value:    providerID + "." + state + "." + nonce,
+		Path:     "/api/auth",
+		MaxAge:   300,
+		HttpOnly: true,
+		// Secure is derived, not literal true, so CodeQL can't verify it;
+		// IsSecureRequest returns true for both direct TLS and a trusted
+		// TLS-terminating proxy.
+		Secure:   httputil.IsSecureRequest(r, trustedProxies), // codeql[go/cookie-secure-not-set]
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// readOIDCFlowCookie returns the state and nonce this browser was issued for
+// providerID, if any.
+func readOIDCFlowCookie(r *http.Request, providerID string) (state, nonce string, ok bool) {
+	cookie, err := r.Cookie(oidcFlowCookieName(providerID))
+	if err != nil {
+		return "", "", false
+	}
+	parts := strings.SplitN(cookie.Value, ".", 3)
+	if len(parts) != 3 || parts[0] != providerID || parts[1] == "" || parts[2] == "" {
+		return "", "", false
+	}
+	return parts[1], parts[2], true
+}
+
+// clearOIDCFlowCookie deletes the flow cookie so it cannot be replayed.
+func clearOIDCFlowCookie(w http.ResponseWriter, r *http.Request, trustedProxies, providerID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcFlowCookieName(providerID),
+		Value:    "",
+		Path:     "/api/auth",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   httputil.IsSecureRequest(r, trustedProxies), // codeql[go/cookie-secure-not-set]
+		SameSite: http.SameSiteLaxMode,
+	})
 }

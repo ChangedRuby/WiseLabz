@@ -312,8 +312,8 @@ func sanitizeSessions(sessions []store.Session, currentHash string) []map[string
 	return out
 }
 
-func setRefreshCookie(w http.ResponseWriter, r *http.Request, token string, maxAge time.Duration) {
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+func setRefreshCookie(w http.ResponseWriter, r *http.Request, trustedProxies, token string, maxAge time.Duration) {
+	secure := httputil.IsSecureRequest(r, trustedProxies)
 	// Remove the pre-#83 path-scoped cookie so a browser cannot replay it first.
 	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/auth", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	http.SetCookie(w, &http.Cookie{

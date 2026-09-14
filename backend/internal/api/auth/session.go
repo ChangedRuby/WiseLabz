@@ -58,7 +58,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setRefreshCookie(w, r, pair.RefreshToken, h.Config.Auth.RefreshTokenTTLDuration())
+	setRefreshCookie(w, r, h.Config.Server.TrustedProxies, pair.RefreshToken, h.Config.Auth.RefreshTokenTTLDuration())
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
 		"accessToken": pair.AccessToken,
@@ -81,7 +81,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 				Expires:  time.Unix(0, 0),
 				MaxAge:   -1,
 				HttpOnly: true,
-				Secure:   h.Config.Server.Embed,
+				Secure:   httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies),
 				SameSite: http.SameSiteLaxMode,
 			})
 		}

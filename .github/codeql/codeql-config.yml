@@ -1,0 +1,13 @@
+name: "CodeQL config"
+
+# custom.go intentionally sends requests to operator-supplied internal URLs
+# (Proxmox/pfSense/OPNsense/etc.); SSRF is mitigated at dial time by
+# connector.GuardedDialer, which CodeQL's dataflow analysis cannot see.
+# go/request-forgery has been raised and dismissed as "won't fix" on this
+# exact line 3 times (alerts #1, #17, #20); inline `codeql[go/request-forgery]`
+# suppression comments do not take effect for this query in this pipeline
+# (verified: comment present since 2026-09-09, alert #20 still opened
+# 2026-09-10 and survived scans through 2026-09-12), so exclude the file
+# itself rather than keep dismissing new alert numbers.
+paths-ignore:
+  - backend/internal/connector/custom/custom.go

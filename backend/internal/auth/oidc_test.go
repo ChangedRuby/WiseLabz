@@ -50,7 +50,7 @@ func TestAuthURLBeforeInitialization(t *testing.T) {
 			t.Error("AuthURL() before initialization should panic, but didn't")
 		}
 	}()
-	_ = provider.AuthURL("state123", "http://localhost/callback")
+	_ = provider.AuthURL("state123", "nonce123", "http://localhost/callback")
 }
 
 func TestExtractGroups(t *testing.T) {
@@ -167,7 +167,7 @@ func TestAuthURLAfterInitialization(t *testing.T) {
 	}
 
 	redirectURL := "http://localhost:8080/callback"
-	authURL := provider.AuthURL("state-abc123", redirectURL)
+	authURL := provider.AuthURL("state-abc123", "nonce-abc123", redirectURL)
 
 	if authURL == "" {
 		t.Error("AuthURL() returned empty string")

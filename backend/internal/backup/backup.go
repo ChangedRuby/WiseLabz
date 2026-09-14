@@ -397,7 +397,9 @@ type Run struct {
 
 // ExportToFile calls Export, marshals the bundle to JSON, writes it to
 // {dir}/wiselabz-backup-{RFC3339 timestamp}.json, and returns metadata about
-// the created file. The directory is created if it does not exist (0o755).
+// the created file. The directory is created if it does not exist (0o700),
+// and the file is written 0o600 since the bundle is a full infrastructure
+// inventory even with secrets redacted.
 func ExportToFile(ctx context.Context, s *store.Store, dir string) (Run, error) {
 	var run Run
 	run.ID = uuid.New().String()
@@ -409,8 +411,10 @@ func ExportToFile(ctx context.Context, s *store.Store, dir string) (Run, error) 
 		return run, fmt.Errorf("export bundle: %w", err)
 	}
 
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// Create directory if it doesn't exist. The bundle is a full
+	// infrastructure inventory, so keep it private to the owning user even
+	// though secrets are redacted before export.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return run, fmt.Errorf("create backup directory: %w", err)
 	}
 
@@ -425,7 +429,7 @@ func ExportToFile(ctx context.Context, s *store.Store, dir string) (Run, error) 
 	filename := fmt.Sprintf("wiselabz-backup-%s.json", timestamp)
 	path := filepath.Join(dir, filename)
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return run, fmt.Errorf("write backup file: %w", err)
 	}
 

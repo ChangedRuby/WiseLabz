@@ -41,6 +41,21 @@ func ClientIP(r *http.Request, trustedProxyCIDRs string) string {
 	return peer
 }
 
+// IsSecureRequest reports whether the request arrived over HTTPS, for
+// deciding a response cookie's Secure flag. X-Forwarded-Proto is
+// attacker-controlled on any request that didn't pass through a trusted
+// reverse proxy, so it is only trusted under the same peer check ClientIP
+// uses for X-Forwarded-For/X-Real-IP.
+func IsSecureRequest(r *http.Request, trustedProxyCIDRs string) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !isTrustedProxy(hostOnly(r.RemoteAddr), trustedProxyCIDRs) {
+		return false
+	}
+	return r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
 func hostOnly(addr string) string {
 	if host, _, err := net.SplitHostPort(addr); err == nil {
 		return host

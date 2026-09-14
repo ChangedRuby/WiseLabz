@@ -349,3 +349,39 @@ func TestExportToFileCreatesDirectory(t *testing.T) {
 		t.Fatalf("backup file not found: %v", err)
 	}
 }
+
+// TestExportToFilePermissions is a regression test for GHSA-c753: the backup
+// bundle is a full infrastructure inventory (secrets redacted, but still
+// sensitive) and must not be readable by other local users.
+func TestExportToFilePermissions(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits aren't enforced")
+	}
+
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	tmpBase := t.TempDir()
+	tmpDir := fmt.Sprintf("%s/backups", tmpBase)
+
+	run, err := backup.ExportToFile(ctx, s, tmpDir)
+	if err != nil {
+		t.Fatalf("ExportToFile: %v", err)
+	}
+
+	dirInfo, err := os.Stat(tmpDir)
+	if err != nil {
+		t.Fatalf("stat backup dir: %v", err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Errorf("backup directory permissions = %o, want 0700", perm)
+	}
+
+	fileInfo, err := os.Stat(run.FilePath)
+	if err != nil {
+		t.Fatalf("stat backup file: %v", err)
+	}
+	if perm := fileInfo.Mode().Perm(); perm != 0o600 {
+		t.Errorf("backup file permissions = %o, want 0600", perm)
+	}
+}
