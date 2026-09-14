@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,6 +133,10 @@ func main() {
 	// Seed the backup schedule from config defaults if no row exists yet.
 	// api.NewRouter's InitBackupJob reads it back and registers the cron job.
 	if _, err := s.GetBackupSchedule(ctx); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			logger.Error("Failed to read backup schedule", "error", err)
+			os.Exit(1)
+		}
 		logger.Info("Initializing backup schedule with defaults")
 		defaultSched := store.BackupSchedule{
 			CronExpr:    cfg.Backup.CronExpr,
@@ -148,6 +153,10 @@ func main() {
 	// Seed the retention settings from config defaults if no row exists yet.
 	// api.NewRouter's InitRetentionJob reads it back and registers the cron job.
 	if _, err := s.GetRetentionSettings(ctx); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			logger.Error("Failed to read retention settings", "error", err)
+			os.Exit(1)
+		}
 		logger.Info("Initializing retention settings with defaults")
 		defaultRetention := store.RetentionSettings{
 			SnapshotDays:   cfg.Retention.SnapshotDays,
@@ -240,6 +249,12 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", "error", err)
 	}
+
+	// Stop() blocks until any in-flight job (e.g. a backup) finishes, so the
+	// DB below is only closed once nothing is still using it. Safe to call
+	// even though Start's ctx-watcher goroutine may also call it concurrently
+	// (cron.Cron.Stop is idempotent).
+	jobRunner.Stop()
 
 	if err := s.Close(); err != nil {
 		logger.Error("Failed to close store", "error", err)

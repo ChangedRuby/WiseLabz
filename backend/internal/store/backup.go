@@ -207,3 +207,34 @@ func placeholders(n int) string {
 	}
 	return result
 }
+
+// existingIDs returns the subset of ids already present in table's id
+// column, in one round-trip. table is always an internal literal (never
+// user input), so it's safe to concatenate directly into the query.
+func existingIDs(ctx context.Context, db DBTX, table string, ids []string) (map[string]bool, error) {
+	existing := make(map[string]bool, len(ids))
+	if len(ids) == 0 {
+		return existing, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id FROM `+table+` WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("check existing %s: %w", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan existing %s id: %w", table, err)
+		}
+		existing[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate existing %s: %w", table, err)
+	}
+	return existing, nil
+}

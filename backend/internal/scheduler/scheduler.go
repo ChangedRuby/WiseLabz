@@ -103,12 +103,16 @@ func (r *Runner) Start(ctx context.Context) {
 	}()
 }
 
-// Stop gracefully stops the cron runner.
+// Stop gracefully stops the cron runner, blocking until any in-flight job
+// finishes. This lets callers (e.g. server shutdown) safely close shared
+// resources like the DB right after Stop returns.
 func (r *Runner) Stop() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	c := r.c
+	r.mu.Unlock()
 
-	// c.Stop() returns a context that is done when all jobs have completed
-	_ = r.c.Stop()
+	// c.Stop() returns a context that is done when all in-flight jobs have
+	// completed.
+	<-c.Stop().Done()
 	r.logger.Info("Scheduler stopped")
 }

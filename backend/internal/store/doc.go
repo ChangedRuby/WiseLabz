@@ -130,6 +130,12 @@ func (s *Store) CreateDoc(ctx context.Context, d *DocRecord) error {
 	return nil
 }
 
+// ExistingDocIDs returns the subset of ids that already exist as docs, in
+// one query — used by backup import to check N records without N round-trips.
+func (s *Store) ExistingDocIDs(ctx context.Context, ids []string) (map[string]bool, error) {
+	return existingIDs(ctx, s.db, "docs", ids)
+}
+
 // GetDoc retrieves a single documentation record by ID.
 func (s *Store) GetDoc(ctx context.Context, id string) (*DocRecord, error) {
 	d := &DocRecord{}
@@ -351,6 +357,41 @@ func (s *Store) GetDocVersions(ctx context.Context, docID string) ([]DocVersionR
 	return versions, nil
 }
 
+// GetAllDocVersions returns version records for every given doc in one
+// query (newest-per-doc first), replacing a GetDocVersions call per doc.
+func (s *Store) GetAllDocVersions(ctx context.Context, docIDs []string) ([]DocVersionRecord, error) {
+	versions := []DocVersionRecord{}
+	if len(docIDs) == 0 {
+		return versions, nil
+	}
+	args := make([]any, len(docIDs))
+	for i, id := range docIDs {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, doc_id, rev, content, author, trigger, created_at
+		FROM doc_versions WHERE doc_id IN (`+placeholders(len(docIDs))+`) ORDER BY doc_id, rev DESC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get all doc versions: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var v DocVersionRecord
+		var author sql.NullString
+		if err := rows.Scan(&v.ID, &v.DocID, &v.Rev, &v.Content, &author, &v.Trigger, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		v.Author = author.String
+		versions = append(versions, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate doc versions: %w", err)
+	}
+	return versions, nil
+}
+
 // --- Template CRUD ---
 
 // CreateTemplate inserts a new documentation template.
@@ -375,6 +416,13 @@ func (s *Store) CreateTemplate(ctx context.Context, t *TemplateRecord) error {
 		return fmt.Errorf("create template: %w", err)
 	}
 	return nil
+}
+
+// ExistingTemplateIDs returns the subset of ids that already exist as
+// templates, in one query — used by backup import to check N records
+// without N round-trips.
+func (s *Store) ExistingTemplateIDs(ctx context.Context, ids []string) (map[string]bool, error) {
+	return existingIDs(ctx, s.db, "templates", ids)
 }
 
 // GetTemplate retrieves a single template record by ID.
@@ -582,6 +630,40 @@ func (s *Store) GetTemplateSections(ctx context.Context, templateID string) ([]T
 	}
 	if sections == nil {
 		sections = []TemplateSectionRecord{}
+	}
+	return sections, nil
+}
+
+// GetAllTemplateSections returns sections for every given template in one
+// query (ordered per template), replacing a GetTemplateSections call per
+// template.
+func (s *Store) GetAllTemplateSections(ctx context.Context, templateIDs []string) ([]TemplateSectionRecord, error) {
+	sections := []TemplateSectionRecord{}
+	if len(templateIDs) == 0 {
+		return sections, nil
+	}
+	args := make([]any, len(templateIDs))
+	for i, id := range templateIDs {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, template_id, title, ord, body
+		FROM template_sections WHERE template_id IN (`+placeholders(len(templateIDs))+`) ORDER BY template_id, ord
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get all template sections: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var sec TemplateSectionRecord
+		if err := rows.Scan(&sec.ID, &sec.TemplateID, &sec.Title, &sec.Ord, &sec.Body); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		sections = append(sections, sec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate template sections: %w", err)
 	}
 	return sections, nil
 }
