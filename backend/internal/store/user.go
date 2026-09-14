@@ -238,41 +238,25 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	return nil
 }
 
+// userColumns is the shared column list for the ListUsers SELECT.
+const userColumns = `id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at`
+
+func scanUser(row rowScanner) (User, error) {
+	var u User
+	var disabled, canManageDashboardDefaults int
+	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
+		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
+	if err != nil {
+		return User{}, err
+	}
+	u.Disabled = disabled != 0
+	u.CanManageDashboardDefaults = canManageDashboardDefaults != 0
+	return u, nil
+}
+
 // ListUsers returns a paginated list of users.
 func (s *Store) ListUsers(ctx context.Context, offset, limit int) ([]User, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count users: %w", err)
-	}
-
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
-		FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
-	`, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list users: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var users []User
-	for rows.Next() {
-		var u User
-		var disabled, canManageDashboardDefaults int
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
-			&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan user: %w", err)
-		}
-		u.Disabled = disabled != 0
-		u.CanManageDashboardDefaults = canManageDashboardDefaults != 0
-		users = append(users, u)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate users: %w", err)
-	}
-	if users == nil {
-		users = []User{}
-	}
-	return users, total, nil
+	return paginatedQuery(ctx, s.db, "users", userColumns, "", nil, "created_at DESC", limit, offset, scanUser)
 }
 
 // CountUsers returns the total number of users.

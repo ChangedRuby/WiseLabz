@@ -47,6 +47,19 @@ func Errorf(w http.ResponseWriter, err error) {
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
 }
 
+// DecodeJSON decodes the request body into a T. On failure it writes the
+// standard 400 "invalid_request" response and returns the zero value with
+// ok=false; callers should return immediately when ok is false.
+func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+	var v T
+	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+		Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+		var zero T
+		return zero, false
+	}
+	return v, true
+}
+
 // PaginatedResponse wraps a paginated list response. Matches the AlertPage /
 // ChangePage OpenAPI schemas: { items, total, page, pageSize }.
 type PaginatedResponse struct {

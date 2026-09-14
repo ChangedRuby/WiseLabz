@@ -65,14 +65,13 @@ func (h *Handler) GetAuthConfig(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAuthConfig handles PUT /api/auth/config.
 func (h *Handler) UpdateAuthConfig(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		LocalEnabled         *bool `json:"localEnabled"`
 		AccessTokenTTL       *int  `json:"accessTokenTtl"`
 		RefreshTokenTTL      *int  `json:"refreshTokenTtl"`
 		StepUpForDestructive *bool `json:"stepUpForDestructive"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -140,11 +139,10 @@ func (h *Handler) UpdateProviderEnabled(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -251,16 +249,15 @@ func (h *Handler) GetAIConfig(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAIConfig handles PUT /api/ai/config.
 func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Enabled  *bool   `json:"enabled"`
 		Provider *string `json:"provider"`
 		Model    *string `json:"model"`
 		APIKey   *string `json:"apiKey"`
 		BaseURL  *string `json:"baseUrl"`
 		Mode     *string `json:"mode"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -379,9 +376,8 @@ func (h *Handler) GetNotificationsConfig(w http.ResponseWriter, r *http.Request)
 
 // UpdateNotificationsConfig handles PUT /api/notifications/config.
 func (h *Handler) UpdateNotificationsConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg notificationConfigDoc
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	cfg, ok := httputil.DecodeJSON[notificationConfigDoc](w, r)
+	if !ok {
 		return
 	}
 	if cfg.Channels == nil {

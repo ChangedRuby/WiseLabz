@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
@@ -29,6 +30,10 @@ const repeatDriftWindow = time.Hour
 // notifications.retrySchedule.
 // ponytail: fixed schedule, not exponential-from-config; add jitter/config if a real deployment needs it.
 var retrySchedule = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, 30 * time.Minute, time.Hour}
+
+// maxSyncConcurrency bounds how many connectors RunSyncAll fetches at once,
+// matching notifications.maxConcurrentNotifications' fanout pattern.
+const maxSyncConcurrency = 4
 
 // computeNextRun decides a connector's next scheduled run time and updated
 // retry count after one sync attempt. Unlike notification delivery retries
@@ -519,17 +524,37 @@ func (e *Engine) RunSyncAll(ctx context.Context, jobID string) ([]RunResult, err
 		return nil, fmt.Errorf("list connectors: %w", err)
 	}
 
-	var results []RunResult
-	for _, c := range connectors {
+	// Fetch+write each connector concurrently, bounded by a semaphore, mirroring
+	// notifications.Dispatcher's fanoutSem pattern. Results are written to
+	// per-index slots so ordering stays deterministic (matching connectors order)
+	// despite concurrent completion.
+	sem := make(chan struct{}, maxSyncConcurrency)
+	slots := make([]*RunResult, len(connectors))
+	var wg sync.WaitGroup
+	for i, c := range connectors {
 		if !c.Enabled {
 			continue
 		}
-		result, err := e.RunSync(ctx, c.ID, jobID)
-		if err != nil {
-			slog.Error("sync failed", "connector", c.ID, "error", err)
-			continue
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(i int, connectorID string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			result, err := e.RunSync(ctx, connectorID, jobID)
+			if err != nil {
+				slog.Error("sync failed", "connector", connectorID, "error", err)
+				return
+			}
+			slots[i] = result
+		}(i, c.ID)
+	}
+	wg.Wait()
+
+	var results []RunResult
+	for _, r := range slots {
+		if r != nil {
+			results = append(results, *r)
 		}
-		results = append(results, *result)
 	}
 	return results, nil
 }

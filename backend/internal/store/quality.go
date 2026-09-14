@@ -109,30 +109,7 @@ func (s *Store) ListQualityFindings(ctx context.Context, connectorID, checkType,
 		args = append(args, since)
 	}
 
-	var total int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM quality_findings "+where, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count quality findings: %w", err)
-	}
-
-	rows, err := s.db.QueryContext(ctx, `SELECT `+qualityFindingColumns+`
-		FROM quality_findings `+where+` ORDER BY last_seen_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list quality findings: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	findings := make([]QualityFindingRecord, 0)
-	for rows.Next() {
-		f, err := scanQualityFinding(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan quality finding: %w", err)
-		}
-		findings = append(findings, f)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate quality findings: %w", err)
-	}
-	return findings, total, nil
+	return paginatedQuery(ctx, s.db, "quality_findings", qualityFindingColumns, where, args, "last_seen_at DESC", limit, offset, scanQualityFinding)
 }
 
 // UpdateQualityFindingStatus changes a finding's status and resolution time.

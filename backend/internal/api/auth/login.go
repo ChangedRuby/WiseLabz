@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -35,12 +34,11 @@ func mustHashDummyPassword() string {
 // Login handles POST /api/auth/login.
 // Validates local credentials and returns a JWT token pair.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Username == "" || req.Password == "" {
@@ -132,12 +130,11 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		DisplayName *string `json:"displayName"`
 		Email       *string `json:"email"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -167,12 +164,11 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.CurrentPassword == "" || req.NewPassword == "" {

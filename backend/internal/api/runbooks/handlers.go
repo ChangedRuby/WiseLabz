@@ -102,9 +102,8 @@ type createRequest struct {
 
 // Create handles POST /api/runbooks.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	req, ok := httputil.DecodeJSON[createRequest](w, r)
+	if !ok {
 		return
 	}
 	if req.Title == "" || req.TargetValue == "" {
@@ -157,9 +156,8 @@ var updateNullableFields = map[string]string{
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var raw map[string]json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	raw, ok := httputil.DecodeJSON[map[string]json.RawMessage](w, r)
+	if !ok {
 		return
 	}
 

@@ -50,13 +50,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/saved-views.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Surface string          `json:"surface"`
 		Name    string          `json:"name"`
 		Filters json.RawMessage `json:"filters"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if !surfaces[req.Surface] {

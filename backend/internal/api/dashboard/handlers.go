@@ -111,11 +111,10 @@ func (h *Handler) GetAdminDefault(w http.ResponseWriter, r *http.Request) {
 
 // PutAdminDefault handles PUT /api/dashboard/layout/admin-default.
 func (h *Handler) PutAdminDefault(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Widgets json.RawMessage `json:"widgets"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -162,11 +161,10 @@ func (h *Handler) ResetLayout(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SaveLayout(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Widgets json.RawMessage `json:"widgets"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 

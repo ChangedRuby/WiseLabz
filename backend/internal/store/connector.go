@@ -247,38 +247,12 @@ func (s *Store) DeleteConnector(ctx context.Context, id string) error {
 
 // ListConnectors returns a paginated list of connectors.
 func (s *Store) ListConnectors(ctx context.Context, offset, limit int) ([]ConnectorRecord, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM connectors`).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count connectors: %w", err)
-	}
-
-	rows, err := s.db.QueryContext(ctx, `SELECT `+connectorColumns+`
-		FROM connectors ORDER BY created_at DESC LIMIT ? OFFSET ?
-	`, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list connectors: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	return scanConnectors(rows)
+	return paginatedQuery(ctx, s.db, "connectors", connectorColumns, "", nil, "created_at DESC", limit, offset, scanConnector)
 }
 
 // ListConnectorsByCategory returns connectors filtered by category.
 func (s *Store) ListConnectorsByCategory(ctx context.Context, category string, offset, limit int) ([]ConnectorRecord, int, error) {
-	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM connectors WHERE category = ?`, category).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count connectors by category: %w", err)
-	}
-
-	rows, err := s.db.QueryContext(ctx, `SELECT `+connectorColumns+`
-		FROM connectors WHERE category = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
-	`, category, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list connectors by category: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	return scanConnectors(rows)
+	return paginatedQuery(ctx, s.db, "connectors", connectorColumns, "WHERE category = ?", []any{category}, "created_at DESC", limit, offset, scanConnector)
 }
 
 // ListAllConnectors returns all connectors (no pagination).
@@ -291,8 +265,7 @@ func (s *Store) ListAllConnectors(ctx context.Context) ([]ConnectorRecord, error
 	}
 	defer rows.Close() //nolint:errcheck
 
-	connectors, _, err := scanConnectors(rows)
-	return connectors, err
+	return scanConnectorRows(rows)
 }
 
 // ListDueConnectors returns enabled connectors with a schedule whose next run
@@ -309,8 +282,7 @@ func (s *Store) ListDueConnectors(ctx context.Context, now string, limit int) ([
 	}
 	defer rows.Close() //nolint:errcheck
 
-	connectors, _, err := scanConnectors(rows)
-	return connectors, err
+	return scanConnectorRows(rows)
 }
 
 // --- Snapshot operations ---
@@ -410,37 +382,44 @@ func (s *Store) CountAlertsByConnector(ctx context.Context, connectorID string) 
 
 // --- helpers ---
 
-func scanConnectors(rows *sql.Rows) ([]ConnectorRecord, int, error) {
-	var connectors []ConnectorRecord
+func scanConnector(row rowScanner) (ConnectorRecord, error) {
+	var c ConnectorRecord
+	var verifyTLS, enabled int
+	var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
+	var scheduleSeconds, lastSyncDurationMs sql.NullInt64
+	if err := row.Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
+		&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
+		&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
+		&c.CreatedAt, &c.UpdatedAt); err != nil {
+		return ConnectorRecord{}, err
+	}
+	c.VerifyTLS = verifyTLS != 0
+	c.Owner = nullStrToStr(owner)
+	c.Enabled = enabled != 0
+	c.LastSyncAt = nullStrToStr(lastSyncAt)
+	c.NextRunAt = nullStrToStr(nextRunAt)
+	c.LastSyncError = nullStrToStr(lastSyncError)
+	c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
+	c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
+	c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
+	return c, nil
+}
+
+// scanConnectorRows scans every row of a connectors query (non-paginated
+// callers that don't go through paginatedQuery). Never returns a nil slice.
+func scanConnectorRows(rows *sql.Rows) ([]ConnectorRecord, error) {
+	connectors := make([]ConnectorRecord, 0)
 	for rows.Next() {
-		var c ConnectorRecord
-		var verifyTLS, enabled int
-		var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
-		var scheduleSeconds, lastSyncDurationMs sql.NullInt64
-		if err := rows.Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
-			&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
-			&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
-			&c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan connector: %w", err)
+		c, err := scanConnector(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan connector: %w", err)
 		}
-		c.VerifyTLS = verifyTLS != 0
-		c.Owner = nullStrToStr(owner)
-		c.Enabled = enabled != 0
-		c.LastSyncAt = nullStrToStr(lastSyncAt)
-		c.NextRunAt = nullStrToStr(nextRunAt)
-		c.LastSyncError = nullStrToStr(lastSyncError)
-		c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
-		c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
-		c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
 		connectors = append(connectors, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate connectors: %w", err)
+		return nil, fmt.Errorf("iterate connectors: %w", err)
 	}
-	if connectors == nil {
-		connectors = []ConnectorRecord{}
-	}
-	return connectors, len(connectors), nil
+	return connectors, nil
 }
 
 // nullInt64ToIntPtr converts a nullable DB integer to *int (nil when NULL).

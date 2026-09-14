@@ -4,7 +4,6 @@ package apikeys
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -30,12 +29,11 @@ func NewHandler(s *store.Store) *Handler {
 // Create handles POST /api/auth/api-keys. The raw token is returned only in
 // this response and is never persisted or included in list responses.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Name      string `json:"name"`
 		ExpiresAt string `json:"expiresAt"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)

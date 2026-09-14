@@ -61,7 +61,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/connectors.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Name      string         `json:"name"`
 		Category  string         `json:"category"`
 		Type      string         `json:"type"`
@@ -70,9 +70,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		VerifyTLS *bool          `json:"verifyTls"`
 		Config    map[string]any `json:"config"`
 		Enabled   *bool          `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Name == "" || req.Category == "" || req.Type == "" || req.URL == "" {
@@ -148,7 +147,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Name      *string        `json:"name"`
 		URL       *string        `json:"url"`
 		Owner     *string        `json:"owner"`
@@ -161,9 +160,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		// apart from an explicit `null` (clear to manual-only): a **int decodes
 		// both to a nil outer pointer, losing that distinction.
 		ScheduleSeconds json.RawMessage `json:"scheduleSeconds"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -608,11 +606,10 @@ func (h *Handler) Schema(w http.ResponseWriter, _ *http.Request) {
 // ToggleEnabled handles PUT /api/connectors/{id}/enabled.
 func (h *Handler) ToggleEnabled(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 

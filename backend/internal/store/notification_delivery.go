@@ -113,40 +113,15 @@ func (s *Store) ListDueDeliveries(ctx context.Context, now string, limit int) ([
 // optionally filtered by status. Never returns a nil slice.
 func (s *Store) ListDeliveries(ctx context.Context, status string, offset, limit int) ([]DeliveryRecord, int, error) {
 	where := ""
-	args := []any{}
+	var args []any
 	if status != "" {
 		where = "WHERE status = ?"
 		args = append(args, status)
 	}
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM notification_deliveries " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count deliveries: %w", err)
-	}
-
-	query := `SELECT id, notification_id, channel, status, attempts, last_error, next_attempt_at, created_at, updated_at
-		FROM notification_deliveries ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list deliveries: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	deliveries := []DeliveryRecord{}
-	for rows.Next() {
-		d, err := scanDelivery(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		deliveries = append(deliveries, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate deliveries: %w", err)
-	}
-	return deliveries, total, nil
+	return paginatedQuery(ctx, s.db, "notification_deliveries",
+		"id, notification_id, channel, status, attempts, last_error, next_attempt_at, created_at, updated_at",
+		where, args, "created_at DESC", limit, offset, scanDelivery)
 }
 
 func scanDelivery(row rowScanner) (DeliveryRecord, error) {

@@ -151,7 +151,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/templates.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Name        string          `json:"name"`
 		Description string          `json:"description"`
 		AppliesTo   json.RawMessage `json:"appliesTo"`
@@ -160,9 +160,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			Order int    `json:"order"`
 			Body  string `json:"body"`
 		} `json:"sections"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Name == "" {
@@ -204,7 +203,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	defer h.versionMu.Unlock()
 
 	id := r.PathValue("id")
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Name        *string          `json:"name"`
 		Description *string          `json:"description"`
 		AppliesTo   *json.RawMessage `json:"appliesTo"`
@@ -214,9 +213,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 			Order int     `json:"order"`
 			Body  string  `json:"body"`
 		} `json:"sections"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 

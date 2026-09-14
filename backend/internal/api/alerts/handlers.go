@@ -3,7 +3,6 @@ package alerts
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -140,11 +139,10 @@ func (h *Handler) Dismiss(w http.ResponseWriter, r *http.Request) {
 // Snooze handles POST /api/alerts/{id}/snooze.
 func (h *Handler) Snooze(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Until string `json:"until"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.Until == "" {
@@ -193,9 +191,8 @@ type bulkSnoozeItemResult struct {
 // One bad ID never aborts the batch: every item gets its own success/error
 // outcome, and one audit record is written per successfully-snoozed item.
 func (h *Handler) BulkSnooze(w http.ResponseWriter, r *http.Request) {
-	var req bulkSnoozeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	req, ok := httputil.DecodeJSON[bulkSnoozeRequest](w, r)
+	if !ok {
 		return
 	}
 	if req.Until == "" {

@@ -170,13 +170,12 @@ func (h *Handler) ByService(w http.ResponseWriter, r *http.Request) {
 // Save handles PUT /api/docs/{id}.
 func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		Content     string `json:"content"`
 		BaseVersion *int   `json:"baseVersion"`
 		Trigger     string `json:"trigger"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 
@@ -352,12 +351,11 @@ func (h *Handler) ReleaseLock(w http.ResponseWriter, r *http.Request) {
 // Generate handles POST /api/docs/generate.
 // Generates a doc from a template and connector snapshot.
 func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := httputil.DecodeJSON[struct {
 		TemplateID  string `json:"templateId"`
 		ConnectorID string `json:"connectorId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	}](w, r)
+	if !ok {
 		return
 	}
 	if req.TemplateID == "" || req.ConnectorID == "" {

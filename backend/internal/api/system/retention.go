@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -61,9 +60,8 @@ type RetentionSettingsRequest struct {
 // UpdateRetentionSettings handles PUT /api/system/settings/retention. Operator-only.
 // Updates the retention settings and re-registers the cron job.
 func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request) {
-	var req RetentionSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+	req, ok := httputil.DecodeJSON[RetentionSettingsRequest](w, r)
+	if !ok {
 		return
 	}
 

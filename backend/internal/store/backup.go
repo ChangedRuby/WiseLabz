@@ -74,40 +74,18 @@ func (s *Store) CreateBackupRun(ctx context.Context, run BackupRun) error {
 	return nil
 }
 
+func scanBackupRun(row rowScanner) (BackupRun, error) {
+	var run BackupRun
+	err := row.Scan(&run.ID, &run.TriggeredBy, &run.FilePath, &run.SizeBytes, &run.CreatedAt)
+	return run, err
+}
+
 // ListBackupRuns returns a paginated list of backup runs, ordered by created_at DESC.
 // Returns (runs, total_count, error).
 func (s *Store) ListBackupRuns(ctx context.Context, limit, offset int) ([]BackupRun, int, error) {
-	// Get total count
-	var total int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM backup_runs").Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count backup runs: %w", err)
-	}
-
-	// Query paginated results
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, triggered_by, file_path, size_bytes, created_at
-		FROM backup_runs
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("query backup runs: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var runs []BackupRun
-	for rows.Next() {
-		var run BackupRun
-		if err := rows.Scan(&run.ID, &run.TriggeredBy, &run.FilePath, &run.SizeBytes, &run.CreatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan backup run: %w", err)
-		}
-		runs = append(runs, run)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("backup runs iteration: %w", err)
-	}
-
-	return runs, total, nil
+	return paginatedQuery(ctx, s.db, "backup_runs",
+		"id, triggered_by, file_path, size_bytes, created_at",
+		"", nil, "created_at DESC", limit, offset, scanBackupRun)
 }
 
 // PruneBackupRuns deletes backup runs that are either:
