@@ -199,6 +199,11 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			h.logError("failed to delete user sessions after disable", err)
 		}
 	}
+	if disabled, ok := updates["disabled"].(bool); ok && disabled {
+		if err := h.Store.RevokeAllAPIKeysForUser(r.Context(), userID); err != nil {
+			h.logError("failed to revoke api keys after disable", err)
+		}
+	}
 
 	user, _ := h.Store.GetUserByID(r.Context(), userID)
 	httputil.JSON(w, http.StatusOK, sanitizeUser(user))

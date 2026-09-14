@@ -211,8 +211,11 @@ func main() {
 
 	// Start HTTP server
 	srv := &http.Server{
-		Addr:    cfg.Server.Addr(),
-		Handler: router,
+		Addr:              cfg.Server.Addr(),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second, // slowloris mitigation on an unauthenticated listener
+		ReadTimeout:       cfg.Server.ReadTimeoutDuration(),
+		WriteTimeout:      cfg.Server.WriteTimeoutDuration(),
 	}
 
 	go func() {

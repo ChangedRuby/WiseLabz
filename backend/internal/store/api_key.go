@@ -79,19 +79,28 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 }
 
 // LookupAPIKey adapts the stored key to the auth middleware without coupling
-// the auth package to the store package.
+// the auth package to the store package. It joins users so a key's effective
+// role always reflects the user's current role, and a disabled user's keys
+// are rejected even if the key itself is still active.
 func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKeyClaims, error) {
-	key, err := s.GetAPIKeyByHash(ctx, tokenHash)
-	if err != nil {
-		return nil, err
+	claims := &auth.APIKeyClaims{}
+	var disabled int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT api_keys.id, api_keys.user_id, users.role, api_keys.expires_at, api_keys.revoked_at, users.disabled
+		FROM api_keys
+		JOIN users ON users.id = api_keys.user_id
+		WHERE api_keys.token_hash = ?
+	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &claims.Role, &claims.ExpiresAt, &claims.RevokedAt, &disabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
 	}
-	return &auth.APIKeyClaims{
-		KeyID:     key.ID,
-		UserID:    key.UserID,
-		Role:      key.Role,
-		ExpiresAt: key.ExpiresAt,
-		RevokedAt: key.RevokedAt,
-	}, nil
+	if err != nil {
+		return nil, fmt.Errorf("lookup api key: %w", err)
+	}
+	if disabled != 0 {
+		return nil, ErrNotFound
+	}
+	return claims, nil
 }
 
 // ListAPIKeysForUser returns all API keys owned by a user, newest first.
@@ -134,6 +143,18 @@ func (s *Store) RevokeAPIKey(ctx context.Context, id string) error {
 	}
 	if rows == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// RevokeAllAPIKeysForUser revokes every active API key owned by a user, e.g.
+// when the account is disabled.
+func (s *Store) RevokeAllAPIKeysForUser(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE api_keys SET revoked_at = ? WHERE user_id = ? AND revoked_at = ''
+	`, time.Now().UTC().Format(time.RFC3339), userID)
+	if err != nil {
+		return fmt.Errorf("revoke all api keys for user: %w", err)
 	}
 	return nil
 }

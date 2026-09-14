@@ -49,6 +49,22 @@ func (s Server) Addr() string {
 	return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }
 
+// ReadTimeoutDuration returns the HTTP read timeout as a duration.
+func (s Server) ReadTimeoutDuration() time.Duration {
+	if s.ReadTimeoutSeconds <= 0 {
+		return 10 * time.Second
+	}
+	return time.Duration(s.ReadTimeoutSeconds) * time.Second
+}
+
+// WriteTimeoutDuration returns the HTTP write timeout as a duration.
+func (s Server) WriteTimeoutDuration() time.Duration {
+	if s.WriteTimeoutSeconds <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(s.WriteTimeoutSeconds) * time.Second
+}
+
 // ShutdownTimeoutDuration returns the graceful shutdown deadline as a duration.
 func (s Server) ShutdownTimeoutDuration() time.Duration {
 	if s.ShutdownTimeoutSeconds <= 0 {
