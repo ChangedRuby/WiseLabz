@@ -1,16 +1,21 @@
 package docs
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/api/settings"
 	"github.com/WiseLabz/wiselabz/internal/config"
+	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/doc"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 func newTestHandler(t *testing.T) *Handler {
@@ -112,5 +117,354 @@ func TestGetLockNoneHeld(t *testing.T) {
 	h.GetLock(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+}
+
+func TestTree(t *testing.T) {
+	s := apitest.NewStore(t)
+	ctx := context.Background()
+
+	// Seed a connector and a doc
+	conn := &store.ConnectorRecord{
+		Name:     "Test Connector",
+		Category: "virtualization",
+		Type:     "test-type",
+		URL:      "https://test.example.com",
+	}
+	if err := s.CreateConnector(ctx, conn); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	docRecord := &store.DocRecord{
+		Title:     "Test Doc",
+		Kind:      "service",
+		ServiceID: conn.ID,
+		Content:   "test content",
+	}
+	if err := s.CreateDoc(ctx, docRecord); err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/docs/tree", nil)
+	rr := httptest.NewRecorder()
+	h.Tree(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	if !strings.Contains(rr.Body.String(), "Lab Documentation") {
+		t.Errorf("expected root node with Lab Documentation title")
+	}
+	if !strings.Contains(rr.Body.String(), conn.Name) {
+		t.Errorf("expected connector in tree: %s", rr.Body.String())
+	}
+}
+
+func TestTreeEmpty(t *testing.T) {
+	s := apitest.NewStore(t)
+
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/docs/tree", nil)
+	rr := httptest.NewRecorder()
+	h.Tree(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	if !strings.Contains(rr.Body.String(), "Lab Documentation") {
+		t.Errorf("expected root node")
+	}
+}
+
+func TestVersion(t *testing.T) {
+	s := apitest.NewStore(t)
+	ctx := context.Background()
+
+	// Create a doc and versions
+	docRecord := &store.DocRecord{
+		Title:     "Test Doc",
+		Kind:      "service",
+		ServiceID: "test-service",
+		Content:   "v1 content",
+	}
+	if err := s.CreateDoc(ctx, docRecord); err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	if err := s.CreateDocVersion(ctx, &store.DocVersionRecord{
+		DocID:   docRecord.ID,
+		Rev:     1,
+		Content: "v1 content",
+		Trigger: "manual",
+	}); err != nil {
+		t.Fatalf("create version: %v", err)
+	}
+
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+
+	t.Run("existing version", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/docs/"+docRecord.ID+"/versions/1", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "1")
+		rr := httptest.NewRecorder()
+		h.Version(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "v1 content") {
+			t.Errorf("expected version content in response")
+		}
+	})
+
+	t.Run("nonexistent version", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/docs/"+docRecord.ID+"/versions/999", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "999")
+		rr := httptest.NewRecorder()
+		h.Version(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("invalid rev", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/docs/"+docRecord.ID+"/versions/invalid", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "invalid")
+		rr := httptest.NewRecorder()
+		h.Version(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+func TestRestore(t *testing.T) {
+	s := apitest.NewStore(t)
+	ctx := context.Background()
+
+	// Create a doc with versions
+	docRecord := &store.DocRecord{
+		Title:     "Test Doc",
+		Kind:      "service",
+		ServiceID: "test-service",
+		Content:   "v1 content",
+	}
+	if err := s.CreateDoc(ctx, docRecord); err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	if err := s.CreateDocVersion(ctx, &store.DocVersionRecord{
+		DocID:   docRecord.ID,
+		Rev:     1,
+		Content: "v1 content",
+		Trigger: "manual",
+	}); err != nil {
+		t.Fatalf("create v1: %v", err)
+	}
+
+	if err := s.UpdateDoc(ctx, docRecord.ID, "v2 content", nil); err != nil {
+		t.Fatalf("update to v2: %v", err)
+	}
+
+	docRecord, _ = s.GetDoc(ctx, docRecord.ID)
+	if err := s.CreateDocVersion(ctx, &store.DocVersionRecord{
+		DocID:   docRecord.ID,
+		Rev:     docRecord.CurrentVersion,
+		Content: "v2 content",
+		Trigger: "manual",
+	}); err != nil {
+		t.Fatalf("create v2: %v", err)
+	}
+
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+
+	t.Run("restore existing version", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/"+docRecord.ID+"/versions/1/restore", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "1")
+		rr := httptest.NewRecorder()
+		h.Restore(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+
+		// Verify the doc was restored
+		restored, _ := s.GetDoc(ctx, docRecord.ID)
+		if restored.Content != "v1 content" {
+			t.Errorf("content after restore = %q, want %q", restored.Content, "v1 content")
+		}
+	})
+
+	t.Run("restore nonexistent version", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/"+docRecord.ID+"/versions/999/restore", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "999")
+		rr := httptest.NewRecorder()
+		h.Restore(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("restore with invalid rev", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/"+docRecord.ID+"/versions/invalid/restore", nil)
+		req.SetPathValue("id", docRecord.ID)
+		req.SetPathValue("rev", "invalid")
+		rr := httptest.NewRecorder()
+		h.Restore(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+func TestGenerate(t *testing.T) {
+	s := apitest.NewStore(t)
+	ctx := context.Background()
+
+	// Seed template and connector
+	tmpl := &store.TemplateRecord{
+		Name:        "Test Template",
+		Description: "Template for testing",
+		AppliesTo:   "{}",
+	}
+	if err := s.CreateTemplate(ctx, tmpl); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	if err := s.CreateTemplateSection(ctx, &store.TemplateSectionRecord{
+		TemplateID: tmpl.ID,
+		Title:      "Overview",
+		Ord:        1,
+		Body:       "{{.ServiceName}} - {{.Type}}",
+	}); err != nil {
+		t.Fatalf("create template section: %v", err)
+	}
+
+	conn := &store.ConnectorRecord{
+		Name:     "Test Service",
+		Category: "containers_paas",
+		Type:     "test-connector",
+		URL:      "https://test.example.com",
+	}
+	if err := s.CreateConnector(ctx, conn); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Create snapshot for connector
+	snap := connector.ServiceSnapshot{
+		ServiceName: conn.Name,
+		Type:        conn.Type,
+		Sections: []connector.SnapshotSection{
+			{Title: "Status", Content: "operational"},
+		},
+		Metadata:  map[string]string{"region": "us-east-1"},
+		FetchedAt: time.Now(),
+	}
+	snapData, _ := json.Marshal(snap)
+	if err := s.CreateSnapshot(ctx, &store.SnapshotRecord{
+		ConnectorID: conn.ID,
+		Data:        string(snapData),
+	}); err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+
+	t.Run("success", func(t *testing.T) {
+		payload := strings.NewReader(`{"templateId":"` + tmpl.ID + `","connectorId":"` + conn.ID + `"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/generate", payload)
+		rr := httptest.NewRecorder()
+		h.Generate(rr, req)
+
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "Test Service") {
+			t.Errorf("expected generated content with service name")
+		}
+	})
+
+	t.Run("missing templateId", func(t *testing.T) {
+		payload := strings.NewReader(`{"connectorId":"` + conn.ID + `"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/generate", payload)
+		rr := httptest.NewRecorder()
+		h.Generate(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("missing connectorId", func(t *testing.T) {
+		payload := strings.NewReader(`{"templateId":"` + tmpl.ID + `"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/generate", payload)
+		rr := httptest.NewRecorder()
+		h.Generate(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("invalid json", func(t *testing.T) {
+		payload := strings.NewReader(`{invalid}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/docs/generate", payload)
+		rr := httptest.NewRecorder()
+		h.Generate(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+func TestTemplateSchema(t *testing.T) {
+	h := NewHandler(nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/docs/template-schema", nil)
+	rr := httptest.NewRecorder()
+	h.TemplateSchema(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &schema); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+
+	if _, ok := schema["fields"]; !ok {
+		t.Errorf("schema missing 'fields' key")
+	}
+	if _, ok := schema["functions"]; !ok {
+		t.Errorf("schema missing 'functions' key")
+	}
+
+	// Verify expected functions are documented
+	funcs, _ := schema["functions"].([]any)
+	funcNames := make(map[string]bool)
+	for _, f := range funcs {
+		fm, _ := f.(map[string]any)
+		if name, ok := fm["name"].(string); ok {
+			funcNames[name] = true
+		}
+	}
+
+	expectedFuncs := []string{"dateFormat", "truncate", "toJSON", "filterByTitle", "join"}
+	for _, fname := range expectedFuncs {
+		if !funcNames[fname] {
+			t.Errorf("expected function %q in schema", fname)
+		}
 	}
 }

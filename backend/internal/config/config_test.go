@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -297,5 +298,117 @@ func TestServerAddr(t *testing.T) {
 	s := Server{Host: "0.0.0.0", Port: 8080}
 	if addr := s.Addr(); addr != "0.0.0.0:8080" {
 		t.Errorf("Addr() = %q, want 0.0.0.0:8080", addr)
+	}
+}
+
+func TestReadTimeoutDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		seconds  int
+		expected time.Duration
+	}{
+		{"positive value", 15, 15 * time.Second},
+		{"zero value defaults to 10s", 0, 10 * time.Second},
+		{"negative value defaults to 10s", -1, 10 * time.Second},
+		{"large positive value", 300, 300 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Server{ReadTimeoutSeconds: tt.seconds}
+			if got := s.ReadTimeoutDuration(); got != tt.expected {
+				t.Errorf("ReadTimeoutDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWriteTimeoutDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		seconds  int
+		expected time.Duration
+	}{
+		{"positive value", 45, 45 * time.Second},
+		{"zero value defaults to 30s", 0, 30 * time.Second},
+		{"negative value defaults to 30s", -5, 30 * time.Second},
+		{"large positive value", 600, 600 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Server{WriteTimeoutSeconds: tt.seconds}
+			if got := s.WriteTimeoutDuration(); got != tt.expected {
+				t.Errorf("WriteTimeoutDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestShutdownTimeoutDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		seconds  int
+		expected time.Duration
+	}{
+		{"positive value", 20, 20 * time.Second},
+		{"zero value defaults to 10s", 0, 10 * time.Second},
+		{"negative value defaults to 10s", -10, 10 * time.Second},
+		{"large positive value", 120, 120 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Server{ShutdownTimeoutSeconds: tt.seconds}
+			if got := s.ShutdownTimeoutDuration(); got != tt.expected {
+				t.Errorf("ShutdownTimeoutDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAccessTokenTTLDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		ttl      int
+		expected time.Duration
+	}{
+		{"positive value", 1800, 1800 * time.Second},
+		{"zero value defaults to 15min", 0, 15 * time.Minute},
+		{"negative value defaults to 15min", -1, 15 * time.Minute},
+		{"config default 900 seconds (15min)", 900, 900 * time.Second},
+		{"custom large value", 3600, 3600 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := AuthSettings{AccessTokenTTL: tt.ttl}
+			if got := a.AccessTokenTTLDuration(); got != tt.expected {
+				t.Errorf("AccessTokenTTLDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRefreshTokenTTLDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		ttl      int
+		expected time.Duration
+	}{
+		{"positive value", 172800, 172800 * time.Second},
+		{"zero value defaults to 7 days", 0, 7 * 24 * time.Hour},
+		{"negative value defaults to 7 days", -100, 7 * 24 * time.Hour},
+		{"config default 604800 seconds (7 days)", 604800, 604800 * time.Second},
+		{"custom value 14 days in seconds", 1209600, 1209600 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := AuthSettings{RefreshTokenTTL: tt.ttl}
+			if got := a.RefreshTokenTTLDuration(); got != tt.expected {
+				t.Errorf("RefreshTokenTTLDuration() = %v, want %v", got, tt.expected)
+			}
+		})
 	}
 }

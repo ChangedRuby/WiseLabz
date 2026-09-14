@@ -1,6 +1,7 @@
 package changes
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/api/settings"
 	"github.com/WiseLabz/wiselabz/internal/config"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 func newTestHandler(t *testing.T) *Handler {
@@ -76,6 +78,123 @@ func TestAIUpdate(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 		}
 	})
+
+	t.Run("ai disabled returns conflict", func(t *testing.T) {
+		h2 := newTestHandler(t)
+		c := &store.ChangeRecord{
+			ServiceID:      "svc-1",
+			ChangeType:     "config",
+			Severity:       "warning",
+			Summary:        "Test change",
+			Status:         "new",
+			Diff:           "[]",
+			AffectedDocIDs: "[]",
+		}
+		if err := h2.Store.CreateChange(context.Background(), c); err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/ai-update", nil)
+		req.SetPathValue("id", c.ID)
+		rr := httptest.NewRecorder()
+		h2.AIUpdate(rr, req)
+		if rr.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusConflict, rr.Body.String())
+		}
+	})
+}
+
+func TestGetSuccess(t *testing.T) {
+	h := newTestHandler(t)
+	c := &store.ChangeRecord{
+		ServiceID:      "svc-1",
+		ChangeType:     "config",
+		Severity:       "info",
+		Summary:        "Test change",
+		Status:         "new",
+		Diff:           "[]",
+		AffectedDocIDs: "[]",
+	}
+	if err := h.Store.CreateChange(context.Background(), c); err != nil {
+		t.Fatalf("create change: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/changes/"+c.ID, nil)
+	req.SetPathValue("id", c.ID)
+	rr := httptest.NewRecorder()
+	h.Get(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["id"] != c.ID {
+		t.Errorf("id = %v, want %s", result["id"], c.ID)
+	}
+}
+
+func TestAcknowledgeSuccess(t *testing.T) {
+	h := newTestHandler(t)
+	c := &store.ChangeRecord{
+		ServiceID:      "svc-1",
+		ChangeType:     "config",
+		Severity:       "info",
+		Summary:        "Test change",
+		Status:         "new",
+		Diff:           "[]",
+		AffectedDocIDs: "[]",
+	}
+	if err := h.Store.CreateChange(context.Background(), c); err != nil {
+		t.Fatalf("create change: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/ack", nil)
+	req.SetPathValue("id", c.ID)
+	rr := httptest.NewRecorder()
+	h.Acknowledge(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["status"] != "acknowledged" {
+		t.Errorf("status = %v, want acknowledged", result["status"])
+	}
+}
+
+func TestDismissSuccess(t *testing.T) {
+	h := newTestHandler(t)
+	c := &store.ChangeRecord{
+		ServiceID:      "svc-1",
+		ChangeType:     "config",
+		Severity:       "info",
+		Summary:        "Test change",
+		Status:         "new",
+		Diff:           "[]",
+		AffectedDocIDs: "[]",
+	}
+	if err := h.Store.CreateChange(context.Background(), c); err != nil {
+		t.Fatalf("create change: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/dismiss", nil)
+	req.SetPathValue("id", c.ID)
+	rr := httptest.NewRecorder()
+	h.Dismiss(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["status"] != "dismissed" {
+		t.Errorf("status = %v, want dismissed", result["status"])
+	}
 }
 
 func TestBulkResolve(t *testing.T) {
