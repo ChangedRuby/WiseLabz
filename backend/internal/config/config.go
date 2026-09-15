@@ -128,6 +128,13 @@ type AISettings struct {
 	APIKey   string `mapstructure:"api_key"`
 	BaseURL  string `mapstructure:"base_url"` // for Ollama or self-hosted
 	Mode     string `mapstructure:"mode"`     // "auto_update" or "suggest_only"
+
+	// Embedding backend for "ask your lab" chat retrieval, configured
+	// independently of Provider above (Claude has no embeddings API).
+	EmbedProvider string `mapstructure:"embed_provider"` // "ollama" or "openai"
+	EmbedModel    string `mapstructure:"embed_model"`
+	EmbedAPIKey   string `mapstructure:"embed_api_key"`
+	EmbedBaseURL  string `mapstructure:"embed_base_url"`
 }
 
 // SyncSettings holds sync engine settings.
@@ -192,6 +199,8 @@ func Load() (*Config, error) {
 	v.SetDefault("auth.step_up_for_destructive", true)
 	v.SetDefault("ai.enabled", false)
 	v.SetDefault("ai.mode", "suggest_only")
+	v.SetDefault("ai.embed_provider", "ollama")
+	v.SetDefault("ai.embed_model", "nomic-embed-text")
 	v.SetDefault("sync.schedule", "0 */6 * * *")          // every 6 hours
 	v.SetDefault("sync.poll_cron_expr", "*/30 * * * * *") // every 30 seconds
 	v.SetDefault("quality.cron_expr", "0 0 * * *")        // daily quality checks at midnight
@@ -224,6 +233,7 @@ func Load() (*Config, error) {
 		"encryption.key",
 		"auth.secret", "auth.access_token_ttl", "auth.refresh_token_ttl", "auth.step_up_for_destructive",
 		"ai.enabled", "ai.provider", "ai.model", "ai.api_key", "ai.base_url", "ai.mode",
+		"ai.embed_provider", "ai.embed_model", "ai.embed_api_key", "ai.embed_base_url",
 		"sync.schedule", "sync.poll_cron_expr",
 		"quality.cron_expr",
 		"log.level", "log.format",

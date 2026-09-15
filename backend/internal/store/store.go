@@ -128,8 +128,8 @@ func (s *Store) initSingletons(ctx context.Context) error {
 	rows := []string{
 		`INSERT INTO auth_config (id, local_enabled, access_token_ttl, refresh_token_ttl, step_up_for_destructive)
 		 VALUES (1, 1, 900, 604800, 1) ON CONFLICT (id) DO NOTHING`,
-		`INSERT INTO ai_config (id, enabled, provider, model, api_key_encrypted, base_url, mode)
-		 VALUES (1, 0, NULL, NULL, '', NULL, 'suggest_only') ON CONFLICT (id) DO NOTHING`,
+		`INSERT INTO ai_config (id, enabled, provider, model, api_key_encrypted, base_url, mode, embed_provider, embed_model, embed_api_key_encrypted, embed_base_url)
+		 VALUES (1, 0, NULL, NULL, '', NULL, 'suggest_only', NULL, NULL, '', NULL) ON CONFLICT (id) DO NOTHING`,
 		`INSERT INTO notification_config (id, config_json)
 		 VALUES (1, '{}') ON CONFLICT (id) DO NOTHING`,
 	}

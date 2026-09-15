@@ -123,6 +123,10 @@ func main() {
 	ai.RegisterOpenAICompatible(aiRegistry)
 	ai.RegisterClaude(aiRegistry)
 
+	embedRegistry := ai.NewEmbedRegistry()
+	ai.RegisterOllamaEmbedder(embedRegistry)
+	ai.RegisterOpenAIEmbedder(embedRegistry)
+
 	// Determine backup directory: use configured value, or compute from DB DSN
 	backupDir := cfg.Backup.Dir
 	if backupDir == "" {
@@ -198,15 +202,16 @@ func main() {
 
 	// Build HTTP router
 	routerCfg := api.Config{
-		Store:      s,
-		JWT:        jwtSvc,
-		Config:     cfg,
-		SyncEngine: syncEngine,
-		DocEngine:  docEngine,
-		WSHub:      wsHub,
-		Scheduler:  jobRunner,
-		BackupDir:  backupDir,
-		AIRegistry: aiRegistry,
+		Store:         s,
+		JWT:           jwtSvc,
+		Config:        cfg,
+		SyncEngine:    syncEngine,
+		DocEngine:     docEngine,
+		WSHub:         wsHub,
+		Scheduler:     jobRunner,
+		BackupDir:     backupDir,
+		AIRegistry:    aiRegistry,
+		EmbedRegistry: embedRegistry,
 	}
 	if cfg.Server.Embed {
 		spaFiles, err := fs.Sub(web.DistFS, "dist")

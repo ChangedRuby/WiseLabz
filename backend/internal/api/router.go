@@ -16,6 +16,7 @@ import (
 	attentionhandler "github.com/WiseLabz/wiselabz/internal/api/attention"
 	authhandler "github.com/WiseLabz/wiselabz/internal/api/auth"
 	changehandler "github.com/WiseLabz/wiselabz/internal/api/changes"
+	chathandler "github.com/WiseLabz/wiselabz/internal/api/chat"
 	connhandler "github.com/WiseLabz/wiselabz/internal/api/connectors"
 	dashhandler "github.com/WiseLabz/wiselabz/internal/api/dashboard"
 	dochandler "github.com/WiseLabz/wiselabz/internal/api/docs"
@@ -42,15 +43,16 @@ import (
 
 // Config holds all dependencies needed to construct the router.
 type Config struct {
-	Store      *store.Store
-	JWT        *auth.Service
-	Config     *config.Config
-	SyncEngine *sync.Engine
-	DocEngine  *doc.Engine
-	WSHub      *ws.Hub
-	AIRegistry *ai.Registry
-	Scheduler  *scheduler.Runner // for backup job scheduling
-	BackupDir  string            // directory where backups are written
+	Store         *store.Store
+	JWT           *auth.Service
+	Config        *config.Config
+	SyncEngine    *sync.Engine
+	DocEngine     *doc.Engine
+	WSHub         *ws.Hub
+	AIRegistry    *ai.Registry
+	EmbedRegistry *ai.EmbedRegistry
+	Scheduler     *scheduler.Runner // for backup job scheduling
+	BackupDir     string            // directory where backups are written
 	// SPAFiles serves the embedded frontend build. Only used when Config.Server.Embed is true.
 	SPAFiles fs.FS
 }
@@ -84,8 +86,9 @@ func NewRouter(cfg Config) chi.Router {
 	notifH := notifhandler.NewHandler(cfg.Store)
 	runbookH := runbookhandler.NewHandler(cfg.Store)
 	dashH := dashhandler.NewHandler(cfg.Store)
-	docH := dochandler.NewHandler(cfg.Store, cfg.DocEngine, settingH, cfg.AIRegistry, cfg.WSHub)
+	docH := dochandler.NewHandler(cfg.Store, cfg.DocEngine, settingH, cfg.AIRegistry, cfg.EmbedRegistry, cfg.WSHub)
 	savedViewH := savedviewhandler.NewHandler(cfg.Store)
+	chatH := chathandler.NewHandler(cfg.Store, settingH, cfg.AIRegistry, cfg.EmbedRegistry)
 
 	// --- System endpoints ---
 	r.Get("/api/health", sysH.Health)
@@ -193,6 +196,13 @@ func NewRouter(cfg Config) chi.Router {
 				r.Post("/{id}/lock", docH.AcquireLock)
 				r.Post("/{id}/lock/release", docH.ReleaseLock)
 			})
+		})
+
+		r.Route("/api/chat/conversations", func(r chi.Router) {
+			r.Post("/", chatH.CreateConversation)
+			r.Get("/", chatH.ListConversations)
+			r.Get("/{id}", chatH.GetConversation)
+			r.Post("/{id}/messages", chatH.PostMessage)
 		})
 
 		r.Route("/api/templates", func(r chi.Router) {
