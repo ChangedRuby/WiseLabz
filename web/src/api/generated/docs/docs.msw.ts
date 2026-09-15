@@ -238,6 +238,15 @@ export const getPostDocsGenerateResponseMock = (
   ...overrideResponse,
 });
 
+export const getPostDocsTopologyResponseMock = (
+  overrideResponse: Partial<Extract<GenerateResult, object>> = {}
+): GenerateResult => ({
+  docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  ...overrideResponse,
+});
+
 export const getGetDocsMockHandler = (
   overrideResponse?:
     | DocPage
@@ -550,6 +559,30 @@ export const getPostDocsGenerateMockHandler = (
     options
   );
 };
+
+export const getPostDocsTopologyMockHandler = (
+  overrideResponse?:
+    | GenerateResult
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<GenerateResult> | GenerateResult),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/docs/topology',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostDocsTopologyResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
 export const getDocsMock = () => [
   getGetDocsMockHandler(),
   getGetDocsTreeMockHandler(),
@@ -565,4 +598,5 @@ export const getDocsMock = () => [
   getPostDocsDocIdLockReleaseMockHandler(),
   getGetDocsTemplateSchemaMockHandler(),
   getPostDocsGenerateMockHandler(),
+  getPostDocsTopologyMockHandler(),
 ];

@@ -41,3 +41,46 @@ func shortHash(s string) string {
 	sum := sha1.Sum([]byte(s)) //nolint:gosec
 	return fmt.Sprintf("%x", sum[:6])
 }
+
+// labEntity is one entity observed by one connector, used to build the
+// lab-wide topology diagram (see GenerateLabTopology).
+type labEntity struct {
+	ConnectorID   string
+	ConnectorName string
+	Entity        connector.SnapshotEntity
+}
+
+// labLink is a matched pair of entities from two different connectors.
+type labLink struct {
+	A, B   labEntity
+	Reason string
+}
+
+// renderLabMermaid emits a Mermaid flowchart with one node per entity
+// (including entities with no matches, so isolated services still show up)
+// and one edge per matched pair.
+func renderLabMermaid(entities []labEntity, links []labLink) string {
+	var b strings.Builder
+	b.WriteString("graph LR\n")
+
+	seen := map[string]bool{}
+	node := func(le labEntity) string {
+		id := entityNodeID(le.ConnectorID, le.Entity)
+		if !seen[id] {
+			seen[id] = true
+			label := fmt.Sprintf("%s (%s)", le.Entity.Name, le.Entity.Kind)
+			fmt.Fprintf(&b, "    %s[%q]\n", id, label)
+		}
+		return id
+	}
+
+	for _, e := range entities {
+		node(e)
+	}
+	for _, l := range links {
+		aID, bID := node(l.A), node(l.B)
+		fmt.Fprintf(&b, "    %s -->|%s| %s\n", aID, l.Reason, bID)
+	}
+
+	return b.String()
+}

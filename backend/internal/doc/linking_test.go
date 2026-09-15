@@ -3,6 +3,7 @@ package doc
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,59 @@ func TestMatchEntitiesFansOutAcrossConnectors(t *testing.T) {
 	}
 	if len(links) != 2 {
 		t.Fatalf("matchEntities() returned %d links, want 2 (one per connector)", len(links))
+	}
+}
+
+func TestGenerateLabTopologyCreatesThenUpdatesInPlace(t *testing.T) {
+	ctx := context.Background()
+	s := newEngineTestStore(t)
+	seedEngineConnectorWithEntities(t, s, "Proxmox", "virtualization", "proxmox", []connector.SnapshotEntity{
+		{Kind: "vm", Name: "web-01", IP: "10.0.0.5"},
+	})
+	seedEngineConnectorWithEntities(t, s, "pfSense", "networking", "pfsense", []connector.SnapshotEntity{
+		{Kind: "rule", Name: "allow-web", IP: "10.0.0.5"},
+	})
+
+	engine := NewEngine(s)
+
+	result, err := engine.GenerateLabTopology(ctx)
+	if err != nil {
+		t.Fatalf("GenerateLabTopology() error: %v", err)
+	}
+	if result.Title != labTopologyTitle {
+		t.Fatalf("GenerateLabTopology() title = %q, want %q", result.Title, labTopologyTitle)
+	}
+	if !strings.Contains(result.Content, "```mermaid") {
+		t.Fatalf("GenerateLabTopology() content missing mermaid block: %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "web-01") || !strings.Contains(result.Content, "allow-web") {
+		t.Fatalf("GenerateLabTopology() content missing expected entities: %q", result.Content)
+	}
+
+	docs, total, err := s.ListAllDocs(ctx, labTopologyTitle, 0, 10)
+	if err != nil {
+		t.Fatalf("ListAllDocs() error: %v", err)
+	}
+	if total != 1 || len(docs) != 1 {
+		t.Fatalf("ListAllDocs() = %d docs, want exactly 1", total)
+	}
+	firstDocID := docs[0].ID
+
+	// A second call must update the same doc in place, not create another.
+	result2, err := engine.GenerateLabTopology(ctx)
+	if err != nil {
+		t.Fatalf("GenerateLabTopology() second call error: %v", err)
+	}
+	if result2.DocID != firstDocID {
+		t.Fatalf("GenerateLabTopology() second call DocID = %q, want %q (same doc)", result2.DocID, firstDocID)
+	}
+
+	docs2, total2, err := s.ListAllDocs(ctx, labTopologyTitle, 0, 10)
+	if err != nil {
+		t.Fatalf("ListAllDocs() error: %v", err)
+	}
+	if total2 != 1 || len(docs2) != 1 {
+		t.Fatalf("ListAllDocs() after second call = %d docs, want still exactly 1", total2)
 	}
 }
 

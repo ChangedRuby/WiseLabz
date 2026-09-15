@@ -59,6 +59,9 @@ const DocsPage = lazy(() =>
 const AllDocsPage = lazy(() =>
   import('./features/docs/AllDocsPage').then(({ AllDocsPage }) => ({ default: AllDocsPage }))
 );
+const TopologyPage = lazy(() =>
+  import('./features/docs/TopologyPage').then(({ TopologyPage }) => ({ default: TopologyPage }))
+);
 const DocEditorPage = lazy(() =>
   import('./features/docs/DocEditorPage').then(({ DocEditorPage }) => ({ default: DocEditorPage }))
 );
@@ -190,6 +193,7 @@ const router = createBrowserRouter([
       },
       { path: 'docs', element: <DocsPage /> },
       { path: 'docs/all', element: <AllDocsPage /> },
+      { path: 'topology', element: <TopologyPage /> },
       { path: 'docs/:docId', element: <DocsPage /> },
       {
         path: 'docs/:docId/edit',

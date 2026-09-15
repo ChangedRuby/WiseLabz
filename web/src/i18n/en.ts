@@ -491,6 +491,13 @@ export const en = {
       noMatchTitle: 'No matching docs',
       noMatchDesc: 'Try a different search term.',
     },
+    topology: {
+      loadError: "Couldn't load the lab topology.",
+      emptyTitle: 'No topology yet',
+      emptyDesc: 'Generate a lab-wide diagram linking every connector by IP, hostname, and ID.',
+      generating: 'Generating…',
+      generateAction: 'Generate topology',
+    },
   },
   chat: {
     title: 'Ask your lab',

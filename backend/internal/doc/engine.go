@@ -325,6 +325,100 @@ func (e *Engine) RegenerateForConnector(ctx context.Context, connectorID string)
 	return nil
 }
 
+// labTopologyTitle is the fixed title of the single lab-wide topology doc;
+// GenerateLabTopology looks it up by this title to update it in place
+// rather than creating a new doc on every call.
+const labTopologyTitle = "Lab Topology"
+
+// GenerateLabTopology aggregates every connector's latest snapshot entities
+// into one lab-wide Mermaid diagram and persists it as the single Kind:
+// "lab" doc titled "Lab Topology" (created on first call, updated after).
+func (e *Engine) GenerateLabTopology(ctx context.Context) (*GenerateResult, error) {
+	connectors, err := e.store.ListAllConnectors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list connectors: %w", err)
+	}
+
+	var entities []labEntity
+	for _, c := range connectors {
+		sn, err := e.store.GetLatestSnapshot(ctx, c.ID)
+		if err != nil {
+			continue // no snapshot yet; soft-skip
+		}
+		var snap connector.ServiceSnapshot
+		if err := json.Unmarshal([]byte(sn.Data), &snap); err != nil {
+			continue
+		}
+		for _, ent := range snap.Entities {
+			entities = append(entities, labEntity{ConnectorID: c.ID, ConnectorName: c.Name, Entity: ent})
+		}
+	}
+
+	var links []labLink
+	seen := map[string]bool{}
+	for i := 0; i < len(entities); i++ {
+		for j := i + 1; j < len(entities); j++ {
+			a, b := entities[i], entities[j]
+			if a.ConnectorID == b.ConnectorID {
+				continue
+			}
+			reason := matchReason(a.Entity, b.Entity)
+			if reason == "" {
+				continue
+			}
+			key := dedupKey(a.ConnectorID, a.Entity) + ">" + dedupKey(b.ConnectorID, b.Entity)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			links = append(links, labLink{A: a, B: b, Reason: reason})
+		}
+	}
+
+	content := fmt.Sprintf(
+		"# %s\n\n_%d entities across %d connectors._\n\n```mermaid\n%s```\n",
+		labTopologyTitle, len(entities), len(connectors), renderLabMermaid(entities, links),
+	)
+
+	docs, _, err := e.store.ListAllDocs(ctx, labTopologyTitle, 0, 50)
+	if err != nil {
+		return nil, fmt.Errorf("list docs: %w", err)
+	}
+	var existing *store.DocRecord
+	for i := range docs {
+		if docs[i].Kind == "lab" && docs[i].Title == labTopologyTitle {
+			existing = &docs[i]
+			break
+		}
+	}
+
+	var docID string
+	if existing != nil {
+		docID = existing.ID
+		if err := e.store.UpdateDoc(ctx, docID, content, nil); err != nil {
+			return nil, fmt.Errorf("update doc: %w", err)
+		}
+		updated, err := e.store.GetDoc(ctx, docID)
+		if err != nil {
+			return nil, fmt.Errorf("get updated doc: %w", err)
+		}
+		_ = e.store.CreateDocVersion(ctx, &store.DocVersionRecord{
+			DocID: docID, Rev: updated.CurrentVersion, Content: content, Trigger: "manual",
+		})
+	} else {
+		doc := &store.DocRecord{Title: labTopologyTitle, Kind: "lab", Content: content}
+		if err := e.store.CreateDoc(ctx, doc); err != nil {
+			return nil, fmt.Errorf("create doc: %w", err)
+		}
+		docID = doc.ID
+		_ = e.store.CreateDocVersion(ctx, &store.DocVersionRecord{
+			DocID: docID, Rev: 1, Content: content, Trigger: "manual",
+		})
+	}
+
+	return &GenerateResult{DocID: docID, Title: labTopologyTitle, Content: content}, nil
+}
+
 type templateData struct {
 	ServiceName  string
 	Type         string

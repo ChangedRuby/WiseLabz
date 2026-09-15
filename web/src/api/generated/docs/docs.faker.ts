@@ -234,3 +234,12 @@ export const getPostDocsGenerateResponseMock = (
   content: faker.string.alpha({ length: { min: 10, max: 20 } }),
   ...overrideResponse,
 });
+
+export const getPostDocsTopologyResponseMock = (
+  overrideResponse: Partial<Extract<GenerateResult, object>> = {}
+): GenerateResult => ({
+  docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  ...overrideResponse,
+});
