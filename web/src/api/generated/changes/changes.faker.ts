@@ -110,6 +110,10 @@ export const getGetChangesChangeIdResponseMock = (): ChangeDetail => ({
       })),
       undefined,
     ]),
+    narration: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
   },
 });
 
@@ -188,6 +192,10 @@ export const getPostChangesChangeIdAckResponseMock = (): ChangeDetail => ({
           (_, i) => i + 1
         ).map(() => faker.number.int({ min: 1 })),
       })),
+      undefined,
+    ]),
+    narration: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
       undefined,
     ]),
   },
@@ -270,6 +278,10 @@ export const getPostChangesChangeIdDismissResponseMock = (): ChangeDetail => ({
       })),
       undefined,
     ]),
+    narration: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
   },
 });
 
@@ -294,4 +306,88 @@ export const getPostChangesChangeIdAiUpdateResponseMock = (
 ): AiSuggestRef => ({
   requestId: faker.string.alpha({ length: { min: 10, max: 20 } }),
   ...overrideResponse,
+});
+
+export const getPostChangesChangeIdExplainResponseMock = (): ChangeDetail => ({
+  ...{
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    serviceId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    serviceName: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    changeType: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    severity: faker.helpers.arrayElement(Object.values(Severity)),
+    summary: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    willTriggerAi: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
+    detectedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+  ...{
+    status: faker.helpers.arrayElement(['new', 'acknowledged', 'dismissed'] as const),
+    diff: {
+      format: faker.helpers.arrayElement(['infra', 'doc'] as const),
+      hunks: faker.helpers.arrayElement([
+        Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+          path: faker.helpers.arrayElement([
+            faker.string.alpha({ length: { min: 10, max: 20 } }),
+            undefined,
+          ]),
+          before: faker.helpers.arrayElement([
+            faker.string.alpha({ length: { min: 10, max: 20 } }),
+            null,
+          ]),
+          after: faker.helpers.arrayElement([
+            faker.string.alpha({ length: { min: 10, max: 20 } }),
+            null,
+          ]),
+        })),
+        undefined,
+      ]),
+      baseText: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      headText: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      baseLabel: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      headLabel: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      headTrigger: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      language: faker.helpers.arrayElement([
+        faker.helpers.arrayElement(['md', 'yaml', 'text'] as const),
+        undefined,
+      ]),
+    },
+    affectedDocIds: faker.helpers.arrayElement([
+      Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() =>
+        faker.string.alpha({ length: { min: 10, max: 20 } })
+      ),
+      undefined,
+    ]),
+    provenance: faker.helpers.arrayElement([
+      Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+        snapshotPath: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        templateSection: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        diffLines: Array.from(
+          { length: faker.number.int({ min: 1, max: 4 }) },
+          (_, i) => i + 1
+        ).map(() => faker.number.int({ min: 1 })),
+      })),
+      undefined,
+    ]),
+    narration: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  },
 });

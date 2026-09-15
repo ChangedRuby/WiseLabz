@@ -9,6 +9,7 @@ import {
   postChangesChangeIdAck,
   postChangesChangeIdDismiss,
   postChangesChangeIdAiUpdate,
+  postChangesChangeIdExplain,
   getGetChangesChangeIdQueryKey,
 } from '../../api/generated/changes/changes';
 import { getGetChangesQueryKey } from '../../api/generated/changes/changes';
@@ -25,6 +26,7 @@ import {
   XIcon,
   SparklesIcon,
   FileTextIcon,
+  ChatIcon,
 } from '../../components/icons';
 
 export function ChangeDetailPage() {
@@ -66,6 +68,18 @@ export function ChangeDetailPage() {
     },
   });
   const aiQueued = aiRequested || Boolean(data?.willTriggerAi);
+
+  // On-demand narration (issue #238, piece 2/3): generated once by the
+  // backend and cached on the change record — refetching the change reuses
+  // the cached text instead of re-invoking the AI provider.
+  const explain = useMutation({
+    mutationFn: () => postChangesChangeIdExplain(changeId ?? ''),
+    onSuccess: () => {
+      if (changeId) {
+        queryClient.invalidateQueries({ queryKey: getGetChangesChangeIdQueryKey(changeId) });
+      }
+    },
+  });
 
   return (
     <div className="mx-auto max-w-210 px-6 py-6">
@@ -115,6 +129,31 @@ export function ChangeDetailPage() {
                 </div>
 
                 <div className="px-6 py-5">
+                  {data.narration ? (
+                    <section className="mb-4 rounded-lg border border-line-soft bg-canvas-sunken p-3" aria-labelledby="narration-heading">
+                      <h2 id="narration-heading" className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                        <ChatIcon size={13} /> {t('changes.explainHeading')}
+                      </h2>
+                      <p className="mt-1.5 text-xs text-ink-muted">{data.narration}</p>
+                    </section>
+                  ) : (
+                    <div className="mb-4 flex items-center justify-between rounded-lg border border-dashed border-line-soft p-3">
+                      <span className="text-xs text-ink-faint">{t('changes.explainPrompt')}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={explain.isPending}
+                        onClick={() => explain.mutate()}
+                      >
+                        <ChatIcon size={13} />
+                        {explain.isPending ? t('changes.explainLoading') : t('changes.explain')}
+                      </Button>
+                    </div>
+                  )}
+                  {explain.isError && (
+                    <p className="mb-4 text-2xs text-[var(--color-err)]">{t('changes.explainError')}</p>
+                  )}
+
                   <DiffViewer diff={data.diff} />
 
                   {data.diff.format === 'doc' && data.provenance && data.provenance.length > 0 && (

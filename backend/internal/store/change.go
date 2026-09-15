@@ -31,16 +31,19 @@ type ChangeRecord struct {
 	// summary) shared by recurrences of the same drift, so the UI can
 	// eventually surface "seen this before". "" means not computed.
 	PatternID string `json:"patternId"`
+	// Narration is the cached plain-English "explain this change" AI
+	// narration (issue #238, piece 2/3). "" means it hasn't been generated yet.
+	Narration string `json:"narration"`
 }
 
 // changeColumns is the shared column list for every change SELECT.
-const changeColumns = `id, service_id, change_type, severity, summary, diff, status, detected_at, affected_doc_ids, related_service_ids, pattern_id`
+const changeColumns = `id, service_id, change_type, severity, summary, diff, status, detected_at, affected_doc_ids, related_service_ids, pattern_id, narration`
 
 // scanChange scans one changeColumns row. Used by ListChanges's paginatedQuery.
 func scanChange(row rowScanner) (ChangeRecord, error) {
 	var c ChangeRecord
 	err := row.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary,
-		&c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID)
+		&c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID, &c.Narration)
 	return c, err
 }
 
@@ -114,7 +117,7 @@ func (s *Store) GetChange(ctx context.Context, id string) (*ChangeRecord, error)
 		SELECT `+changeColumns+`
 		FROM changes WHERE id = ?
 	`, id).Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary,
-		&c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID)
+		&c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID, &c.Narration)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -122,6 +125,23 @@ func (s *Store) GetChange(ctx context.Context, id string) (*ChangeRecord, error)
 		return nil, fmt.Errorf("get change: %w", err)
 	}
 	return c, nil
+}
+
+// UpdateChangeNarration persists the generated "explain this change"
+// narration so later views reuse it instead of re-calling the AI provider.
+func (s *Store) UpdateChangeNarration(ctx context.Context, id, narration string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE changes SET narration = ? WHERE id = ?`, narration, id)
+	if err != nil {
+		return fmt.Errorf("update change narration: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // CountRecentChangesByPattern returns how many changes with the given
@@ -179,7 +199,7 @@ func (s *Store) ListChangesByID(ctx context.Context, ids []string) (map[string]C
 
 	for rows.Next() {
 		var c ChangeRecord
-		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID); err != nil {
+		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID, &c.Narration); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		changes[c.ID] = c
@@ -433,7 +453,7 @@ func (s *Store) GetLatestChanges(ctx context.Context, n int, since string) ([]Ch
 	var changes []ChangeRecord
 	for rows.Next() {
 		var c ChangeRecord
-		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID); err != nil {
+		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID, &c.Narration); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		changes = append(changes, c)

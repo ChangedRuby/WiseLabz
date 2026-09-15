@@ -17,4 +17,6 @@ export type ChangeDetail = ChangeSummary & {
   affectedDocIds?: string[];
   /** Document-diff provenance. Each entry identifies the changed snapshot field, the template section that rendered it, and the resulting lines in the head revision. Present only when a document diff has source data. */
   provenance?: DocumentDiffProvenance[];
+  /** Cached plain-English explanation of why this change matters, generated on demand via POST /changes/{changeId}/explain. Empty until requested. */
+  narration?: string;
 };
