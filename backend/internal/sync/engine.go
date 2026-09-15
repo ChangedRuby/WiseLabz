@@ -84,12 +84,20 @@ type QualityChecker interface {
 	RunForConnector(ctx context.Context, connectorID string) error
 }
 
+// DocRegenerator re-renders a connector's existing docs from its latest
+// snapshot after a sync attempt, recording a new "sync"-triggered doc
+// version for any doc whose content changed.
+type DocRegenerator interface {
+	RegenerateForConnector(ctx context.Context, connectorID string) error
+}
+
 // Engine runs sync jobs against connectors.
 type Engine struct {
 	store          *store.Store
 	hub            *ws.Hub
 	notifier       AlertNotifier
 	qualityChecker QualityChecker
+	docRegenerator DocRegenerator
 	// encKey is the base64-encoded AES-256 key (config.Encryption.Key) used
 	// to decrypt/re-encrypt secret-bearing connector config fields via
 	// store.ParseConnectorConfig/MarshalConnectorConfig.
@@ -99,6 +107,14 @@ type Engine struct {
 // NewEngine creates a new sync engine.
 func NewEngine(s *store.Store, h *ws.Hub, notifier AlertNotifier, qualityChecker QualityChecker, encKey string) *Engine {
 	return &Engine{store: s, hub: h, notifier: notifier, qualityChecker: qualityChecker, encKey: encKey}
+}
+
+// SetDocRegenerator wires a DocRegenerator into the engine after
+// construction. Kept as a setter (rather than a NewEngine parameter) so
+// existing call sites don't need to change; a nil regenerator (the default)
+// simply skips sync-triggered doc regeneration.
+func (e *Engine) SetDocRegenerator(dr DocRegenerator) {
+	e.docRegenerator = dr
 }
 
 // RunResult holds the outcome of a sync run.
@@ -227,6 +243,11 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 		if e.qualityChecker != nil {
 			if err := e.qualityChecker.RunForConnector(ctx, connectorID); err != nil {
 				slog.Error("quality check failed", "connector", connectorID, "error", err)
+			}
+		}
+		if e.docRegenerator != nil {
+			if err := e.docRegenerator.RegenerateForConnector(ctx, connectorID); err != nil {
+				slog.Error("doc regeneration failed", "connector", connectorID, "error", err)
 			}
 		}
 	}

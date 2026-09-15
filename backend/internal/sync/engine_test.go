@@ -25,16 +25,46 @@ type fakeQualityChecker struct {
 	mu    sync.Mutex
 	calls []string
 	err   error
+	order *[]string
 }
 
 func (f *fakeQualityChecker) RunForConnector(_ context.Context, connectorID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, connectorID)
+	if f.order != nil {
+		*f.order = append(*f.order, "qualityChecker")
+	}
 	return f.err
 }
 
 func (f *fakeQualityChecker) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+// fakeDocRegenerator records RegenerateForConnector calls, and optionally
+// appends to a shared order log (used to assert call ordering relative to
+// the quality checker).
+type fakeDocRegenerator struct {
+	mu    sync.Mutex
+	calls []string
+	err   error
+	order *[]string
+}
+
+func (f *fakeDocRegenerator) RegenerateForConnector(_ context.Context, connectorID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, connectorID)
+	if f.order != nil {
+		*f.order = append(*f.order, "docRegenerator")
+	}
+	return f.err
+}
+
+func (f *fakeDocRegenerator) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.calls)
@@ -236,5 +266,62 @@ func TestRunSyncQualityCheckerErrorIsNonFatal(t *testing.T) {
 	}
 	if checker.count() != 1 {
 		t.Fatalf("quality checker calls = %d, want 1", checker.count())
+	}
+}
+
+func TestRunSyncInvokesDocRegeneratorAfterQualityChecker(t *testing.T) {
+	connector.Register(
+		connector.TypeSchema{Type: "sync_test_doc_regen", Category: "test", Name: "Doc regen"},
+		func(_ map[string]any) (connector.Connector, error) {
+			return &fakeConnector{snapshot: &connector.ServiceSnapshot{ServiceName: "svc", FetchedAt: time.Now()}}, nil
+		},
+	)
+	s := newTestStore(t)
+	record := &store.ConnectorRecord{Name: "doc regen", Category: "networking", Type: "sync_test_doc_regen", Enabled: true}
+	if err := s.CreateConnector(context.Background(), record); err != nil {
+		t.Fatalf("CreateConnector: %v", err)
+	}
+
+	var order []string
+	checker := &fakeQualityChecker{order: &order}
+	regenerator := &fakeDocRegenerator{order: &order}
+	engine := NewEngine(s, nil, nil, checker, "")
+	engine.SetDocRegenerator(regenerator)
+
+	result, err := engine.RunSync(context.Background(), record.ID, "doc-regen-job")
+	if err != nil || result.Status != "success" {
+		t.Fatalf("RunSync() = (%+v, %v), want successful sync", result, err)
+	}
+	if regenerator.count() != 1 {
+		t.Fatalf("doc regenerator calls = %d, want 1", regenerator.count())
+	}
+	if len(order) != 2 || order[0] != "qualityChecker" || order[1] != "docRegenerator" {
+		t.Fatalf("call order = %v, want [qualityChecker docRegenerator]", order)
+	}
+}
+
+func TestRunSyncDocRegeneratorErrorIsNonFatal(t *testing.T) {
+	connector.Register(
+		connector.TypeSchema{Type: "sync_test_doc_regen_error", Category: "test", Name: "Doc regen error"},
+		func(_ map[string]any) (connector.Connector, error) {
+			return &fakeConnector{snapshot: &connector.ServiceSnapshot{ServiceName: "svc", FetchedAt: time.Now()}}, nil
+		},
+	)
+	s := newTestStore(t)
+	record := &store.ConnectorRecord{Name: "doc regen error", Category: "networking", Type: "sync_test_doc_regen_error", Enabled: true}
+	if err := s.CreateConnector(context.Background(), record); err != nil {
+		t.Fatalf("CreateConnector: %v", err)
+	}
+
+	regenerator := &fakeDocRegenerator{err: errors.New("regeneration unavailable")}
+	engine := NewEngine(s, nil, nil, nil, "")
+	engine.SetDocRegenerator(regenerator)
+
+	result, err := engine.RunSync(context.Background(), record.ID, "doc-regen-error-job")
+	if err != nil || result.Status != "success" {
+		t.Fatalf("RunSync() = (%+v, %v), want successful sync", result, err)
+	}
+	if regenerator.count() != 1 {
+		t.Fatalf("doc regenerator calls = %d, want 1", regenerator.count())
 	}
 }

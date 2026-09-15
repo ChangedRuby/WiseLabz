@@ -2432,7 +2432,7 @@ components:
         rev: { type: integer }
         createdAt: { type: string, format: date-time }
         author: { type: string, nullable: true }
-        trigger: { type: string, enum: [ai, template, manual] }
+        trigger: { type: string, enum: [ai, template, manual, sync] }
     DocVersion:
       allOf:
         - $ref: '#/components/schemas/DocVersionMeta'

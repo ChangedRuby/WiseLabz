@@ -436,6 +436,7 @@ export const en = {
       ai: 'AI',
       template: 'Template',
       manual: 'Manual',
+      sync: 'Sync',
     },
     comparing: 'comparing v{{prev}} → v{{current}}',
     firstRevision: 'v{{current}} (first revision)',

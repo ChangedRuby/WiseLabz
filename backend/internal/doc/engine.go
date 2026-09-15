@@ -194,8 +194,11 @@ func (e *Engine) MatchingConnectors(ctx context.Context, templateID string) ([]s
 	return matches, nil
 }
 
-// GenerateFromSnapshot generates a raw document from a snapshot without a template.
-func (e *Engine) GenerateFromSnapshot(ctx context.Context, connectorID string) (*GenerateResult, error) {
+// renderSnapshot renders a document from a connector's latest snapshot
+// without a template, without persisting it. Shared by GenerateFromSnapshot
+// (first-time generation) and RegenerateForConnector (sync-triggered refresh
+// of existing template-less docs).
+func (e *Engine) renderSnapshot(ctx context.Context, connectorID string) (*renderResult, error) {
 	sn, err := e.store.GetLatestSnapshot(ctx, connectorID)
 	if err != nil {
 		return nil, fmt.Errorf("get snapshot: %w", err)
@@ -228,12 +231,21 @@ func (e *Engine) GenerateFromSnapshot(ctx context.Context, connectorID string) (
 		buf.WriteString("\n")
 	}
 
-	content := buf.String()
+	return &renderResult{Title: snap.ServiceName, Content: buf.String()}, nil
+}
+
+// GenerateFromSnapshot generates a raw document from a snapshot without a template.
+func (e *Engine) GenerateFromSnapshot(ctx context.Context, connectorID string) (*GenerateResult, error) {
+	rendered, err := e.renderSnapshot(ctx, connectorID)
+	if err != nil {
+		return nil, err
+	}
+
 	doc := &store.DocRecord{
-		Title:     snap.ServiceName,
+		Title:     rendered.Title,
 		Kind:      "service",
 		ServiceID: connectorID,
-		Content:   content,
+		Content:   rendered.Content,
 	}
 	if err := e.store.CreateDoc(ctx, doc); err != nil {
 		return nil, fmt.Errorf("create doc: %w", err)
@@ -243,15 +255,62 @@ func (e *Engine) GenerateFromSnapshot(ctx context.Context, connectorID string) (
 	_ = e.store.CreateDocVersion(ctx, &store.DocVersionRecord{
 		DocID:   docID,
 		Rev:     1,
-		Content: content,
+		Content: rendered.Content,
 		Trigger: "manual",
 	})
 
 	return &GenerateResult{
 		DocID:   docID,
-		Title:   snap.ServiceName,
-		Content: content,
+		Title:   rendered.Title,
+		Content: rendered.Content,
 	}, nil
+}
+
+// RegenerateForConnector re-renders every existing doc for a connector via
+// the template-less snapshot path and, for any whose content actually
+// changed, updates it and records a new "sync" doc version. Docs generated
+// from a template are re-rendered the same way (DocRecord has no
+// TemplateID to look up), so a template-derived doc's next manual
+// regeneration will re-apply its template; sync only refreshes snapshot
+// content in between. A connector with no existing docs is a no-op.
+func (e *Engine) RegenerateForConnector(ctx context.Context, connectorID string) error {
+	docs, err := e.store.ListDocsByService(ctx, connectorID)
+	if err != nil {
+		return fmt.Errorf("list docs by service: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+
+	rendered, err := e.renderSnapshot(ctx, connectorID)
+	if err != nil {
+		return err
+	}
+
+	for _, d := range docs {
+		if d.Content == rendered.Content {
+			continue
+		}
+		if err := e.store.WithinTransaction(ctx, func(tx *store.Store) error {
+			if err := tx.UpdateDoc(ctx, d.ID, rendered.Content, nil); err != nil {
+				return fmt.Errorf("update doc: %w", err)
+			}
+			updated, err := tx.GetDoc(ctx, d.ID)
+			if err != nil {
+				return fmt.Errorf("get updated doc: %w", err)
+			}
+			if err := tx.CreateDocVersion(ctx, &store.DocVersionRecord{
+				DocID: d.ID, Rev: updated.CurrentVersion, Content: rendered.Content, Trigger: "sync",
+			}); err != nil {
+				return fmt.Errorf("create doc version: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("regenerate doc %s: %w", d.ID, err)
+		}
+	}
+
+	return nil
 }
 
 type templateData struct {
