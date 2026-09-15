@@ -18,6 +18,7 @@ tags:
   - name: dashboard
   - name: connectors
   - name: docs
+  - name: chat
   - name: templates
   - name: changes
   - name: attention
@@ -820,6 +821,71 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GenerateResult' }
         '404': { description: Template or connector not found }
+
+  # ───────────────────────── chat ─────────────────────────
+  /chat/conversations:
+    get:
+      tags: [chat]
+      summary: List the caller's "ask your lab" chat conversations, newest first
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChatConversation' }
+    post:
+      tags: [chat]
+      summary: Start a new chat conversation scoped to a doc or the whole lab
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatConversationCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatConversation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /chat/conversations/{id}:
+    get:
+      tags: [chat]
+      summary: A conversation plus its full message history
+      parameters:
+        - { $ref: '#/components/parameters/ChatConversationId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatConversationDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /chat/conversations/{id}/messages:
+    post:
+      tags: [chat]
+      summary: Ask a question in the conversation; retrieves matching doc sections and answers via the configured AI provider
+      parameters:
+        - { $ref: '#/components/parameters/ChatConversationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatMessageCreate' }
+      responses:
+        '200':
+          description: OK — the assistant's reply
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatMessage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: AI module disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── templates ─────────────────────────
   /templates:
@@ -1860,6 +1926,7 @@ components:
     RunbookId: { name: runbookId, in: path, required: true, schema: { type: string } }
     FindingId: { name: findingId, in: path, required: true, schema: { type: string } }
     SessionId: { name: sessionId, in: path, required: true, schema: { type: string } }
+    ChatConversationId: { name: id, in: path, required: true, schema: { type: string } }
     ServiceIdQuery: { name: serviceId, in: query, required: false, schema: { type: string } }
     DaysQuery: { name: days, in: query, required: false, schema: { type: integer, default: 7, minimum: 1 } }
     Page: { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
@@ -2342,6 +2409,46 @@ components:
       properties:
         docId: { type: string }
         title: { type: string }
+        content: { type: string }
+
+    # ── chat ──
+    ChatConversation:
+      type: object
+      required: [id, userId, scopeType, scopeId, createdAt]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        scopeType: { type: string, enum: [doc, lab] }
+        scopeId: { type: string, description: Doc ID when scopeType is "doc"; empty for "lab" }
+        createdAt: { type: string, format: date-time }
+    ChatConversationCreate:
+      type: object
+      required: [scopeType]
+      properties:
+        scopeType: { type: string, enum: [doc, lab] }
+        scopeId: { type: string, description: Required when scopeType is "doc" }
+    ChatConversationDetail:
+      type: object
+      required: [conversation, messages]
+      properties:
+        conversation: { $ref: '#/components/schemas/ChatConversation' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+    ChatMessage:
+      type: object
+      required: [id, conversationId, role, content, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        provider: { type: string, description: AI provider that produced an assistant reply }
+        createdAt: { type: string, format: date-time }
+    ChatMessageCreate:
+      type: object
+      required: [content]
+      properties:
         content: { type: string }
 
     # ── templates ──
