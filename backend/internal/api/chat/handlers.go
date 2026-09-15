@@ -113,7 +113,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := h.Settings.LoadAIConfig(r.Context())
-	if !cfg.Enabled {
+	if !cfg.Enabled || len(cfg.Providers) == 0 {
 		httputil.Error(w, http.StatusConflict, "ai_disabled", "AI module is not enabled")
 		return
 	}
@@ -123,13 +123,6 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		httputil.Error(w, http.StatusConflict, "ai_disabled", fmt.Sprintf("Embedding backend unavailable: %v", err))
-		return
-	}
-	provider, err := h.AI.Get(cfg.Provider, map[string]any{
-		"apiKey": cfg.APIKey, "model": cfg.Model, "baseUrl": cfg.BaseURL,
-	})
-	if err != nil {
-		httputil.Error(w, http.StatusConflict, "ai_disabled", fmt.Sprintf("AI provider unavailable: %v", err))
 		return
 	}
 
@@ -150,7 +143,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer, err := provider.Suggest(r.Context(), &ai.SuggestRequest{
+	result, err := ai.SuggestWithFallback(r.Context(), h.AI, cfg.Providers, &ai.SuggestRequest{
 		SystemPrompt: "You are a documentation assistant. Answer the question using only the provided " +
 			"documentation excerpts. If the excerpts don't contain the answer, say so instead of guessing.",
 		UserPrompt: buildPrompt(req.Content, matches),
@@ -161,14 +154,18 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	assistantMsg := &store.ChatMessageRecord{
-		ConversationID: c.ID, Role: "assistant", Content: answer, Provider: provider.Name(),
+		ConversationID: c.ID, Role: "assistant", Content: result.Content, Provider: result.Provider,
 	}
 	if err := h.Store.CreateChatMessage(r.Context(), assistantMsg); err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	httputil.JSON(w, http.StatusOK, assistantMsg)
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"id": assistantMsg.ID, "conversationId": assistantMsg.ConversationID,
+		"role": assistantMsg.Role, "content": assistantMsg.Content, "provider": assistantMsg.Provider,
+		"fallbackUsed": result.FallbackUsed, "createdAt": assistantMsg.CreatedAt,
+	})
 }
 
 // loadOwnedConversation loads the conversation named by the {id} path value

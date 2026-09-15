@@ -71,10 +71,14 @@ export function ChangeDetailPage() {
 
   // On-demand narration (issue #238, piece 2/3): generated once by the
   // backend and cached on the change record — refetching the change reuses
-  // the cached text instead of re-invoking the AI provider.
+  // the cached text instead of re-invoking the AI provider. `provider` /
+  // `fallbackUsed` (piece 3/3) are provenance from THIS call only — not
+  // persisted, so they come from the mutation result, not the refetched GET.
+  const [explainFallback, setExplainFallback] = useState<{ provider: string } | null>(null);
   const explain = useMutation({
     mutationFn: () => postChangesChangeIdExplain(changeId ?? ''),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      setExplainFallback(res.fallbackUsed ? { provider: res.provider ?? '' } : null);
       if (changeId) {
         queryClient.invalidateQueries({ queryKey: getGetChangesChangeIdQueryKey(changeId) });
       }
@@ -135,6 +139,11 @@ export function ChangeDetailPage() {
                         <ChatIcon size={13} /> {t('changes.explainHeading')}
                       </h2>
                       <p className="mt-1.5 text-xs text-ink-muted">{data.narration}</p>
+                      {explainFallback && (
+                        <p className="mt-1.5 text-2xs text-ink-faint">
+                          {t('changes.explainFallbackUsed', { provider: explainFallback.provider })}
+                        </p>
+                      )}
                     </section>
                   ) : (
                     <div className="mb-4 flex items-center justify-between rounded-lg border border-dashed border-line-soft p-3">

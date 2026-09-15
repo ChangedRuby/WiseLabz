@@ -82,7 +82,7 @@ func (p *claudeProvider) Suggest(ctx context.Context, req *SuggestRequest) (stri
 
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("ai provider returned %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return "", &StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
 	var out struct {

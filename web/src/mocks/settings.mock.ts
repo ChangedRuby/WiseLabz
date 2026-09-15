@@ -12,6 +12,7 @@
 import { http, HttpResponse, delay } from 'msw';
 import type {
   AiConfig,
+  AiFallbackProvider,
   NotificationConfig,
   ProfileUpdate,
   Role,
@@ -35,6 +36,7 @@ const LATENCY = 280;
 const users: User[] = settingsUsers.map((u) => ({ ...u }));
 let sessions = settingsSessions.map((s) => ({ ...s }));
 const aiConfig: AiConfig = { ...settingsAiConfig };
+let aiFallbackProviders: AiFallbackProvider[] = [];
 const notificationConfig: NotificationConfig = {
   channels: settingsNotificationConfig.channels.map((c) => ({ ...c })),
   routing: settingsNotificationConfig.routing.map((r) => ({ ...r })),
@@ -145,6 +147,19 @@ export const settingsHandlers = [
       return HttpResponse.json({ ok: false, message: 'AI module is disabled or no provider selected.' });
     }
     return HttpResponse.json({ ok: true, message: 'Provider reachable.', latencyMs: 412 });
+  }),
+
+  http.get('*/ai/config/fallback-providers', async () => {
+    await delay(LATENCY);
+    return HttpResponse.json(aiFallbackProviders);
+  }),
+
+  http.put('*/ai/config/fallback-providers', async ({ request }) => {
+    await delay(LATENCY);
+    const body = (await request.json().catch(() => [])) as AiFallbackProvider[];
+    // apiKey is write-only: accept it, never echo it back.
+    aiFallbackProviders = body.map(({ apiKey: _apiKey, ...rest }) => rest);
+    return HttpResponse.json(aiFallbackProviders);
   }),
 
   // ── Notifications config (operator) ───────────────────────────────────────

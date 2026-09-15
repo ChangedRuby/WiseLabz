@@ -8,11 +8,15 @@ import (
 // testProvider is a minimal test provider for registry testing.
 type testProvider struct {
 	name string
+	err  error
 }
 
 func (t *testProvider) Name() string { return t.name }
 
 func (t *testProvider) Suggest(_ context.Context, _ *SuggestRequest) (string, error) {
+	if t.err != nil {
+		return "", t.err
+	}
 	return "test suggestion", nil
 }
 

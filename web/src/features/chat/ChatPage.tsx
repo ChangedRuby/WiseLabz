@@ -43,6 +43,10 @@ export function ChatPage() {
 
   const active = useGetChatConversationsId(activeId ?? '', { query: { enabled: !!activeId } });
 
+  // Which assistant message ids were answered by a fallback provider — not
+  // persisted server-side, so tracked here from each ask response as it lands.
+  const [fallbackMessageIds, setFallbackMessageIds] = useState<Set<string>>(new Set());
+
   const ask = useMutation({
     mutationFn: async (content: string) => {
       let id = activeId;
@@ -53,14 +57,17 @@ export function ChatPage() {
         });
         id = conversation.id;
       }
-      await postChatConversationsIdMessages(id, { content });
-      return id;
+      const reply = await postChatConversationsIdMessages(id, { content });
+      return { conversationId: id, reply };
     },
-    onSuccess: (id) => {
-      setActiveId(id);
+    onSuccess: ({ conversationId, reply }) => {
+      setActiveId(conversationId);
       setQuestion('');
+      if (reply.fallbackUsed) {
+        setFallbackMessageIds((prev) => new Set(prev).add(reply.id));
+      }
       queryClient.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
-      queryClient.invalidateQueries({ queryKey: getGetChatConversationsIdQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getGetChatConversationsIdQueryKey(conversationId) });
     },
     onError: () => toast.error(t('chat.askError')),
   });
@@ -202,7 +209,11 @@ export function ChatPage() {
             ) : activeId && (active.isError || !active.data) ? (
               <ErrorState description={t('chat.conversationLoadError')} onRetry={() => active.refetch()} />
             ) : activeId && active.data ? (
-              <MessageList messages={active.data.messages} pending={ask.isPending} />
+              <MessageList
+                messages={active.data.messages}
+                pending={ask.isPending}
+                fallbackMessageIds={fallbackMessageIds}
+              />
             ) : (
               <EmptyState
                 icon={<ChatIcon size={20} />}
@@ -240,9 +251,11 @@ export function ChatPage() {
 function MessageList({
   messages,
   pending,
+  fallbackMessageIds,
 }: {
   messages: { id: string; role: string; content: string; provider?: string }[];
   pending: boolean;
+  fallbackMessageIds: Set<string>;
 }) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -267,7 +280,10 @@ function MessageList({
             <p className="whitespace-pre-wrap">{m.content}</p>
           )}
           {m.provider && (
-            <p className="mt-1 font-mono text-2xs text-ink-faint">{t('chat.answeredBy', { provider: m.provider })}</p>
+            <p className="mt-1 font-mono text-2xs text-ink-faint">
+              {t('chat.answeredBy', { provider: m.provider })}
+              {fallbackMessageIds.has(m.id) && ` · ${t('chat.fallbackUsed')}`}
+            </p>
           )}
         </div>
       ))}

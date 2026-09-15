@@ -11,6 +11,7 @@ import { faker } from '@faker-js/faker';
 import { NotificationChannelType, Severity } from '../../model';
 import type {
   AiConfig,
+  AiFallbackProvider,
   AuthConfig,
   NotificationConfig,
   OidcProvider,
@@ -155,6 +156,40 @@ export const getPostAiConfigTestResponseMock = (
   latencyMs: faker.helpers.arrayElement([faker.number.int(), undefined]),
   ...overrideResponse,
 });
+
+export const getGetAiConfigFallbackProvidersResponseMock = (): AiFallbackProvider[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    provider: faker.helpers.arrayElement(['anthropic', 'openai', 'ollama'] as const),
+    model: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    apiKey: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    baseUrl: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  }));
+
+export const getPutAiConfigFallbackProvidersResponseMock = (): AiFallbackProvider[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    provider: faker.helpers.arrayElement(['anthropic', 'openai', 'ollama'] as const),
+    model: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    apiKey: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    baseUrl: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  }));
 
 export const getGetNotificationsConfigResponseMock = (
   overrideResponse: Partial<Extract<NotificationConfig, object>> = {}

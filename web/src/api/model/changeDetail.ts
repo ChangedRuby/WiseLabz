@@ -19,4 +19,8 @@ export type ChangeDetail = ChangeSummary & {
   provenance?: DocumentDiffProvenance[];
   /** Cached plain-English explanation of why this change matters, generated on demand via POST /changes/{changeId}/explain. Empty until requested. */
   narration?: string;
+  /** AI provider that generated the narration on THIS call. Not persisted — present only on the response that just generated the narration, absent when the cached narration is served on a later call. */
+  provider?: string;
+  /** True if the primary provider failed over to a fallback on this call. */
+  fallbackUsed?: boolean;
 };

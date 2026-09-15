@@ -14,6 +14,7 @@ import type { RequestHandlerOptions } from 'msw';
 import { NotificationChannelType, Severity } from '../../model';
 import type {
   AiConfig,
+  AiFallbackProvider,
   AuthConfig,
   NotificationConfig,
   OidcProvider,
@@ -158,6 +159,40 @@ export const getPostAiConfigTestResponseMock = (
   latencyMs: faker.helpers.arrayElement([faker.number.int(), undefined]),
   ...overrideResponse,
 });
+
+export const getGetAiConfigFallbackProvidersResponseMock = (): AiFallbackProvider[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    provider: faker.helpers.arrayElement(['anthropic', 'openai', 'ollama'] as const),
+    model: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    apiKey: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    baseUrl: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  }));
+
+export const getPutAiConfigFallbackProvidersResponseMock = (): AiFallbackProvider[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    provider: faker.helpers.arrayElement(['anthropic', 'openai', 'ollama'] as const),
+    model: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    apiKey: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    baseUrl: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  }));
 
 export const getGetNotificationsConfigResponseMock = (
   overrideResponse: Partial<Extract<NotificationConfig, object>> = {}
@@ -353,6 +388,54 @@ export const getPostAiConfigTestMockHandler = (
   );
 };
 
+export const getGetAiConfigFallbackProvidersMockHandler = (
+  overrideResponse?:
+    | AiFallbackProvider[]
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<AiFallbackProvider[]> | AiFallbackProvider[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/ai/config/fallback-providers',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetAiConfigFallbackProvidersResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPutAiConfigFallbackProvidersMockHandler = (
+  overrideResponse?:
+    | AiFallbackProvider[]
+    | ((
+        info: Parameters<Parameters<typeof http.put>[1]>[0]
+      ) => Promise<AiFallbackProvider[]> | AiFallbackProvider[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.put(
+    '*/ai/config/fallback-providers',
+    async (info: Parameters<Parameters<typeof http.put>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPutAiConfigFallbackProvidersResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
 export const getGetNotificationsConfigMockHandler = (
   overrideResponse?:
     | NotificationConfig
@@ -429,6 +512,8 @@ export const getSettingsMock = () => [
   getGetAiConfigMockHandler(),
   getPutAiConfigMockHandler(),
   getPostAiConfigTestMockHandler(),
+  getGetAiConfigFallbackProvidersMockHandler(),
+  getPutAiConfigFallbackProvidersMockHandler(),
   getGetNotificationsConfigMockHandler(),
   getPutNotificationsConfigMockHandler(),
   getPostNotificationsConfigTestMockHandler(),

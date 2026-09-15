@@ -3,7 +3,9 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -69,6 +71,78 @@ func (r *Registry) List() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// StatusError wraps an HTTP status code an AI provider returned, so callers
+// (fallback routing) can tell a retryable failure (429/5xx) from others.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("ai provider returned %d: %s", e.Code, e.Body)
+}
+
+// isRetryable reports whether err should advance to the next configured
+// provider: HTTP 429/5xx, or a timeout.
+func isRetryable(err error) bool {
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.Code == 429 || se.Code >= 500
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// ProviderConfig names one entry in an ordered fallback chain: which
+// registered provider to instantiate and its connection settings.
+type ProviderConfig struct {
+	Name    string
+	Model   string
+	APIKey  string
+	BaseURL string
+}
+
+// SuggestResult carries a successful Suggest call's answer plus which
+// provider produced it, so callers can surface fallback provenance.
+type SuggestResult struct {
+	Content      string
+	Provider     string
+	FallbackUsed bool
+}
+
+// SuggestWithFallback tries each configured provider in priority order,
+// advancing to the next on a retryable failure (429, 5xx, timeout). If every
+// provider fails, it returns a combined error naming each attempted provider.
+func SuggestWithFallback(ctx context.Context, registry *Registry, configs []ProviderConfig, req *SuggestRequest) (*SuggestResult, error) {
+	if len(configs) == 0 {
+		return nil, fmt.Errorf("no AI providers configured")
+	}
+
+	var errs []error
+	for i, c := range configs {
+		provider, err := registry.Get(c.Name, map[string]any{
+			"apiKey": c.APIKey, "model": c.Model, "baseUrl": c.BaseURL,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
+			continue
+		}
+
+		content, err := provider.Suggest(ctx, req)
+		if err == nil {
+			return &SuggestResult{Content: content, Provider: provider.Name(), FallbackUsed: i > 0}, nil
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
+		if !isRetryable(err) {
+			break
+		}
+	}
+	return nil, errors.Join(errs...)
 }
 
 // StubProvider is a stub AI provider for when AI is not configured.

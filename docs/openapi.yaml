@@ -1598,6 +1598,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TestResult' }
+  /ai/config/fallback-providers:
+    get:
+      tags: [settings]
+      summary: Ordered fallback providers, tried in order after the primary provider fails — admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AiFallbackProvider' }
+    put:
+      tags: [settings]
+      summary: Replace the whole ordered fallback provider list — admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/AiFallbackProvider' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AiFallbackProvider' }
   /notifications/config:
     get:
       tags: [settings]
@@ -2471,6 +2501,12 @@ components:
         role: { type: string, enum: [user, assistant] }
         content: { type: string }
         provider: { type: string, description: AI provider that produced an assistant reply }
+        fallbackUsed:
+          type: boolean
+          description: >
+            True if the primary provider failed and a fallback answered instead.
+            Not persisted — present only on the response to the message that
+            triggered generation, absent when re-fetching history.
         createdAt: { type: string, format: date-time }
     ChatMessageCreate:
       type: object
@@ -2597,6 +2633,15 @@ components:
               description: >
                 Cached plain-English explanation of why this change matters, generated
                 on demand via POST /changes/{changeId}/explain. Empty until requested.
+            provider:
+              type: string
+              description: >
+                AI provider that generated the narration on THIS call. Not persisted —
+                present only on the response that just generated the narration, absent
+                when the cached narration is served on a later call.
+            fallbackUsed:
+              type: boolean
+              description: True if the primary provider failed over to a fallback on this call.
     DocumentDiffProvenance:
       type: object
       required: [snapshotPath, templateSection, diffLines]
@@ -3025,6 +3070,18 @@ components:
         apiKey: { type: string, description: Write-only; omitted in responses }
         baseUrl: { type: string, description: For Ollama / self-hosted }
         mode: { type: string, enum: [auto_update, suggest_only], description: How diffs route (§2) }
+    AiFallbackProvider:
+      type: object
+      required: [provider]
+      description: >
+        One entry in the ordered fallback chain (priority 2+, since the primary
+        AiConfig.provider is implicitly priority 1). Tried in list order when the
+        provider before it errors with 429, 5xx, or a timeout.
+      properties:
+        provider: { type: string, enum: [anthropic, openai, ollama] }
+        model: { type: string }
+        apiKey: { type: string, description: Write-only; omitted in responses }
+        baseUrl: { type: string, description: For Ollama / self-hosted }
     NotificationConfig:
       type: object
       required: [channels, routing]

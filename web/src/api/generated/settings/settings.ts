@@ -21,6 +21,7 @@ import type {
 
 import type {
   AiConfig,
+  AiFallbackProvider,
   AuthConfig,
   AuthSettingsUpdate,
   ForbiddenResponse,
@@ -785,6 +786,269 @@ export function usePostAiConfigTest<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getPostAiConfigTestQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Ordered fallback providers, tried in order after the primary provider fails — admin
+ */
+export const getAiConfigFallbackProviders = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<AiFallbackProvider[]>(
+    { url: `/ai/config/fallback-providers`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetAiConfigFallbackProvidersQueryKey = () => {
+  return [`/ai/config/fallback-providers`] as const;
+};
+
+export const getGetAiConfigFallbackProvidersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>, TError, TData>
+  >;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAiConfigFallbackProvidersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>> = ({
+    signal,
+  }) => getAiConfigFallbackProviders(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAiConfigFallbackProvidersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiConfigFallbackProviders>>
+>;
+export type GetAiConfigFallbackProvidersQueryError = ErrorType<unknown>;
+
+export function useGetAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+          TError,
+          Awaited<ReturnType<typeof getAiConfigFallbackProviders>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+          TError,
+          Awaited<ReturnType<typeof getAiConfigFallbackProviders>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Ordered fallback providers, tried in order after the primary provider fails — admin
+ */
+
+export function useGetAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof getAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAiConfigFallbackProviders>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAiConfigFallbackProvidersQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Replace the whole ordered fallback provider list — admin
+ */
+export const putAiConfigFallbackProviders = (
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<AiFallbackProvider[]>(
+    {
+      url: `/ai/config/fallback-providers`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: aiFallbackProvider,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPutAiConfigFallbackProvidersQueryKey = (
+  aiFallbackProvider?: BodyType<AiFallbackProvider[]>
+) => {
+  return ['PUT', `/ai/config/fallback-providers`, aiFallbackProvider] as const;
+};
+
+export const getPutAiConfigFallbackProvidersQueryOptions = <
+  TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPutAiConfigFallbackProvidersQueryKey(aiFallbackProvider);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>> = ({
+    signal,
+  }) => putAiConfigFallbackProviders(aiFallbackProvider, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PutAiConfigFallbackProvidersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof putAiConfigFallbackProviders>>
+>;
+export type PutAiConfigFallbackProvidersQueryError = ErrorType<unknown>;
+
+export function usePutAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+          TError,
+          Awaited<ReturnType<typeof putAiConfigFallbackProviders>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+          TError,
+          Awaited<ReturnType<typeof putAiConfigFallbackProviders>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Replace the whole ordered fallback provider list — admin
+ */
+
+export function usePutAiConfigFallbackProviders<
+  TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
+  TError = ErrorType<unknown>,
+>(
+  aiFallbackProvider: BodyType<AiFallbackProvider[]>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putAiConfigFallbackProviders>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPutAiConfigFallbackProvidersQueryOptions(aiFallbackProvider, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

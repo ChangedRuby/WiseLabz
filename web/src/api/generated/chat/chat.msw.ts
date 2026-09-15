@@ -53,6 +53,7 @@ export const getGetChatConversationsIdResponseMock = (
         faker.string.alpha({ length: { min: 10, max: 20 } }),
         undefined,
       ]),
+      fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
       createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
     })
   ),
@@ -70,6 +71,7 @@ export const getPostChatConversationsIdMessagesResponseMock = (
     faker.string.alpha({ length: { min: 10, max: 20 } }),
     undefined,
   ]),
+  fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   ...overrideResponse,
 });

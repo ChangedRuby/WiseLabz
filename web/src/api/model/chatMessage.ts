@@ -15,5 +15,7 @@ export interface ChatMessage {
   content: string;
   /** AI provider that produced an assistant reply */
   provider?: string;
+  /** True if the primary provider failed and a fallback answered instead. Not persisted — present only on the response to the message that triggered generation, absent when re-fetching history. */
+  fallbackUsed?: boolean;
   createdAt: string;
 }

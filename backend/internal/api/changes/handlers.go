@@ -278,16 +278,8 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := h.Settings.LoadAIConfig(r.Context())
-	if !cfg.Enabled {
+	if !cfg.Enabled || len(cfg.Providers) == 0 {
 		httputil.Error(w, http.StatusConflict, "ai_disabled", "AI module is not enabled")
-		return
-	}
-
-	provider, err := h.AI.Get(cfg.Provider, map[string]any{
-		"apiKey": cfg.APIKey, "model": cfg.Model, "baseUrl": cfg.BaseURL,
-	})
-	if err != nil {
-		httputil.Error(w, http.StatusConflict, "ai_disabled", fmt.Sprintf("AI provider unavailable: %v", err))
 		return
 	}
 
@@ -302,7 +294,7 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	requestID := uuid.New().String()
 
 	go func() {
-		content, err := provider.Suggest(context.Background(), &ai.SuggestRequest{
+		result, err := ai.SuggestWithFallback(context.Background(), h.AI, cfg.Providers, &ai.SuggestRequest{
 			SystemPrompt: "Summarize this infrastructure change and suggest an updated documentation snippet.",
 			UserPrompt:   fmt.Sprintf("Change summary: %s\n\nDiff:\n%s", c.Summary, c.Diff),
 		})
@@ -315,7 +307,9 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 			payload["error"] = err.Error()
 		} else {
 			payload["status"] = "complete"
-			payload["fullContent"] = content
+			payload["fullContent"] = result.Content
+			payload["provider"] = result.Provider
+			payload["fallbackUsed"] = result.FallbackUsed
 		}
 		if h.WSHub != nil {
 			h.WSHub.BroadcastToUser(userID, ws.EventDocAISuggestion, payload)
@@ -353,20 +347,12 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := h.Settings.LoadAIConfig(r.Context())
-	if !cfg.Enabled {
+	if !cfg.Enabled || len(cfg.Providers) == 0 {
 		httputil.Error(w, http.StatusConflict, "ai_disabled", "AI module is not enabled")
 		return
 	}
 
-	provider, err := h.AI.Get(cfg.Provider, map[string]any{
-		"apiKey": cfg.APIKey, "model": cfg.Model, "baseUrl": cfg.BaseURL,
-	})
-	if err != nil {
-		httputil.Error(w, http.StatusConflict, "ai_disabled", fmt.Sprintf("AI provider unavailable: %v", err))
-		return
-	}
-
-	narration, err := provider.Suggest(r.Context(), &ai.SuggestRequest{
+	result, err := ai.SuggestWithFallback(r.Context(), h.AI, cfg.Providers, &ai.SuggestRequest{
 		SystemPrompt: "You explain infrastructure changes to engineers in plain English. " +
 			"In 2-4 sentences, explain why this change matters and what its practical impact is. " +
 			"Do not restate the mechanical diff line by line.",
@@ -377,7 +363,7 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.UpdateChangeNarration(r.Context(), id, narration); err != nil {
+	if err := h.Store.UpdateChangeNarration(r.Context(), id, result.Content); err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
@@ -387,5 +373,7 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	detail["provider"] = result.Provider
+	detail["fallbackUsed"] = result.FallbackUsed
 	httputil.JSON(w, http.StatusOK, detail)
 }

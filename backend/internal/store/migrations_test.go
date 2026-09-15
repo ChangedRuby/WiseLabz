@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -122,17 +123,25 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (change narration) should drop
-	// the column it added, without touching earlier migrations' tables/columns.
+	// Rolling back only the latest migration (provider fallback routing)
+	// should drop the table it added, without touching earlier migrations'
+	// tables/columns.
+	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_config_providers'").Scan(&name)
+	if err == nil {
+		t.Error("ai_config_providers should not exist after rolling back its migration")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("query sqlite_master for ai_config_providers: %v", err)
+	}
+
 	var changesSchema string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='changes'").Scan(&changesSchema); err != nil {
 		t.Fatalf("query sqlite_master for changes: %v", err)
 	}
-	if strings.Contains(changesSchema, "narration") {
-		t.Error("changes should not have narration after rolling back its migration")
+	if !strings.Contains(changesSchema, "narration") {
+		t.Error("changes should still have narration from an earlier migration")
 	}
 	for _, table := range []string{"doc_section_embeddings", "chat_conversations", "chat_messages"} {
-		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
 		if err != nil {
 			t.Errorf("table %s from an earlier migration should still exist (err=%v)", table, err)
@@ -181,8 +190,15 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	if hasColumn(t, db, "postgres", "changes", "narration") {
-		t.Error("changes.narration should not exist after rolling back its migration")
+	if !hasColumn(t, db, "postgres", "changes", "narration") {
+		t.Error("changes.narration should still exist from an earlier migration")
+	}
+	var name string
+	err = db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_name = 'ai_config_providers'`).Scan(&name)
+	if err == nil {
+		t.Error("ai_config_providers should not exist after rolling back its migration")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("query information_schema.tables for ai_config_providers: %v", err)
 	}
 }
 
