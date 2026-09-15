@@ -2046,7 +2046,7 @@ components:
       enum: [open, resolved]
     ConnectorCategory:
       type: string
-      enum: [virtualization, containers_paas, networking]
+      enum: [virtualization, containers_paas, networking, dns]
     SyncPhase:
       type: string
       enum: [queued, fetching, diffing, generating, done, error]

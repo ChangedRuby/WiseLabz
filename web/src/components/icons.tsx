@@ -38,6 +38,7 @@ import {
   KeyIcon as PhKey,
   CopyIcon as PhCopy,
   ChatCircleIcon as PhChatCircle,
+  GlobeIcon as PhGlobe,
 } from '@phosphor-icons/react';
 
 export type IconProps = PhosphorIconProps;
@@ -74,3 +75,4 @@ export const DownloadIcon = (p: IconProps) => <PhDownloadSimple size={18} weight
 export const KeyIcon = (p: IconProps) => <PhKey size={18} weight="regular" aria-hidden="true" {...p} />;
 export const CopyIcon = (p: IconProps) => <PhCopy size={18} weight="regular" aria-hidden="true" {...p} />;
 export const ChatIcon = (p: IconProps) => <PhChatCircle size={18} weight="regular" aria-hidden="true" {...p} />;
+export const GlobeIcon = (p: IconProps) => <PhGlobe size={18} weight="regular" aria-hidden="true" {...p} />;

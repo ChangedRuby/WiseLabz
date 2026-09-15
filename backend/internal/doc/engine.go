@@ -56,6 +56,11 @@ func (e *Engine) render(ctx context.Context, templateID, connectorID string) (*r
 		return nil, fmt.Errorf("unmarshal snapshot: %w", err)
 	}
 
+	links, err := matchEntities(ctx, e.store, connectorID, snap.Entities)
+	if err != nil {
+		return nil, fmt.Errorf("match entities: %w", err)
+	}
+
 	var buf bytes.Buffer
 	data := templateData{
 		ServiceName:  snap.ServiceName,
@@ -63,6 +68,7 @@ func (e *Engine) render(ctx context.Context, templateID, connectorID string) (*r
 		Sections:     snap.Sections,
 		Dependencies: snap.Dependencies,
 		Metadata:     snap.Metadata,
+		Links:        links,
 		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -231,6 +237,12 @@ func (e *Engine) renderSnapshot(ctx context.Context, connectorID string) (*rende
 		buf.WriteString("\n")
 	}
 
+	if links, err := matchEntities(ctx, e.store, connectorID, snap.Entities); err == nil && len(links) > 0 {
+		buf.WriteString("## Related Entities\n\n")
+		buf.WriteString(relatedEntities(links))
+		buf.WriteString("\n")
+	}
+
 	return &renderResult{Title: snap.ServiceName, Content: buf.String()}, nil
 }
 
@@ -319,5 +331,6 @@ type templateData struct {
 	Sections     []connector.SnapshotSection
 	Dependencies []connector.ServiceDependency
 	Metadata     map[string]string
+	Links        []EntityLink
 	GeneratedAt  string
 }

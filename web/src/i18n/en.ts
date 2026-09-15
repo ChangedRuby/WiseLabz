@@ -244,6 +244,7 @@ export const en = {
       virtualization: 'Virtualization',
       containers_paas: 'Containers',
       networking: 'Networking',
+      dns: 'DNS',
     },
     detail: {
       back: 'All services',
