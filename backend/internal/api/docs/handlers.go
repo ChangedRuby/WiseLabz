@@ -15,6 +15,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/api/settings"
 	"github.com/WiseLabz/wiselabz/internal/auth"
+	"github.com/WiseLabz/wiselabz/internal/chat"
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
@@ -27,12 +28,37 @@ type Handler struct {
 	DocEngine *doc.Engine
 	Settings  *settings.Handler
 	AI        *ai.Registry
+	Embed     *ai.EmbedRegistry
 	WSHub     *ws.Hub
 }
 
 // NewHandler creates a new doc handler.
-func NewHandler(s *store.Store, eng *doc.Engine, settingsH *settings.Handler, aiRegistry *ai.Registry, hub *ws.Hub) *Handler {
-	return &Handler{Store: s, DocEngine: eng, Settings: settingsH, AI: aiRegistry, WSHub: hub}
+func NewHandler(s *store.Store, eng *doc.Engine, settingsH *settings.Handler, aiRegistry *ai.Registry, embedRegistry *ai.EmbedRegistry, hub *ws.Hub) *Handler {
+	return &Handler{Store: s, DocEngine: eng, Settings: settingsH, AI: aiRegistry, Embed: embedRegistry, WSHub: hub}
+}
+
+// syncDocEmbeddings recomputes chat-retrieval embeddings for a doc so "ask
+// your lab" search stays current after every generate/save. Best-effort: an
+// embedding-backend failure is logged, not surfaced, so it never blocks the
+// doc write it's attached to.
+func (h *Handler) syncDocEmbeddings(ctx context.Context, docID, content string) {
+	if h.Embed == nil || docID == "" {
+		return
+	}
+	cfg := h.Settings.LoadAIConfig(ctx)
+	if !cfg.Enabled || cfg.EmbedProvider == "" {
+		return
+	}
+	embedder, err := h.Embed.Get(cfg.EmbedProvider, map[string]any{
+		"apiKey": cfg.EmbedAPIKey, "model": cfg.EmbedModel, "baseUrl": cfg.EmbedBaseURL,
+	})
+	if err != nil {
+		slog.Warn("chat: embedding backend unavailable, skipping doc embedding sync", "docId", docID, "error", err)
+		return
+	}
+	if err := chat.SyncDocEmbeddings(ctx, h.Store, embedder, cfg.EmbedModel, docID, content); err != nil {
+		slog.Warn("chat: failed to sync doc embeddings", "docId", docID, "error", err)
+	}
 }
 
 // Tree handles GET /api/docs/tree.
@@ -214,6 +240,9 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	if d != nil {
+		h.syncDocEmbeddings(r.Context(), d.ID, d.Content)
+	}
 	httputil.JSON(w, http.StatusOK, d)
 }
 
@@ -368,6 +397,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	h.syncDocEmbeddings(r.Context(), result.DocID, result.Content)
 	httputil.JSON(w, http.StatusCreated, result)
 }
 

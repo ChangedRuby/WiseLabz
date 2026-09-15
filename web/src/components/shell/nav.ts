@@ -7,6 +7,7 @@ import {
   BellIcon,
   AlertTriangleIcon,
   SparklesIcon,
+  ChatIcon,
 } from '../icons';
 
 export interface NavItem {
@@ -22,6 +23,7 @@ export const NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', Icon: GaugeIcon },
   { to: '/services', label: 'Services', Icon: LayersIcon },
   { to: '/docs', label: 'Docs', Icon: FileTextIcon },
+  { to: '/chat', label: 'Chat', Icon: ChatIcon },
   { to: '/changes', label: 'Changes', Icon: DiffIcon },
   { to: '/attention', label: 'Attention', Icon: SparklesIcon, badge: true, badgeSource: 'attention' },
   { to: '/alerts', label: 'Alerts', Icon: BellIcon, badge: true },

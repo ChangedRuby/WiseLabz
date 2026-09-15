@@ -209,29 +209,53 @@ type AIConfigValues struct {
 	BaseURL  string
 	APIKey   string
 	Mode     string
+
+	// Embedding backend for "ask your lab" chat retrieval, independent of
+	// Provider/Model/APIKey/BaseURL above.
+	EmbedProvider string
+	EmbedModel    string
+	EmbedAPIKey   string
+	EmbedBaseURL  string
 }
 
 // LoadAIConfig reads the current AI configuration, decrypting the stored API key.
 func (h *Handler) LoadAIConfig(ctx context.Context) AIConfigValues {
 	var rec struct {
-		Enabled  int
-		Provider sql.NullString
-		Model    sql.NullString
-		BaseURL  sql.NullString
-		Mode     string
+		Enabled       int
+		Provider      sql.NullString
+		Model         sql.NullString
+		BaseURL       sql.NullString
+		Mode          string
+		EmbedProvider sql.NullString
+		EmbedModel    sql.NullString
+		EmbedBaseURL  sql.NullString
 	}
 	err := h.Store.DB().QueryRowContext(ctx, `
-		SELECT enabled, provider, model, base_url, mode FROM ai_config WHERE id = 1
-	`).Scan(&rec.Enabled, &rec.Provider, &rec.Model, &rec.BaseURL, &rec.Mode)
+		SELECT enabled, provider, model, base_url, mode, embed_provider, embed_model, embed_base_url
+		FROM ai_config WHERE id = 1
+	`).Scan(&rec.Enabled, &rec.Provider, &rec.Model, &rec.BaseURL, &rec.Mode,
+		&rec.EmbedProvider, &rec.EmbedModel, &rec.EmbedBaseURL)
 	if err != nil {
 		return AIConfigValues{
 			Enabled: h.Config.AI.Enabled, Provider: h.Config.AI.Provider, Model: h.Config.AI.Model,
 			BaseURL: h.Config.AI.BaseURL, APIKey: h.Config.AI.APIKey, Mode: h.Config.AI.Mode,
+			EmbedProvider: h.Config.AI.EmbedProvider, EmbedModel: h.Config.AI.EmbedModel,
+			EmbedAPIKey: h.Config.AI.EmbedAPIKey, EmbedBaseURL: h.Config.AI.EmbedBaseURL,
 		}
+	}
+	embedProvider := rec.EmbedProvider.String
+	if embedProvider == "" {
+		embedProvider = h.Config.AI.EmbedProvider
+	}
+	embedModel := rec.EmbedModel.String
+	if embedModel == "" {
+		embedModel = h.Config.AI.EmbedModel
 	}
 	return AIConfigValues{
 		Enabled: rec.Enabled != 0, Provider: rec.Provider.String, Model: rec.Model.String,
 		BaseURL: rec.BaseURL.String, APIKey: h.GetDecryptedAPIKey(), Mode: rec.Mode,
+		EmbedProvider: embedProvider, EmbedModel: embedModel,
+		EmbedAPIKey: h.GetDecryptedEmbedAPIKey(), EmbedBaseURL: rec.EmbedBaseURL.String,
 	}
 }
 
@@ -239,23 +263,30 @@ func (h *Handler) LoadAIConfig(ctx context.Context) AIConfigValues {
 func (h *Handler) GetAIConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.LoadAIConfig(r.Context())
 	httputil.JSON(w, http.StatusOK, map[string]any{
-		"enabled":  cfg.Enabled,
-		"provider": cfg.Provider,
-		"model":    cfg.Model,
-		"baseUrl":  cfg.BaseURL,
-		"mode":     cfg.Mode,
+		"enabled":       cfg.Enabled,
+		"provider":      cfg.Provider,
+		"model":         cfg.Model,
+		"baseUrl":       cfg.BaseURL,
+		"mode":          cfg.Mode,
+		"embedProvider": cfg.EmbedProvider,
+		"embedModel":    cfg.EmbedModel,
+		"embedBaseUrl":  cfg.EmbedBaseURL,
 	})
 }
 
 // UpdateAIConfig handles PUT /api/ai/config.
 func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 	req, ok := httputil.DecodeJSON[struct {
-		Enabled  *bool   `json:"enabled"`
-		Provider *string `json:"provider"`
-		Model    *string `json:"model"`
-		APIKey   *string `json:"apiKey"`
-		BaseURL  *string `json:"baseUrl"`
-		Mode     *string `json:"mode"`
+		Enabled       *bool   `json:"enabled"`
+		Provider      *string `json:"provider"`
+		Model         *string `json:"model"`
+		APIKey        *string `json:"apiKey"`
+		BaseURL       *string `json:"baseUrl"`
+		Mode          *string `json:"mode"`
+		EmbedProvider *string `json:"embedProvider"`
+		EmbedModel    *string `json:"embedModel"`
+		EmbedAPIKey   *string `json:"embedApiKey"`
+		EmbedBaseURL  *string `json:"embedBaseUrl"`
 	}](w, r)
 	if !ok {
 		return
@@ -299,6 +330,34 @@ func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 	if req.Mode != nil {
 		parts = append(parts, "mode = ?")
 		args = append(args, *req.Mode)
+	}
+	if req.EmbedProvider != nil {
+		parts = append(parts, "embed_provider = ?")
+		args = append(args, *req.EmbedProvider)
+	}
+	if req.EmbedModel != nil {
+		parts = append(parts, "embed_model = ?")
+		args = append(args, *req.EmbedModel)
+	}
+	if req.EmbedAPIKey != nil {
+		key, err := crypto.DecodeKey(h.Config.Encryption.Key)
+		if err != nil {
+			slog.Error("Failed to load encryption key", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+			return
+		}
+		encrypted, err := crypto.Encrypt(*req.EmbedAPIKey, key)
+		if err != nil {
+			slog.Error("Failed to encrypt embed API key", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+			return
+		}
+		parts = append(parts, "embed_api_key_encrypted = ?")
+		args = append(args, encrypted)
+	}
+	if req.EmbedBaseURL != nil {
+		parts = append(parts, "embed_base_url = ?")
+		args = append(args, *req.EmbedBaseURL)
 	}
 
 	if len(parts) == 0 {
@@ -440,6 +499,29 @@ func (h *Handler) GetDecryptedAPIKey() string {
 			return ""
 		}
 		slog.Warn("Decrypted API key using legacy derived key; re-save the AI config to migrate it to WISELABZ_ENCRYPTION_KEY")
+	}
+	return plaintext
+}
+
+// GetDecryptedEmbedAPIKey reads the stored encrypted embedding-provider API
+// key and returns it decrypted. Returns an empty string if no key is stored
+// or if decryption fails.
+func (h *Handler) GetDecryptedEmbedAPIKey() string {
+	var encrypted string
+	err := h.Store.DB().QueryRow(`SELECT embed_api_key_encrypted FROM ai_config WHERE id = 1`).Scan(&encrypted)
+	if err != nil || encrypted == "" {
+		return ""
+	}
+
+	key, err := crypto.DecodeKey(h.Config.Encryption.Key)
+	if err != nil {
+		slog.Error("Failed to load encryption key", "error", err)
+		return ""
+	}
+	plaintext, err := crypto.Decrypt(encrypted, key)
+	if err != nil {
+		slog.Error("Failed to decrypt stored embed API key", "error", err)
+		return ""
 	}
 	return plaintext
 }

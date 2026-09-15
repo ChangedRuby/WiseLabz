@@ -62,6 +62,9 @@ const AllDocsPage = lazy(() =>
 const DocEditorPage = lazy(() =>
   import('./features/docs/DocEditorPage').then(({ DocEditorPage }) => ({ default: DocEditorPage }))
 );
+const ChatPage = lazy(() =>
+  import('./features/chat/ChatPage').then(({ ChatPage }) => ({ default: ChatPage }))
+);
 const ChangesPage = lazy(() =>
   import('./features/changes/ChangesPage').then(({ ChangesPage }) => ({ default: ChangesPage }))
 );
@@ -197,6 +200,7 @@ const router = createBrowserRouter([
         ),
       },
       { path: 'docs/:docId/history', element: <DocsPage /> },
+      { path: 'chat', element: <ChatPage /> },
       { path: 'changes', element: <ChangesPage /> },
       { path: 'changes/:changeId', element: <ChangeDetailPage /> },
       { path: 'attention', element: <AttentionPage /> },

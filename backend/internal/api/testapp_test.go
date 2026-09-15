@@ -93,15 +93,20 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 	ai.RegisterOpenAICompatible(aiRegistry)
 	ai.RegisterClaude(aiRegistry)
 
+	embedRegistry := ai.NewEmbedRegistry()
+	ai.RegisterOllamaEmbedder(embedRegistry)
+	ai.RegisterOpenAIEmbedder(embedRegistry)
+
 	router := api.NewRouter(api.Config{
-		Store:      s,
-		JWT:        jwtSvc,
-		Config:     cfg,
-		DocEngine:  doc.NewEngine(s),
-		SyncEngine: sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key),
-		Scheduler:  jobRunner,
-		BackupDir:  backupDir,
-		AIRegistry: aiRegistry,
+		Store:         s,
+		JWT:           jwtSvc,
+		Config:        cfg,
+		DocEngine:     doc.NewEngine(s),
+		SyncEngine:    sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key),
+		Scheduler:     jobRunner,
+		BackupDir:     backupDir,
+		AIRegistry:    aiRegistry,
+		EmbedRegistry: embedRegistry,
 	})
 
 	return &testApp{Router: router, Store: s, JWT: jwtSvc, Config: cfg, Scheduler: jobRunner, BackupDir: backupDir}

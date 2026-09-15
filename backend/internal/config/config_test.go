@@ -219,6 +219,10 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		"WISELABZ_AI_API_KEY":                      "key",
 		"WISELABZ_AI_BASE_URL":                     "http://localhost",
 		"WISELABZ_AI_MODE":                         "auto_update",
+		"WISELABZ_AI_EMBED_PROVIDER":               "openai",
+		"WISELABZ_AI_EMBED_MODEL":                  "text-embedding-3-small",
+		"WISELABZ_AI_EMBED_API_KEY":                "embed-key",
+		"WISELABZ_AI_EMBED_BASE_URL":               "http://embed-host",
 		"WISELABZ_SYNC_SCHEDULE":                   "* * * * *",
 		"WISELABZ_SYNC_POLL_CRON_EXPR":             "*/5 * * * * *",
 		"WISELABZ_QUALITY_CRON_EXPR":               "0 1 * * *",
@@ -250,12 +254,15 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		Server:     Server{Host: "127.0.0.1", Port: 9090, Origin: "https://example.com", TrustedProxies: "10.0.0.0/8", Embed: true, ReadTimeoutSeconds: 5, WriteTimeoutSeconds: 6, ShutdownTimeoutSeconds: 7},
 		Encryption: EncryptionSettings{Key: "env-key"},
 		Auth:       AuthSettings{Secret: "env-secret", AccessTokenTTL: 60, RefreshTokenTTL: 120, StepUpForDestructive: false},
-		AI:         AISettings{Enabled: true, Provider: "openai", Model: "gpt-x", APIKey: "key", BaseURL: "http://localhost", Mode: "auto_update"},
-		Sync:       SyncSettings{Schedule: "* * * * *", PollCronExpr: "*/5 * * * * *"},
-		Quality:    QualitySettings{CronExpr: "0 1 * * *"},
-		Log:        LogSettings{Level: "debug", Format: "json"},
-		Retention:  RetentionSettings{SnapshotDays: 1, DocVersionDays: 2, AlertDays: 3, SyncRunDays: 4, AuditDays: 5, CronExpr: "0 4 * * *"},
-		Backup:     BackupSettings{Dir: "/tmp/backups", CronExpr: "0 5 * * *", MaxBackups: 1, MaxAgeHours: 2, Enabled: false},
+		AI: AISettings{
+			Enabled: true, Provider: "openai", Model: "gpt-x", APIKey: "key", BaseURL: "http://localhost", Mode: "auto_update",
+			EmbedProvider: "openai", EmbedModel: "text-embedding-3-small", EmbedAPIKey: "embed-key", EmbedBaseURL: "http://embed-host",
+		},
+		Sync:      SyncSettings{Schedule: "* * * * *", PollCronExpr: "*/5 * * * * *"},
+		Quality:   QualitySettings{CronExpr: "0 1 * * *"},
+		Log:       LogSettings{Level: "debug", Format: "json"},
+		Retention: RetentionSettings{SnapshotDays: 1, DocVersionDays: 2, AlertDays: 3, SyncRunDays: 4, AuditDays: 5, CronExpr: "0 4 * * *"},
+		Backup:    BackupSettings{Dir: "/tmp/backups", CronExpr: "0 5 * * *", MaxBackups: 1, MaxAgeHours: 2, Enabled: false},
 	}
 
 	got := *cfg

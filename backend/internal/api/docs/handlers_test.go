@@ -22,7 +22,7 @@ func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
 	s := apitest.NewStore(t)
 	settingsH := settings.NewHandler(s, &config.Config{}, ai.NewRegistry())
-	return NewHandler(s, doc.NewEngine(s), settingsH, ai.NewRegistry(), nil)
+	return NewHandler(s, doc.NewEngine(s), settingsH, ai.NewRegistry(), nil, nil)
 }
 
 func TestListEmpty(t *testing.T) {
@@ -145,7 +145,7 @@ func TestTree(t *testing.T) {
 		t.Fatalf("create doc: %v", err)
 	}
 
-	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/tree", nil)
 	rr := httptest.NewRecorder()
 	h.Tree(rr, req)
@@ -165,7 +165,7 @@ func TestTree(t *testing.T) {
 func TestTreeEmpty(t *testing.T) {
 	s := apitest.NewStore(t)
 
-	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/tree", nil)
 	rr := httptest.NewRecorder()
 	h.Tree(rr, req)
@@ -203,7 +203,7 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("create version: %v", err)
 	}
 
-	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 
 	t.Run("existing version", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/docs/"+docRecord.ID+"/versions/1", nil)
@@ -283,7 +283,7 @@ func TestRestore(t *testing.T) {
 		t.Fatalf("create v2: %v", err)
 	}
 
-	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 
 	t.Run("restore existing version", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/docs/"+docRecord.ID+"/versions/1/restore", nil)
@@ -379,7 +379,7 @@ func TestGenerate(t *testing.T) {
 		t.Fatalf("create snapshot: %v", err)
 	}
 
-	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil)
+	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 
 	t.Run("success", func(t *testing.T) {
 		payload := strings.NewReader(`{"templateId":"` + tmpl.ID + `","connectorId":"` + conn.ID + `"}`)
@@ -430,7 +430,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestTemplateSchema(t *testing.T) {
-	h := NewHandler(nil, nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/template-schema", nil)
 	rr := httptest.NewRecorder()
 	h.TemplateSchema(rr, req)
