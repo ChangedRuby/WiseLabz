@@ -114,6 +114,11 @@ export const getGetChangesChangeIdResponseMock = (): ChangeDetail => ({
       faker.string.alpha({ length: { min: 10, max: 20 } }),
       undefined,
     ]),
+    provider: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   },
 });
 
@@ -198,6 +203,11 @@ export const getPostChangesChangeIdAckResponseMock = (): ChangeDetail => ({
       faker.string.alpha({ length: { min: 10, max: 20 } }),
       undefined,
     ]),
+    provider: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   },
 });
 
@@ -282,6 +292,11 @@ export const getPostChangesChangeIdDismissResponseMock = (): ChangeDetail => ({
       faker.string.alpha({ length: { min: 10, max: 20 } }),
       undefined,
     ]),
+    provider: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   },
 });
 
@@ -389,5 +404,10 @@ export const getPostChangesChangeIdExplainResponseMock = (): ChangeDetail => ({
       faker.string.alpha({ length: { min: 10, max: 20 } }),
       undefined,
     ]),
+    provider: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    fallbackUsed: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   },
 });

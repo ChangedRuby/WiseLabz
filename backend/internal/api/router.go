@@ -317,6 +317,8 @@ func NewRouter(cfg Config) chi.Router {
 				r.Get("/", settingH.GetAIConfig)
 				r.Put("/", settingH.UpdateAIConfig)
 				r.Post("/test", settingH.TestAIConfig)
+				r.Get("/fallback-providers", settingH.GetAIFallbackProviders)
+				r.Put("/fallback-providers", settingH.UpdateAIFallbackProviders)
 			})
 
 			r.Route("/api/notifications/config", func(r chi.Router) {

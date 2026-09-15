@@ -11,13 +11,17 @@ import {
   putAiConfig,
   postAiConfigTest,
   getGetAiConfigQueryKey,
+  useGetAiConfigFallbackProviders,
+  putAiConfigFallbackProviders,
+  getGetAiConfigFallbackProvidersQueryKey,
 } from '../../api/generated/settings/settings';
-import { AiConfigMode, AiConfigProvider } from '../../api/model';
-import type { AiConfig, TestResult } from '../../api/model';
+import { AiConfigMode, AiConfigProvider, AiFallbackProviderProvider } from '../../api/model';
+import type { AiConfig, AiFallbackProvider, TestResult } from '../../api/model';
 import { Button } from '../../components/ui/Button';
 import { SkeletonRows, ErrorState } from '../../components/ui/states';
 import { ToneTag } from '../../components/ui/ToneTag';
 import { toast } from '../../lib/toast';
+import { PlusIcon, XIcon, ArrowRightIcon } from '../../components/icons';
 import { SubHeader, Section, Field, TextInput, Select, ToggleRow } from './parts';
 
 export function AiPage() {
@@ -183,7 +187,141 @@ export function AiPage() {
           </Button>
         </div>
       </Section>
+
+      <FallbackProvidersSection />
     </div>
+  );
+}
+
+// Ordered fallback chain (issue #238, piece 3/3): tried in list order when the
+// provider before it errors with 429, 5xx, or a timeout. Priority 1 is the
+// primary provider configured above; this list starts at priority 2.
+function FallbackProvidersSection() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError, refetch } = useGetAiConfigFallbackProviders();
+
+  const [rows, setRows] = useState<AiFallbackProvider[] | null>(null);
+  const [seeded, setSeeded] = useState<AiFallbackProvider[] | null>(null);
+  if (data && data !== seeded) {
+    setSeeded(data);
+    setRows(data.map((p) => ({ ...p })));
+  }
+
+  const save = useMutation({
+    mutationFn: (body: AiFallbackProvider[]) => putAiConfigFallbackProviders(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetAiConfigFallbackProvidersQueryKey() });
+      toast.success(t('settings.ai.fallbackSaved'));
+    },
+    onError: () => toast.error(t('settings.ai.fallbackSaveError')),
+  });
+
+  if (isLoading || !rows) return null;
+  if (isError)
+    return (
+      <Section title={t('settings.ai.fallbackTitle')}>
+        <ErrorState description={t('settings.ai.fallbackLoadError')} onRetry={() => refetch()} />
+      </Section>
+    );
+
+  const update = (i: number, patch: Partial<AiFallbackProvider>) =>
+    setRows((r) => r && r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+  const move = (i: number, dir: -1 | 1) =>
+    setRows((r) => {
+      if (!r) return r;
+      const j = i + dir;
+      if (j < 0 || j >= r.length) return r;
+      const next = [...r];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+
+  return (
+    <Section title={t('settings.ai.fallbackTitle')} description={t('settings.ai.fallbackDesc')}>
+      <div className="flex flex-col gap-3">
+        {rows.map((row, i) => (
+          <div key={i} className="grid items-end gap-3 sm:grid-cols-[auto_1fr_1fr_1fr_1fr_auto]">
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+                aria-label={t('settings.ai.fallbackMoveUp')}
+              >
+                <ArrowRightIcon size={13} className="-rotate-90" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={i === rows.length - 1}
+                onClick={() => move(i, 1)}
+                aria-label={t('settings.ai.fallbackMoveDown')}
+              >
+                <ArrowRightIcon size={13} className="rotate-90" />
+              </Button>
+            </div>
+            <Field label={t('settings.ai.provider')}>
+              <Select
+                value={row.provider}
+                onChange={(e) => update(i, { provider: e.target.value as AiFallbackProvider['provider'] })}
+              >
+                <option value={AiFallbackProviderProvider.anthropic}>Anthropic</option>
+                <option value={AiFallbackProviderProvider.openai}>OpenAI</option>
+                <option value={AiFallbackProviderProvider.ollama}>Ollama</option>
+              </Select>
+            </Field>
+            <Field label={t('settings.ai.model')}>
+              <TextInput value={row.model ?? ''} onChange={(e) => update(i, { model: e.target.value })} />
+            </Field>
+            {row.provider === AiFallbackProviderProvider.ollama ? (
+              <Field label={t('settings.ai.baseUrl')}>
+                <TextInput
+                  value={row.baseUrl ?? ''}
+                  placeholder="http://localhost:11434"
+                  onChange={(e) => update(i, { baseUrl: e.target.value })}
+                />
+              </Field>
+            ) : (
+              <Field label={t('settings.ai.apiKey')}>
+                <TextInput
+                  type="password"
+                  autoComplete="off"
+                  placeholder="••••••••••••"
+                  onChange={(e) => update(i, { apiKey: e.target.value })}
+                />
+              </Field>
+            )}
+            <div />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRows((r) => r && r.filter((_, idx) => idx !== i))}
+              aria-label={t('settings.ai.fallbackRemove')}
+            >
+              <XIcon size={13} />
+            </Button>
+          </div>
+        ))}
+
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              setRows((r) => [...(r ?? []), { provider: AiFallbackProviderProvider.openai, model: '' }])
+            }
+          >
+            <PlusIcon size={13} />
+            {t('settings.ai.fallbackAdd')}
+          </Button>
+          <Button variant="primary" size="sm" disabled={save.isPending} onClick={() => save.mutate(rows)}>
+            {t('common.save')}
+          </Button>
+        </div>
+      </div>
+    </Section>
   );
 }
 

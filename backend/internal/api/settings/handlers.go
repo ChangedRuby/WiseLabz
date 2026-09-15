@@ -5,10 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/config"
@@ -216,6 +219,11 @@ type AIConfigValues struct {
 	EmbedModel    string
 	EmbedAPIKey   string
 	EmbedBaseURL  string
+
+	// Providers is the ordered fallback chain: the primary provider above
+	// (if configured) followed by any rows in ai_config_providers, in
+	// priority order. Callers pass this to ai.SuggestWithFallback.
+	Providers []ai.ProviderConfig
 }
 
 // LoadAIConfig reads the current AI configuration, decrypting the stored API key.
@@ -236,12 +244,14 @@ func (h *Handler) LoadAIConfig(ctx context.Context) AIConfigValues {
 	`).Scan(&rec.Enabled, &rec.Provider, &rec.Model, &rec.BaseURL, &rec.Mode,
 		&rec.EmbedProvider, &rec.EmbedModel, &rec.EmbedBaseURL)
 	if err != nil {
-		return AIConfigValues{
+		cfg := AIConfigValues{
 			Enabled: h.Config.AI.Enabled, Provider: h.Config.AI.Provider, Model: h.Config.AI.Model,
 			BaseURL: h.Config.AI.BaseURL, APIKey: h.Config.AI.APIKey, Mode: h.Config.AI.Mode,
 			EmbedProvider: h.Config.AI.EmbedProvider, EmbedModel: h.Config.AI.EmbedModel,
 			EmbedAPIKey: h.Config.AI.EmbedAPIKey, EmbedBaseURL: h.Config.AI.EmbedBaseURL,
 		}
+		cfg.Providers = primaryProviderConfig(cfg)
+		return cfg
 	}
 	embedProvider := rec.EmbedProvider.String
 	if embedProvider == "" {
@@ -251,12 +261,57 @@ func (h *Handler) LoadAIConfig(ctx context.Context) AIConfigValues {
 	if embedModel == "" {
 		embedModel = h.Config.AI.EmbedModel
 	}
-	return AIConfigValues{
+	cfg := AIConfigValues{
 		Enabled: rec.Enabled != 0, Provider: rec.Provider.String, Model: rec.Model.String,
 		BaseURL: rec.BaseURL.String, APIKey: h.GetDecryptedAPIKey(), Mode: rec.Mode,
 		EmbedProvider: embedProvider, EmbedModel: embedModel,
 		EmbedAPIKey: h.GetDecryptedEmbedAPIKey(), EmbedBaseURL: rec.EmbedBaseURL.String,
 	}
+	cfg.Providers = append(primaryProviderConfig(cfg), h.loadFallbackProviders(ctx)...)
+	return cfg
+}
+
+// primaryProviderConfig returns cfg's primary provider as a single-entry
+// fallback chain, or none if no provider is configured.
+func primaryProviderConfig(cfg AIConfigValues) []ai.ProviderConfig {
+	if cfg.Provider == "" {
+		return nil
+	}
+	return []ai.ProviderConfig{{Name: cfg.Provider, Model: cfg.Model, APIKey: cfg.APIKey, BaseURL: cfg.BaseURL}}
+}
+
+// loadFallbackProviders reads the ai_config_providers table (priority 2+),
+// decrypting each row's API key.
+func (h *Handler) loadFallbackProviders(ctx context.Context) []ai.ProviderConfig {
+	rows, err := h.Store.DB().QueryContext(ctx, `
+		SELECT provider, model, api_key_encrypted, base_url
+		FROM ai_config_providers WHERE config_id = 1 ORDER BY priority ASC
+	`)
+	if err != nil {
+		slog.Error("failed to load fallback AI providers", "error", err)
+		return nil
+	}
+	defer rows.Close() //nolint:errcheck
+
+	key, keyErr := crypto.DecodeKey(h.Config.Encryption.Key)
+	var out []ai.ProviderConfig
+	for rows.Next() {
+		var provider, model, encryptedKey, baseURL string
+		if err := rows.Scan(&provider, &model, &encryptedKey, &baseURL); err != nil {
+			slog.Error("failed to scan fallback AI provider row", "error", err)
+			continue
+		}
+		apiKey := ""
+		if encryptedKey != "" && keyErr == nil {
+			if plaintext, err := crypto.Decrypt(encryptedKey, key); err == nil {
+				apiKey = plaintext
+			} else {
+				slog.Error("failed to decrypt fallback AI provider API key", "error", err)
+			}
+		}
+		out = append(out, ai.ProviderConfig{Name: provider, Model: model, APIKey: apiKey, BaseURL: baseURL})
+	}
+	return out
 }
 
 // GetAIConfig handles GET /api/ai/config.
@@ -405,6 +460,83 @@ func (h *Handler) TestAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.JSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Connection successful", "latencyMs": latencyMs})
+}
+
+// fallbackProviderDoc is one entry in the ordered fallback chain, as
+// exchanged with the client. APIKey is write-only (never returned).
+type fallbackProviderDoc struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	APIKey   string `json:"apiKey,omitempty"`
+	BaseURL  string `json:"baseUrl"`
+}
+
+// GetAIFallbackProviders handles GET /api/ai/config/fallback-providers:
+// the ordered list of extra providers tried after the primary one fails.
+func (h *Handler) GetAIFallbackProviders(w http.ResponseWriter, r *http.Request) {
+	providers := h.loadFallbackProviders(r.Context())
+	out := make([]fallbackProviderDoc, len(providers))
+	for i, p := range providers {
+		out[i] = fallbackProviderDoc{Provider: p.Name, Model: p.Model, BaseURL: p.BaseURL}
+	}
+	httputil.JSON(w, http.StatusOK, out)
+}
+
+// UpdateAIFallbackProviders handles PUT /api/ai/config/fallback-providers:
+// replaces the whole ordered fallback list (priority 2+) in one call.
+func (h *Handler) UpdateAIFallbackProviders(w http.ResponseWriter, r *http.Request) {
+	req, ok := httputil.DecodeJSON[[]fallbackProviderDoc](w, r)
+	if !ok {
+		return
+	}
+
+	for _, p := range req {
+		if p.Provider == "" {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "provider is required for every fallback entry")
+			return
+		}
+	}
+
+	var key []byte
+	if len(req) > 0 {
+		var err error
+		key, err = crypto.DecodeKey(h.Config.Encryption.Key)
+		if err != nil {
+			slog.Error("Failed to load encryption key", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+			return
+		}
+	}
+
+	err := h.Store.WithinTransaction(r.Context(), func(tx *store.Store) error {
+		if _, err := tx.DB().ExecContext(r.Context(), `DELETE FROM ai_config_providers WHERE config_id = 1`); err != nil {
+			return err
+		}
+		for i, p := range req {
+			encryptedKey := ""
+			if p.APIKey != "" {
+				var err error
+				encryptedKey, err = crypto.Encrypt(p.APIKey, key)
+				if err != nil {
+					return fmt.Errorf("encrypt fallback API key: %w", err)
+				}
+			}
+			_, err := tx.DB().ExecContext(r.Context(), `
+				INSERT INTO ai_config_providers (id, config_id, priority, provider, model, api_key_encrypted, base_url)
+				VALUES (?, 1, ?, ?, ?, ?, ?)
+			`, uuid.New().String(), i+2, p.Provider, p.Model, encryptedKey, p.BaseURL)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	h.GetAIFallbackProviders(w, r)
 }
 
 // notificationConfigDoc mirrors the NotificationConfig OpenAPI schema.

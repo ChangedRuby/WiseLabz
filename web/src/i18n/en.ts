@@ -350,6 +350,7 @@ export const en = {
     explainPrompt: 'Not sure why this matters?',
     explainHeading: 'Why this matters',
     explainError: "Couldn't generate an explanation.",
+    explainFallbackUsed: 'Answered by {{provider}} (primary provider was unavailable)',
     back: 'Back to changes',
     detailLoadError: "This change couldn't be loaded.",
     detected: 'detected {{date}}',
@@ -508,6 +509,7 @@ export const en = {
     askError: "Couldn't get an answer. Try again.",
     thinking: 'Thinking…',
     answeredBy: 'Answered by {{provider}}',
+    fallbackUsed: 'fallback provider',
   },
   settings: {
     title: 'Settings',
@@ -620,6 +622,16 @@ export const en = {
       test: 'Test connection',
       ok: 'reachable',
       failed: 'failed',
+      fallbackTitle: 'Fallback providers',
+      fallbackDesc:
+        'Tried in order when the provider before it errors with a rate limit, server error, or timeout.',
+      fallbackSaved: 'Fallback providers saved.',
+      fallbackSaveError: 'Could not save fallback providers.',
+      fallbackLoadError: 'Could not load fallback providers.',
+      fallbackAdd: 'Add provider',
+      fallbackRemove: 'Remove provider',
+      fallbackMoveUp: 'Move up',
+      fallbackMoveDown: 'Move down',
     },
     system: {
       title: 'System',

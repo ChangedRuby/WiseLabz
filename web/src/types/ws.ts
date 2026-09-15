@@ -113,6 +113,10 @@ export interface DocAiSuggestionPayload {
   status: 'streaming' | 'complete' | 'error';
   contentDelta?: string;
   fullContent?: string;
+  /** Present on 'complete': which provider answered. */
+  provider?: string;
+  /** Present on 'complete': true if the primary provider failed over to a fallback. */
+  fallbackUsed?: boolean;
   error?: string;
 }
 

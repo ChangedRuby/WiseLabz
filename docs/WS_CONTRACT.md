@@ -197,6 +197,8 @@ interface DocAiSuggestionPayload {
   status: 'streaming' | 'complete' | 'error';
   contentDelta?: string;    // incremental text while streaming
   fullContent?: string;     // present on 'complete'
+  provider?: string;        // present on 'complete': which provider answered
+  fallbackUsed?: boolean;   // present on 'complete': true if the primary provider failed over
   error?: string;           // present on 'error'
 }
 ```
