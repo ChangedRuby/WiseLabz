@@ -7,8 +7,10 @@
  * Inline vs. block code is told apart with a CSS `:not(pre)` selector rather than
  * a JS heuristic, since react-markdown's `code` renderer no longer reports it.
  */
+import { isValidElement } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Mermaid } from './Mermaid';
 
 const headingClass: Record<'h1' | 'h2' | 'h3' | 'h4', string> = {
   h1: 'mt-1 mb-3 font-mono text-2xl font-semibold tracking-tight text-balance text-ink',
@@ -45,16 +47,29 @@ const components: Components = {
       </li>
     );
   },
-  pre: ({ children }) => (
-    <pre className="my-3 overflow-x-auto rounded-lg border border-line-soft bg-canvas-sunken p-3 font-mono text-xs leading-relaxed text-ink-muted">
-      {children}
-    </pre>
-  ),
-  code: ({ children }) => (
-    <code className="rounded bg-canvas-sunken px-1.5 py-0.5 font-mono text-[0.85em] text-accent-primary-bright [pre_&]:rounded-none [pre_&]:bg-transparent [pre_&]:px-0 [pre_&]:py-0 [pre_&]:text-[1em] [pre_&]:text-inherit">
-      {children}
-    </code>
-  ),
+  pre: ({ children }) => {
+    // A fenced ```mermaid block renders through <Mermaid>, which owns its
+    // own frame — skip the generic <pre> wrapper for it.
+    const child = isValidElement<{ className?: string }>(children) ? children : null;
+    if (child?.props.className?.includes('language-mermaid')) {
+      return <>{children}</>;
+    }
+    return (
+      <pre className="my-3 overflow-x-auto rounded-lg border border-line-soft bg-canvas-sunken p-3 font-mono text-xs leading-relaxed text-ink-muted">
+        {children}
+      </pre>
+    );
+  },
+  code: ({ children, className }) => {
+    if (className?.includes('language-mermaid')) {
+      return <Mermaid chart={String(children).replace(/\n$/, '')} />;
+    }
+    return (
+      <code className="rounded bg-canvas-sunken px-1.5 py-0.5 font-mono text-[0.85em] text-accent-primary-bright [pre_&]:rounded-none [pre_&]:bg-transparent [pre_&]:px-0 [pre_&]:py-0 [pre_&]:text-[1em] [pre_&]:text-inherit">
+        {children}
+      </code>
+    );
+  },
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto rounded-lg border border-line-soft">
       <table className="w-full border-collapse text-sm">{children}</table>

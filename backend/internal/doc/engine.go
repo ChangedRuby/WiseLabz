@@ -239,7 +239,7 @@ func (e *Engine) renderSnapshot(ctx context.Context, connectorID string) (*rende
 
 	if links, err := matchEntities(ctx, e.store, connectorID, snap.Entities); err == nil && len(links) > 0 {
 		buf.WriteString("## Related Entities\n\n")
-		buf.WriteString(relatedEntities(links))
+		buf.WriteString(relatedEntities(snap.ServiceName, links))
 		buf.WriteString("\n")
 	}
 

@@ -73,8 +73,9 @@ func join(sep string, strs []string) string {
 }
 
 // relatedEntities renders matched cross-connector entity links as a markdown
-// bullet list.
-func relatedEntities(links []EntityLink) string {
+// bullet list followed by a Mermaid topology diagram centered on the
+// current service.
+func relatedEntities(serviceName string, links []EntityLink) string {
 	if len(links) == 0 {
 		return "_No related entities found._\n"
 	}
@@ -82,5 +83,8 @@ func relatedEntities(links []EntityLink) string {
 	for _, l := range links {
 		fmt.Fprintf(&b, "- **%s** (%s) via %s — matched on %s\n", l.Entity.Name, l.Entity.Kind, l.ConnectorName, l.Reason)
 	}
+	b.WriteString("\n```mermaid\n")
+	b.WriteString(renderMermaid(serviceName, links))
+	b.WriteString("```\n")
 	return b.String()
 }
