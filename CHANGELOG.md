@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0 (2026-09-14)
+
+## What's Changed
+* chore(release): publish release assets by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/188
+* fix(ci): use lowercase GHCR image reference by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/189
+* fix(release): generate notes from merged pull requests by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/191
+* feat(settings): backup ops, API keys, and delivery history by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/192
+* feat: runbook management UI and diagnostics bundle download by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/193
+* Connector health check UI + expanded backup regression coverage by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/194
+* fix: wire AIRegistry into router config and guard nil connector config map by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/213
+* fix: apply configured HTTP server read/write timeouts by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/214
+* fix: reject disabled users' API keys and revoke on disable by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/215
+* fix: bind OIDC state/nonce to browser, harden backup perms, unify cookie Secure derivation by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/216
+* fix: safe shutdown, safe config seeding, and bulk backup queries by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/217
+* test: cover auth handlers, 13 zero-coverage api packages, and crypto.DecodeKey by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/218
+* fix: sync.complete on all exit paths, deterministic diff order, resilient stale check by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/219
+* fix: dedupe doc scans, bound sync concurrency, and generic pagination/decode helpers by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/220
+* test: cover retention error paths and diagnostics bundle by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/221
+* test: cover notification delivery retry and dispatch paths by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/229
+* test: cover auth/session/API-key/OIDC error paths by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/230
+* test: cover backup redaction and restore failure paths by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/231
+* test: cover connector error handling and timeout paths by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/232
+* chore: switch frontend package management from npm to Bun by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/233
+* test: add coverage for config, docs, and application-layer handlers by @gsaraiva2109 in https://github.com/WiseLabz/WiseLabz/pull/234
+
+
+**Full Changelog**: https://github.com/WiseLabz/WiseLabz/compare/v0.2.0...v0.3.0
+
 ## [0.2.0](https://github.com/WiseLabz/WiseLabz/compare/v0.1.0...v0.2.0) (2026-09-12)
 
 
