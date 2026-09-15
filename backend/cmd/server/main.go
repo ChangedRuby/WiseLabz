@@ -118,6 +118,7 @@ func main() {
 	qualityChecker := quality.NewChecker(s, wsHub)
 	syncEngine := sync.NewEngine(s, wsHub, notifDispatcher, qualityChecker, cfg.Encryption.Key)
 	docEngine := doc.NewEngine(s)
+	syncEngine.SetDocRegenerator(docEngine)
 
 	aiRegistry := ai.NewRegistry()
 	ai.RegisterOpenAICompatible(aiRegistry)

@@ -244,6 +244,7 @@ export const en = {
       virtualization: 'Virtualization',
       containers_paas: 'Containers',
       networking: 'Networking',
+      dns: 'DNS',
     },
     detail: {
       back: 'All services',
@@ -436,6 +437,7 @@ export const en = {
       ai: 'AI',
       template: 'Template',
       manual: 'Manual',
+      sync: 'Sync',
     },
     comparing: 'comparing v{{prev}} → v{{current}}',
     firstRevision: 'v{{current}} (first revision)',
@@ -488,6 +490,13 @@ export const en = {
       loadError: "Couldn't load docs.",
       noMatchTitle: 'No matching docs',
       noMatchDesc: 'Try a different search term.',
+    },
+    topology: {
+      loadError: "Couldn't load the lab topology.",
+      emptyTitle: 'No topology yet',
+      emptyDesc: 'Generate a lab-wide diagram linking every connector by IP, hostname, and ID.',
+      generating: 'Generating…',
+      generateAction: 'Generate topology',
     },
   },
   chat: {

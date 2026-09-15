@@ -82,6 +82,7 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 	start := time.Now()
 	var sections []connector.SnapshotSection
 	var dependencies []connector.ServiceDependency
+	var entities []connector.SnapshotEntity
 	metadata := map[string]string{"opnsense_url": c.url}
 
 	// --- System info ---
@@ -112,11 +113,12 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 
 	// --- Interfaces ---
 	if raw, err := c.doRequest(ctx, "GET", "/api/diagnostics/interface/getInterfaces"); err == nil {
-		content := buildInterfaceTable(raw)
+		content, ifaceEntities := buildInterfaceTable(raw)
 		sections = append(sections, connector.SnapshotSection{
 			Title:   "Interfaces",
 			Content: content,
 		})
+		entities = append(entities, ifaceEntities...)
 		if wan := wanInterfaceName(raw); wan != "" {
 			dependencies = append(dependencies, connector.ServiceDependency{Kind: "network", Name: wan})
 		}
@@ -129,11 +131,12 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 
 	// --- Firewall rules ---
 	if raw, err := c.doRequest(ctx, "GET", "/api/firewall/filter/searchRule"); err == nil {
-		content := buildRuleTable(raw)
+		content, ruleEntities := buildRuleTable(raw)
 		sections = append(sections, connector.SnapshotSection{
 			Title:   "Firewall Rules",
 			Content: content,
 		})
+		entities = append(entities, ruleEntities...)
 	} else {
 		sections = append(sections, connector.SnapshotSection{
 			Title:   "Firewall Rules",
@@ -163,6 +166,7 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 		Type:         typeName,
 		Sections:     sections,
 		Dependencies: dependencies,
+		Entities:     entities,
 		Metadata:     metadata,
 		FetchedAt:    start,
 	}, nil
@@ -218,7 +222,7 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-func buildInterfaceTable(raw []byte) string {
+func buildInterfaceTable(raw []byte) (string, []connector.SnapshotEntity) {
 	var resp struct {
 		Rows []struct {
 			Device    string `json:"device"`
@@ -228,19 +232,21 @@ func buildInterfaceTable(raw []byte) string {
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil || len(resp.Rows) == 0 {
-		return "_No interface data returned_"
+		return "_No interface data returned_", nil
 	}
 	var b strings.Builder
 	b.WriteString("| Device | IP Address | Status | Media |\n")
 	b.WriteString("|--------|------------|--------|-------|\n")
+	var entities []connector.SnapshotEntity
 	for _, iface := range resp.Rows {
 		_, err := fmt.Fprintf(&b, "| %s | %s | %s | %s |\n",
 			iface.Device, iface.IPAddress, iface.Status, iface.Media)
 		if err != nil {
-			return ""
+			return "", nil
 		}
+		entities = append(entities, connector.SnapshotEntity{Kind: "interface", Name: iface.Device, IP: iface.IPAddress})
 	}
-	return b.String()
+	return b.String(), entities
 }
 
 // wanInterfaceName returns the device name of the interface identified as
@@ -286,7 +292,7 @@ func primaryGatewayName(raw []byte) string {
 	return resp.Items[0].Address
 }
 
-func buildRuleTable(raw []byte) string {
+func buildRuleTable(raw []byte) (string, []connector.SnapshotEntity) {
 	var resp struct {
 		Rows []struct {
 			Description string `json:"description"`
@@ -298,17 +304,18 @@ func buildRuleTable(raw []byte) string {
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil || len(resp.Rows) == 0 {
-		return "_No firewall rules returned_"
+		return "_No firewall rules returned_", nil
 	}
 	var b strings.Builder
 	b.WriteString("| Description | Action | Protocol | Source | Destination | Enabled |\n")
 	b.WriteString("|-------------|--------|----------|--------|-------------|--------|\n")
+	var entities []connector.SnapshotEntity
 	count := 0
 	for _, r := range resp.Rows {
 		if count >= 50 {
 			_, err := fmt.Fprintf(&b, "\n_...and %d more rules_", len(resp.Rows)-50)
 			if err != nil {
-				return ""
+				return "", nil
 			}
 			break
 		}
@@ -319,11 +326,12 @@ func buildRuleTable(raw []byte) string {
 		_, err := fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
 			r.Description, r.Action, r.Protocol, r.Source, r.Destination, enabled)
 		if err != nil {
-			return ""
+			return "", nil
 		}
+		entities = append(entities, connector.SnapshotEntity{Kind: "rule", Name: r.Description})
 		count++
 	}
-	return b.String()
+	return b.String(), entities
 }
 
 func buildGatewayTable(raw []byte) string {

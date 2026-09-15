@@ -187,7 +187,7 @@ export const getGetSystemBackupExportResponseMock = (
           faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
           undefined,
         ]),
-        trigger: faker.helpers.arrayElement(['ai', 'template', 'manual'] as const),
+        trigger: faker.helpers.arrayElement(['ai', 'template', 'manual', 'sync'] as const),
       },
       ...{ content: faker.string.alpha({ length: { min: 10, max: 20 } }) },
     })

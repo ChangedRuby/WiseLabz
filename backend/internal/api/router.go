@@ -190,6 +190,7 @@ func NewRouter(cfg Config) chi.Router {
 			r.Group(func(r chi.Router) {
 				r.Use(operatorOnly)
 				r.Post("/generate", docH.Generate)
+				r.Post("/topology", docH.GenerateTopology)
 				r.Put("/{id}", docH.Save)
 				r.Post("/{id}/versions/{rev}/restore", docH.Restore)
 				r.Post("/{id}/ai-suggest", docH.AISuggest)

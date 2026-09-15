@@ -14,4 +14,5 @@ export const DocVersionMetaTrigger = {
   ai: 'ai',
   template: 'template',
   manual: 'manual',
+  sync: 'sync',
 } as const;

@@ -220,7 +220,7 @@ func TestBuildRuleTableMalformedCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildRuleTable(tt.data)
+			result, _ := buildRuleTable(tt.data)
 			if result != tt.want {
 				t.Errorf("buildRuleTable() = %q, want %q", result, tt.want)
 			}
@@ -235,7 +235,7 @@ func TestBuildRuleTableValidRules(t *testing.T) {
 			{"description":"Block DNS","action":"block","protocol":"udp","source_net":"10.0.0.0/8","destination_net":"any","enabled":""}
 		]
 	}`)
-	result := buildRuleTable(data)
+	result, _ := buildRuleTable(data)
 	if !strings.Contains(result, "Allow SSH") || !strings.Contains(result, "Block DNS") {
 		t.Errorf("buildRuleTable() missing expected rules in: %q", result)
 	}

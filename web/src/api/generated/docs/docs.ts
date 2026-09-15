@@ -1849,3 +1849,110 @@ export function usePostDocsGenerate<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * @summary (Re)generate the single lab-wide topology doc from every connector's latest snapshot
+ */
+export const postDocsTopology = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GenerateResult>({ url: `/docs/topology`, method: 'POST', signal }, options);
+};
+
+export const getPostDocsTopologyQueryKey = () => {
+  return ['POST', `/docs/topology`] as const;
+};
+
+export const getPostDocsTopologyQueryOptions = <
+  TData = Awaited<ReturnType<typeof postDocsTopology>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsTopology>>, TError, TData>>;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPostDocsTopologyQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postDocsTopology>>> = ({ signal }) =>
+    postDocsTopology(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postDocsTopology>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostDocsTopologyQueryResult = NonNullable<Awaited<ReturnType<typeof postDocsTopology>>>;
+export type PostDocsTopologyQueryError = ErrorType<unknown>;
+
+export function usePostDocsTopology<
+  TData = Awaited<ReturnType<typeof postDocsTopology>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsTopology>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postDocsTopology>>,
+          TError,
+          Awaited<ReturnType<typeof postDocsTopology>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostDocsTopology<
+  TData = Awaited<ReturnType<typeof postDocsTopology>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsTopology>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postDocsTopology>>,
+          TError,
+          Awaited<ReturnType<typeof postDocsTopology>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostDocsTopology<
+  TData = Awaited<ReturnType<typeof postDocsTopology>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsTopology>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary (Re)generate the single lab-wide topology doc from every connector's latest snapshot
+ */
+
+export function usePostDocsTopology<
+  TData = Awaited<ReturnType<typeof postDocsTopology>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsTopology>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostDocsTopologyQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

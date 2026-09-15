@@ -123,15 +123,23 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (provider fallback routing)
-	// should drop the table it added, without touching earlier migrations'
-	// tables/columns.
+	// Rolling back only the latest migration (dns connector category)
+	// should narrow the connectors.category CHECK constraint back to its
+	// previous set, without touching earlier migrations' tables/columns.
 	var name string
+	var connectorsSchema string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchema); err != nil {
+		t.Fatalf("query sqlite_master for connectors: %v", err)
+	}
+	if strings.Contains(connectorsSchema, "'dns'") {
+		t.Error("connectors.category should not allow 'dns' after rolling back its migration")
+	}
+
+	// ai_config_providers is from the migration before the latest one, so
+	// rolling back only the latest migration must leave it in place.
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_config_providers'").Scan(&name)
-	if err == nil {
-		t.Error("ai_config_providers should not exist after rolling back its migration")
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("query sqlite_master for ai_config_providers: %v", err)
+	if err != nil {
+		t.Errorf("ai_config_providers should still exist after rolling back only the latest migration (err=%v)", err)
 	}
 
 	var changesSchema string

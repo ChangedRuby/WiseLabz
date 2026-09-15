@@ -126,7 +126,7 @@ export const getGetDocsDocIdVersionsResponseMock = (): DocVersionMeta[] =>
       faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
       undefined,
     ]),
-    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual'] as const),
+    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual', 'sync'] as const),
   }));
 
 export const getGetDocsDocIdVersionsRevResponseMock = (): DocVersion => ({
@@ -137,7 +137,7 @@ export const getGetDocsDocIdVersionsRevResponseMock = (): DocVersion => ({
       faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
       undefined,
     ]),
-    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual'] as const),
+    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual', 'sync'] as const),
   },
   ...{ content: faker.string.alpha({ length: { min: 10, max: 20 } }) },
 });
@@ -230,6 +230,15 @@ export const getGetDocsTemplateSchemaResponseMock = (
 });
 
 export const getPostDocsGenerateResponseMock = (
+  overrideResponse: Partial<Extract<GenerateResult, object>> = {}
+): GenerateResult => ({
+  docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  ...overrideResponse,
+});
+
+export const getPostDocsTopologyResponseMock = (
   overrideResponse: Partial<Extract<GenerateResult, object>> = {}
 ): GenerateResult => ({
   docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
@@ -550,6 +559,30 @@ export const getPostDocsGenerateMockHandler = (
     options
   );
 };
+
+export const getPostDocsTopologyMockHandler = (
+  overrideResponse?:
+    | GenerateResult
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<GenerateResult> | GenerateResult),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/docs/topology',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostDocsTopologyResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
 export const getDocsMock = () => [
   getGetDocsMockHandler(),
   getGetDocsTreeMockHandler(),
@@ -565,4 +598,5 @@ export const getDocsMock = () => [
   getPostDocsDocIdLockReleaseMockHandler(),
   getGetDocsTemplateSchemaMockHandler(),
   getPostDocsGenerateMockHandler(),
+  getPostDocsTopologyMockHandler(),
 ];

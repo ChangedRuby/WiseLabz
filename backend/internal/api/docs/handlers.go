@@ -401,6 +401,20 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusCreated, result)
 }
 
+// GenerateTopology handles POST /api/docs/topology: (re)generates the
+// single lab-wide "Lab Topology" doc from every connector's latest
+// snapshot. Idempotent — safe to call repeatedly (e.g. on every
+// TopologyPage load) since it updates the existing doc in place.
+func (h *Handler) GenerateTopology(w http.ResponseWriter, r *http.Request) {
+	result, err := h.DocEngine.GenerateLabTopology(r.Context())
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	h.syncDocEmbeddings(r.Context(), result.DocID, result.Content)
+	httputil.JSON(w, http.StatusOK, result)
+}
+
 // TemplateSchema handles GET /api/docs/template-schema.
 // Returns the JSON schema of templateData (available fields/types) and the list
 // of available template functions for use in template autocomplete/reference.

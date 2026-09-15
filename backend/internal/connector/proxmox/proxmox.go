@@ -88,6 +88,7 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	wantVMs := connector.WantsField(fields, "vms")
 	wantContainers := connector.WantsField(fields, "containers")
 	wantStorage := connector.WantsField(fields, "storage")
+	wantEntities := connector.WantsField(fields, "entities")
 
 	// Fetch nodes
 	nodesRaw, err := p.doRequest(ctx, "GET", "/nodes", nil)
@@ -113,6 +114,7 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 
 	var sections []connector.SnapshotSection
 	var dependencies []connector.ServiceDependency
+	var entities []connector.SnapshotEntity
 	metadata := map[string]string{
 		"node_count": fmt.Sprintf("%d", len(nodesResponse.Data)),
 	}
@@ -166,6 +168,15 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 				for _, vm := range vmsResponse.Data {
 					nodeSection += fmt.Sprintf("| %d | %s | %s | %d | %d | %d |\n",
 						vm.VMID, vm.Name, vm.Status, vm.CPU, vm.Memory, vm.Uptime)
+					ent := connector.SnapshotEntity{
+						Kind:       "vm",
+						Name:       vm.Name,
+						ExternalID: fmt.Sprintf("%d", vm.VMID),
+					}
+					if wantEntities && vm.Status == "running" {
+						ent.IP = p.fetchQemuIP(ctx, node.Node, vm.VMID)
+					}
+					entities = append(entities, ent)
 				}
 				nodeSection += "\n"
 				totalVMs += len(vmsResponse.Data)
@@ -207,6 +218,15 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 				for _, ct := range ctsResponse.Data {
 					nodeSection += fmt.Sprintf("| %d | %s | %s | %d | %d | %d |\n",
 						ct.VMID, ct.Name, ct.Status, ct.CPU, ct.Memory, ct.Uptime)
+					ent := connector.SnapshotEntity{
+						Kind:       "container",
+						Name:       ct.Name,
+						ExternalID: fmt.Sprintf("%d", ct.VMID),
+					}
+					if wantEntities && ct.Status == "running" {
+						ent.IP = p.fetchLxcIP(ctx, node.Node, ct.VMID)
+					}
+					entities = append(entities, ent)
 				}
 				nodeSection += "\n"
 				totalCTs += len(ctsResponse.Data)
@@ -270,9 +290,77 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 		Type:         typeName,
 		Sections:     sections,
 		Dependencies: dependencies,
+		Entities:     entities,
 		Metadata:     metadata,
 		FetchedAt:    start,
 	}, nil
+}
+
+// fetchQemuIP returns the first non-loopback IPv4 address reported by the
+// QEMU guest agent, or "" if the agent isn't installed/running (most labs
+// won't have it on every VM) or reports nothing usable. Soft-fails: any
+// error here is not a Fetch failure.
+func (p *Connector) fetchQemuIP(ctx context.Context, node string, vmid int) string {
+	raw, err := p.doRequest(ctx, "GET", fmt.Sprintf("/nodes/%s/qemu/%d/agent/network-get-interfaces", node, vmid), nil)
+	if err != nil {
+		return ""
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Name        string `json:"name"`
+				IPAddresses []struct {
+					IPAddress     string `json:"ip-address"`
+					IPAddressType string `json:"ip-address-type"`
+				} `json:"ip-addresses"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return ""
+	}
+	for _, iface := range resp.Data.Result {
+		if iface.Name == "lo" {
+			continue
+		}
+		for _, addr := range iface.IPAddresses {
+			if addr.IPAddressType == "ipv4" && addr.IPAddress != "" {
+				return addr.IPAddress
+			}
+		}
+	}
+	return ""
+}
+
+// fetchLxcIP returns the first non-loopback IPv4 address reported for the
+// container. Unlike the QEMU path this needs no guest agent, but still
+// soft-fails since older Proxmox versions lack this endpoint.
+func (p *Connector) fetchLxcIP(ctx context.Context, node string, vmid int) string {
+	raw, err := p.doRequest(ctx, "GET", fmt.Sprintf("/nodes/%s/lxc/%d/interfaces", node, vmid), nil)
+	if err != nil {
+		return ""
+	}
+	var resp struct {
+		Data []struct {
+			Name  string `json:"name"`
+			Inet  string `json:"inet"`
+			Inet6 string `json:"inet6"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return ""
+	}
+	for _, iface := range resp.Data {
+		if iface.Name == "lo" || iface.Inet == "" {
+			continue
+		}
+		ip, _, err := net.ParseCIDR(iface.Inet)
+		if err == nil {
+			return ip.String()
+		}
+		return iface.Inet
+	}
+	return ""
 }
 
 func (p *Connector) doRequest(ctx context.Context, method, path string, _ io.Reader) ([]byte, error) {

@@ -37,6 +37,7 @@ var validCategories = map[string]bool{
 	"virtualization":  true,
 	"containers_paas": true,
 	"networking":      true,
+	"dns":             true,
 }
 
 // AIConfigSummary is an informational, secret-free snapshot of the AI

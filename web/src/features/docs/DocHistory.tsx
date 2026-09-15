@@ -27,6 +27,7 @@ import {
   SparklesIcon,
   FileTextIcon,
   UserIcon,
+  SyncIcon,
   HistoryIcon as RestoreIcon,
 } from '../../components/icons';
 import type { DocVersionMetaTrigger } from '../../api/model';
@@ -38,6 +39,7 @@ const TRIGGER: Record<
   ai: { Icon: SparklesIcon, tone: 'var(--color-accent-primary)' },
   template: { Icon: FileTextIcon, tone: 'var(--color-accent-primary-bright)' },
   manual: { Icon: UserIcon, tone: 'var(--color-ink-muted)' },
+  sync: { Icon: SyncIcon, tone: 'var(--color-ink-muted)' },
 };
 
 export function DocHistory({ docId, currentVersion }: { docId: string; currentVersion: number }) {

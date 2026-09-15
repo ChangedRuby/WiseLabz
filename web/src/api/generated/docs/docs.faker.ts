@@ -123,7 +123,7 @@ export const getGetDocsDocIdVersionsResponseMock = (): DocVersionMeta[] =>
       faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
       undefined,
     ]),
-    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual'] as const),
+    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual', 'sync'] as const),
   }));
 
 export const getGetDocsDocIdVersionsRevResponseMock = (): DocVersion => ({
@@ -134,7 +134,7 @@ export const getGetDocsDocIdVersionsRevResponseMock = (): DocVersion => ({
       faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
       undefined,
     ]),
-    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual'] as const),
+    trigger: faker.helpers.arrayElement(['ai', 'template', 'manual', 'sync'] as const),
   },
   ...{ content: faker.string.alpha({ length: { min: 10, max: 20 } }) },
 });
@@ -227,6 +227,15 @@ export const getGetDocsTemplateSchemaResponseMock = (
 });
 
 export const getPostDocsGenerateResponseMock = (
+  overrideResponse: Partial<Extract<GenerateResult, object>> = {}
+): GenerateResult => ({
+  docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  ...overrideResponse,
+});
+
+export const getPostDocsTopologyResponseMock = (
   overrideResponse: Partial<Extract<GenerateResult, object>> = {}
 ): GenerateResult => ({
   docId: faker.string.alpha({ length: { min: 10, max: 20 } }),

@@ -84,6 +84,7 @@ func (d *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	fields := connector.RequestedFields(config)
 
 	var sections []connector.SnapshotSection
+	var entities []connector.SnapshotEntity
 	metadata := map[string]string{"docker_host": d.host}
 
 	if raw, err := d.doRequest(ctx, "/info"); err != nil {
@@ -112,7 +113,13 @@ func (d *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	}
 
 	if connector.WantsField(fields, "containers") {
-		sections = append(sections, d.fetchSection(ctx, "Containers", "/containers/json?all=true", buildContainerTable))
+		if raw, err := d.doRequest(ctx, "/containers/json?all=true"); err != nil {
+			sections = append(sections, connector.SnapshotSection{Title: "Containers", Content: "_Containers unavailable: " + err.Error() + "_"})
+		} else {
+			content, ents := buildContainerTable(raw)
+			sections = append(sections, connector.SnapshotSection{Title: "Containers", Content: content})
+			entities = append(entities, ents...)
+		}
 	}
 	if connector.WantsField(fields, "images") {
 		sections = append(sections, d.fetchSection(ctx, "Images", "/images/json", buildImageTable))
@@ -131,6 +138,7 @@ func (d *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 		Dependencies: []connector.ServiceDependency{
 			{Kind: "host", Name: d.host},
 		},
+		Entities:  entities,
 		Metadata:  metadata,
 		FetchedAt: start,
 	}, nil
@@ -434,29 +442,44 @@ type dockerSSHAddr struct{}
 func (dockerSSHAddr) Network() string { return "ssh" }
 func (dockerSSHAddr) String() string  { return "docker-ssh-dial-stdio" }
 
-func buildContainerTable(raw []byte) string {
+func buildContainerTable(raw []byte) (string, []connector.SnapshotEntity) {
 	var containers []struct {
-		Names  []string `json:"Names"`
-		Image  string   `json:"Image"`
-		State  string   `json:"State"`
-		Status string   `json:"Status"`
+		ID              string   `json:"Id"`
+		Names           []string `json:"Names"`
+		Image           string   `json:"Image"`
+		State           string   `json:"State"`
+		Status          string   `json:"Status"`
+		NetworkSettings struct {
+			Networks map[string]struct {
+				IPAddress string `json:"IPAddress"`
+			} `json:"Networks"`
+		} `json:"NetworkSettings"`
 	}
 	if err := json.Unmarshal(raw, &containers); err != nil || len(containers) == 0 {
-		return "_No containers returned_"
+		return "_No containers returned_", nil
 	}
 	var b strings.Builder
 	b.WriteString("| Name | Image | State | Status |\n")
 	b.WriteString("|------|-------|-------|--------|\n")
+	var entities []connector.SnapshotEntity
 	for _, c := range containers {
 		name := ""
 		if len(c.Names) > 0 {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 		if _, err := fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", name, c.Image, c.State, c.Status); err != nil {
-			return ""
+			return "", nil
 		}
+		ent := connector.SnapshotEntity{Kind: "container", Name: name, ExternalID: c.ID}
+		for _, net := range c.NetworkSettings.Networks {
+			if net.IPAddress != "" {
+				ent.IP = net.IPAddress
+				break
+			}
+		}
+		entities = append(entities, ent)
 	}
-	return b.String()
+	return b.String(), entities
 }
 
 func buildImageTable(raw []byte) string {

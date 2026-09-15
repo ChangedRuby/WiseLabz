@@ -117,8 +117,21 @@ type ServiceSnapshot struct {
 	Type         string              `json:"type"`
 	Sections     []SnapshotSection   `json:"sections"`
 	Dependencies []ServiceDependency `json:"dependencies,omitempty"`
+	Entities     []SnapshotEntity    `json:"entities,omitempty"`
 	Metadata     map[string]string   `json:"metadata,omitempty"`
 	FetchedAt    time.Time           `json:"fetchedAt"`
+}
+
+// SnapshotEntity is a structured, addressable object a connector observed
+// (a VM, a container, a firewall rule, a DNS record). Cross-connector
+// linking matches entities against each other by ExternalID, IP, or
+// Hostname — see doc.matchEntities.
+type SnapshotEntity struct {
+	Kind       string `json:"kind"` // "vm", "container", "rule", "dns_record"
+	Name       string `json:"name"`
+	IP         string `json:"ip,omitempty"`
+	Hostname   string `json:"hostname,omitempty"`
+	ExternalID string `json:"externalId,omitempty"` // Proxmox VMID, container ID, etc.
 }
 
 // SnapshotSection is a named section of infrastructure data.

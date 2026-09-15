@@ -13,4 +13,5 @@ export const ConnectorCategory = {
   virtualization: 'virtualization',
   containers_paas: 'containers_paas',
   networking: 'networking',
+  dns: 'dns',
 } as const;
