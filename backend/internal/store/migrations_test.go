@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -123,21 +122,28 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (chat/embeddings) should drop the
-	// tables and ai_config columns it added, without touching earlier ones.
+	// Rolling back only the latest migration (change narration) should drop
+	// the column it added, without touching earlier migrations' tables/columns.
+	var changesSchema string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='changes'").Scan(&changesSchema); err != nil {
+		t.Fatalf("query sqlite_master for changes: %v", err)
+	}
+	if strings.Contains(changesSchema, "narration") {
+		t.Error("changes should not have narration after rolling back its migration")
+	}
 	for _, table := range []string{"doc_section_embeddings", "chat_conversations", "chat_messages"} {
 		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
-		if !errors.Is(err, sql.ErrNoRows) {
-			t.Errorf("table %s should not exist after rolling back its migration (err=%v)", table, err)
+		if err != nil {
+			t.Errorf("table %s from an earlier migration should still exist (err=%v)", table, err)
 		}
 	}
 	var aiConfigSchema string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_config'").Scan(&aiConfigSchema); err != nil {
 		t.Fatalf("query sqlite_master for ai_config: %v", err)
 	}
-	if strings.Contains(aiConfigSchema, "embed_provider") {
-		t.Error("ai_config should not have embed_provider after rolling back its migration")
+	if !strings.Contains(aiConfigSchema, "embed_provider") {
+		t.Error("ai_config should still have embed_provider from an earlier migration")
 	}
 }
 
@@ -175,8 +181,8 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	if hasColumn(t, db, "postgres", "sessions", "auth_provider_id") {
-		t.Error("sessions.auth_provider_id should not exist after rolling back its migration")
+	if hasColumn(t, db, "postgres", "changes", "narration") {
+		t.Error("changes.narration should not exist after rolling back its migration")
 	}
 }
 

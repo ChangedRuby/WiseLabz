@@ -830,3 +830,138 @@ export function usePostChangesChangeIdAiUpdate<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * On-demand narration of why this change matters, separate from the AI doc-update suggestion. The first call generates and persists the narration on the change record; subsequent calls return the cached text without re-invoking the AI provider.
+ * @summary Generate (or return the cached) plain-English narration for a change
+ */
+export const postChangesChangeIdExplain = (
+  changeId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ChangeDetail>(
+    { url: `/changes/${changeId}/explain`, method: 'POST', signal },
+    options
+  );
+};
+
+export const getPostChangesChangeIdExplainQueryKey = (changeId: string) => {
+  return ['POST', `/changes/${changeId}/explain`] as const;
+};
+
+export const getPostChangesChangeIdExplainQueryOptions = <
+  TData = Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+  TError = ErrorType<NotFoundResponse | Error>,
+>(
+  changeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPostChangesChangeIdExplainQueryKey(changeId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postChangesChangeIdExplain>>> = ({
+    signal,
+  }) => postChangesChangeIdExplain(changeId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: changeId !== null && changeId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PostChangesChangeIdExplainQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postChangesChangeIdExplain>>
+>;
+export type PostChangesChangeIdExplainQueryError = ErrorType<NotFoundResponse | Error>;
+
+export function usePostChangesChangeIdExplain<
+  TData = Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+  TError = ErrorType<NotFoundResponse | Error>,
+>(
+  changeId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+          TError,
+          Awaited<ReturnType<typeof postChangesChangeIdExplain>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostChangesChangeIdExplain<
+  TData = Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+  TError = ErrorType<NotFoundResponse | Error>,
+>(
+  changeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+          TError,
+          Awaited<ReturnType<typeof postChangesChangeIdExplain>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostChangesChangeIdExplain<
+  TData = Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+  TError = ErrorType<NotFoundResponse | Error>,
+>(
+  changeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Generate (or return the cached) plain-English narration for a change
+ */
+
+export function usePostChangesChangeIdExplain<
+  TData = Awaited<ReturnType<typeof postChangesChangeIdExplain>>,
+  TError = ErrorType<NotFoundResponse | Error>,
+>(
+  changeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postChangesChangeIdExplain>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostChangesChangeIdExplainQueryOptions(changeId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

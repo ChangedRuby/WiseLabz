@@ -234,6 +234,7 @@ func NewRouter(cfg Config) chi.Router {
 				r.Post("/{id}/ack", changeH.Acknowledge)
 				r.Post("/{id}/dismiss", changeH.Dismiss)
 				r.Post("/{id}/ai-update", changeH.AIUpdate)
+				r.Post("/{id}/explain", changeH.Explain)
 				r.Post("/bulk-resolve", changeH.BulkResolve)
 			})
 		})

@@ -1112,6 +1112,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /changes/{changeId}/explain:
+    post:
+      tags: [changes]
+      summary: Generate (or return the cached) plain-English narration for a change
+      description: >
+        On-demand narration of why this change matters, separate from the
+        AI doc-update suggestion. The first call generates and persists the
+        narration on the change record; subsequent calls return the cached
+        text without re-invoking the AI provider.
+      parameters: [{ $ref: '#/components/parameters/ChangeId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: AI module disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: AI provider failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── alerts ─────────────────────────
   /alerts:
@@ -2565,6 +2592,11 @@ components:
                 field, the template section that rendered it, and the resulting lines
                 in the head revision. Present only when a document diff has source data.
               items: { $ref: '#/components/schemas/DocumentDiffProvenance' }
+            narration:
+              type: string
+              description: >
+                Cached plain-English explanation of why this change matters, generated
+                on demand via POST /changes/{changeId}/explain. Empty until requested.
     DocumentDiffProvenance:
       type: object
       required: [snapshotPath, templateSection, diffLines]

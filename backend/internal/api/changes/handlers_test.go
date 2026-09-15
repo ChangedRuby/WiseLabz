@@ -262,3 +262,103 @@ func TestBulkResolve(t *testing.T) {
 		}
 	})
 }
+
+// countingProvider is a fake ai.Provider that counts Suggest calls, used to
+// verify Explain caches its result instead of re-invoking the provider.
+type countingProvider struct{ calls int }
+
+func (p *countingProvider) Name() string { return "mock" }
+func (p *countingProvider) Suggest(_ context.Context, _ *ai.SuggestRequest) (string, error) {
+	p.calls++
+	return "This change matters because it affects the firewall.", nil
+}
+func (p *countingProvider) SuggestStream(_ context.Context, _ *ai.SuggestRequest) (<-chan ai.SuggestChunk, error) {
+	return nil, nil
+}
+
+func TestExplain(t *testing.T) {
+	t.Run("change not found", func(t *testing.T) {
+		h := newTestHandler(t)
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/missing/explain", nil)
+		req.SetPathValue("id", "missing")
+		rr := httptest.NewRecorder()
+		h.Explain(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("ai disabled returns conflict", func(t *testing.T) {
+		h := newTestHandler(t)
+		c := &store.ChangeRecord{
+			ServiceID: "svc-1", ChangeType: "config", Severity: "warning",
+			Summary: "Test change", Status: "new", Diff: "[]", AffectedDocIDs: "[]",
+		}
+		if err := h.Store.CreateChange(context.Background(), c); err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
+		req.SetPathValue("id", c.ID)
+		rr := httptest.NewRecorder()
+		h.Explain(rr, req)
+		if rr.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusConflict, rr.Body.String())
+		}
+	})
+
+	t.Run("generates once, caches on second call", func(t *testing.T) {
+		s := apitest.NewStore(t)
+		if _, err := s.DB().ExecContext(context.Background(), `UPDATE ai_config SET enabled = 1, provider = 'mock' WHERE id = 1`); err != nil {
+			t.Fatalf("enable ai config: %v", err)
+		}
+		registry := ai.NewRegistry()
+		provider := &countingProvider{}
+		registry.Register("mock", func(map[string]any) (ai.Provider, error) { return provider, nil })
+		settingsH := settings.NewHandler(s, &config.Config{}, registry)
+		h := NewHandler(s, settingsH, registry, nil)
+
+		c := &store.ChangeRecord{
+			ServiceID: "svc-1", ChangeType: "firewall.rule.modified", Severity: "warning",
+			Summary: "Firewall rule changed", Status: "new", Diff: "[]", AffectedDocIDs: "[]",
+		}
+		if err := h.Store.CreateChange(context.Background(), c); err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
+		req.SetPathValue("id", c.ID)
+		rr := httptest.NewRecorder()
+		h.Explain(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		var first map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &first); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if first["narration"] == "" {
+			t.Fatalf("narration = %q, want non-empty", first["narration"])
+		}
+		if provider.calls != 1 {
+			t.Fatalf("calls after first Explain = %d, want 1", provider.calls)
+		}
+
+		req2 := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
+		req2.SetPathValue("id", c.ID)
+		rr2 := httptest.NewRecorder()
+		h.Explain(rr2, req2)
+		if rr2.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr2.Code, http.StatusOK, rr2.Body.String())
+		}
+		var second map[string]any
+		if err := json.Unmarshal(rr2.Body.Bytes(), &second); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if second["narration"] != first["narration"] {
+			t.Fatalf("narration changed between calls: %v vs %v", first["narration"], second["narration"])
+		}
+		if provider.calls != 1 {
+			t.Fatalf("calls after second Explain = %d, want 1 (cached)", provider.calls)
+		}
+	})
+}

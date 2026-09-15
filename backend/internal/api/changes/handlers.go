@@ -91,6 +91,7 @@ func (h *Handler) changeDetail(ctx context.Context, id string) (map[string]any, 
 		"status":         c.Status,
 		"diff":           diffToSpec(c.Diff),
 		"affectedDocIds": affectedDocIDs,
+		"narration":      c.Narration,
 	}, nil
 }
 
@@ -322,4 +323,69 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	httputil.JSON(w, http.StatusAccepted, map[string]any{"requestId": requestID})
+}
+
+// Explain handles POST /api/changes/{id}/explain. On-demand, plain-English
+// narration of why the change matters — generated once and cached on the
+// Change record; later calls reuse the stored text instead of re-invoking
+// the AI provider.
+func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	c, err := h.Store.GetChange(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	if c.Narration != "" {
+		detail, err := h.changeDetail(r.Context(), id)
+		if err != nil {
+			httputil.Errorf(w, err)
+			return
+		}
+		httputil.JSON(w, http.StatusOK, detail)
+		return
+	}
+
+	cfg := h.Settings.LoadAIConfig(r.Context())
+	if !cfg.Enabled {
+		httputil.Error(w, http.StatusConflict, "ai_disabled", "AI module is not enabled")
+		return
+	}
+
+	provider, err := h.AI.Get(cfg.Provider, map[string]any{
+		"apiKey": cfg.APIKey, "model": cfg.Model, "baseUrl": cfg.BaseURL,
+	})
+	if err != nil {
+		httputil.Error(w, http.StatusConflict, "ai_disabled", fmt.Sprintf("AI provider unavailable: %v", err))
+		return
+	}
+
+	narration, err := provider.Suggest(r.Context(), &ai.SuggestRequest{
+		SystemPrompt: "You explain infrastructure changes to engineers in plain English. " +
+			"In 2-4 sentences, explain why this change matters and what its practical impact is. " +
+			"Do not restate the mechanical diff line by line.",
+		UserPrompt: fmt.Sprintf("Change summary: %s\n\nDiff:\n%s", c.Summary, c.Diff),
+	})
+	if err != nil {
+		httputil.Error(w, http.StatusBadGateway, "ai_error", fmt.Sprintf("AI provider failed: %v", err))
+		return
+	}
+
+	if err := h.Store.UpdateChangeNarration(r.Context(), id, narration); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	detail, err := h.changeDetail(r.Context(), id)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, detail)
 }
