@@ -96,4 +96,4 @@ jobs:
       - name: Upload SBOM to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" sbom.cdx.json --clobber
+        run: gh release upload "$GITHUB_REF_NAME" sbom.cdx.json --clobber --repo "$GITHUB_REPOSITORY"
