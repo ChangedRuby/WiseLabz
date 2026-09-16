@@ -14,13 +14,20 @@ import {
   useGetConnectorsConnectorId,
   useGetConnectorsConnectorIdData,
   useGetConnectorsConnectorIdSyncs,
+  useGetConnectorsConnectorIdConfigFields,
   useGetConnectorsSchema,
   postConnectorsConnectorIdRestart,
+  postConnectorsConnectorIdStart,
+  postConnectorsConnectorIdStop,
+  postConnectorsConnectorIdConfigPush,
   postConnectorsConnectorIdHealth,
   putConnectorsConnectorIdEnabled,
   putConnectorsConnectorId,
   getGetConnectorsQueryKey,
 } from '../../api/generated/connectors/connectors';
+import type { RestartPreview, ConfigField } from '../../api/model';
+import { isAxiosError } from 'axios';
+import { toast } from '../../lib/toast';
 import { useGetChanges } from '../../api/generated/changes/changes';
 import {
   useGetDocsServiceConnectorId,
@@ -79,7 +86,6 @@ export function ServiceDetailPage() {
   const overrides = useLive((s) => s.statusOverrides);
   const activity = useLive((s) => s.activity);
   const [removing, setRemoving] = useState(false);
-  const [restartPreviewOpen, setRestartPreviewOpen] = useState(false);
 
   const toggleEnabled = useMutation({
     mutationFn: (enabled: boolean) => putConnectorsConnectorIdEnabled(id, { enabled }),
@@ -97,27 +103,13 @@ export function ServiceDetailPage() {
     },
   });
 
-  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
-
-  const restartPreview = useMutation({
-    mutationFn: () => postConnectorsConnectorIdRestart(id, undefined, { dryRun: true }),
-  });
-
-  const restart = useMutation({
-    mutationFn: (token: string | null) =>
-      postConnectorsConnectorIdRestart(
-        id,
-        {},
-        { dryRun: false },
-        token ? { headers: { 'X-Elevation-Token': token } } : undefined,
-      ),
-    onSuccess: () => {
-      setRestartConfirmOpen(false);
-      setRestartPreviewOpen(false);
-      queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
-      void connector.refetch();
-    },
-  });
+  const onOpSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
+    void connector.refetch();
+  };
+  const restartOp = useMutatingOp(id, postConnectorsConnectorIdRestart, onOpSuccess);
+  const startOp = useMutatingOp(id, postConnectorsConnectorIdStart, onOpSuccess);
+  const stopOp = useMutatingOp(id, postConnectorsConnectorIdStop, onOpSuccess);
 
   const healthCheck = useMutation({
     mutationFn: () => postConnectorsConnectorIdHealth(id),
@@ -126,12 +118,6 @@ export function ServiceDetailPage() {
       void connector.refetch();
     },
   });
-
-  const openRestartPreview = () => {
-    restartPreview.reset();
-    setRestartPreviewOpen(true);
-    restartPreview.mutate();
-  };
 
   if (connector.isLoading) {
     return (
@@ -232,13 +218,23 @@ export function ServiceDetailPage() {
             >
               <SyncIcon size={14} /> {t('common.sync')}
             </Button>
+            <Button size="sm" variant="ghost" onClick={startOp.open} disabled={startOp.preview.isPending}>
+              {startOp.preview.isPending
+                ? t('services.detail.startPreviewLoading')
+                : t('services.detail.startPreview')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={stopOp.open} disabled={stopOp.preview.isPending}>
+              {stopOp.preview.isPending
+                ? t('services.detail.stopPreviewLoading')
+                : t('services.detail.stopPreview')}
+            </Button>
             <Button
               size="sm"
               variant="ghost"
-              onClick={openRestartPreview}
-              disabled={restartPreview.isPending}
+              onClick={restartOp.open}
+              disabled={restartOp.preview.isPending}
             >
-              {restartPreview.isPending
+              {restartOp.preview.isPending
                 ? t('services.detail.restartPreviewLoading')
                 : t('services.detail.restartPreview')}
             </Button>
@@ -299,6 +295,7 @@ export function ServiceDetailPage() {
         </div>
         <div className="space-y-4">
           <LinkedDocPanel connectorId={c.id} connectorType={c.type} />
+          <ConfigPushPanel id={c.id} connectorName={c.name} />
           <ActivityPanel activity={activity} />
           <SyncHistoryPanel id={c.id} />
         </div>
@@ -315,53 +312,109 @@ export function ServiceDetailPage() {
         }}
       />
 
+      <MutatingOpDialogs op={restartOp} verb="restart" connectorName={c.name} />
+      <MutatingOpDialogs op={startOp} verb="start" connectorName={c.name} />
+      <MutatingOpDialogs op={stopOp} verb="stop" connectorName={c.name} />
+    </div>
+  );
+}
+
+/** Shared dry-run-preview + elevation-confirm state for one mutating verb
+ * (restart/start/stop) — same shape ADR 0001/0002 give all three. */
+function useMutatingOp(
+  id: string,
+  postFn: (
+    id: string,
+    body?: { entityRef?: string },
+    params?: { dryRun?: boolean },
+    options?: { headers?: Record<string, string> },
+  ) => Promise<RestartPreview | { status: string }>,
+  onSuccess: () => void,
+) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const preview = useMutation({
+    mutationFn: () => postFn(id, undefined, { dryRun: true }) as Promise<RestartPreview>,
+  });
+
+  const mutate = useMutation({
+    mutationFn: (token: string | null) =>
+      postFn(id, {}, { dryRun: false }, token ? { headers: { 'X-Elevation-Token': token } } : undefined),
+    onSuccess: () => {
+      setConfirmOpen(false);
+      setPreviewOpen(false);
+      onSuccess();
+    },
+  });
+
+  const open = () => {
+    preview.reset();
+    setPreviewOpen(true);
+    preview.mutate();
+  };
+
+  return { previewOpen, setPreviewOpen, confirmOpen, setConfirmOpen, preview, mutate, open };
+}
+
+type MutatingOp = ReturnType<typeof useMutatingOp>;
+
+function MutatingOpDialogs({
+  op,
+  verb,
+  connectorName,
+}: {
+  op: MutatingOp;
+  verb: 'restart' | 'start' | 'stop';
+  connectorName: string;
+}) {
+  const { t } = useTranslation();
+  const k = (suffix: string) => `services.detail.${verb}${suffix}`;
+
+  return (
+    <>
       <Dialog
-        open={restartPreviewOpen}
-        onClose={() => setRestartPreviewOpen(false)}
-        title={t('services.detail.restartPreviewTitle')}
+        open={op.previewOpen}
+        onClose={() => op.setPreviewOpen(false)}
+        title={t(k('PreviewTitle'))}
         size="sm"
       >
-        {restartPreview.isPending ? (
+        {op.preview.isPending ? (
           <SkeletonRows rows={3} />
-        ) : restartPreview.isError || !restartPreview.data ? (
+        ) : op.preview.isError || !op.preview.data ? (
           <div className="space-y-3">
-            <p className="text-sm text-err">{t('services.detail.restartPreviewError')}</p>
-            <Button size="sm" variant="secondary" onClick={() => restartPreview.mutate()}>
+            <p className="text-sm text-err">{t(k('PreviewError'))}</p>
+            <Button size="sm" variant="secondary" onClick={() => op.preview.mutate()}>
               {t('common.retry')}
             </Button>
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-ink-muted">{t('services.detail.restartPreviewNotice')}</p>
+            <p className="text-sm text-ink-muted">{t(k('PreviewNotice'))}</p>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-line-soft bg-canvas-sunken p-3 text-sm">
               <div>
-                <dt className="text-2xs text-ink-faint">{t('services.detail.restartTarget')}</dt>
-                <dd className="mt-0.5 font-medium text-ink">{restartPreview.data.targetService}</dd>
+                <dt className="text-2xs text-ink-faint">{t('services.detail.opTarget')}</dt>
+                <dd className="mt-0.5 font-medium text-ink">{op.preview.data.targetService}</dd>
               </div>
               <div>
-                <dt className="text-2xs text-ink-faint">{t('services.detail.restartDowntime')}</dt>
+                <dt className="text-2xs text-ink-faint">{t('services.detail.opDowntime')}</dt>
                 <dd className="mt-0.5 font-medium text-ink">
-                  {t('services.detail.restartSeconds', {
-                    count: restartPreview.data.estimatedDowntimeSeconds,
-                  })}
+                  {op.preview.data.estimatedDowntimeSeconds > 0
+                    ? t('services.detail.opSeconds', {
+                        count: op.preview.data.estimatedDowntimeSeconds,
+                      })
+                    : t('services.detail.opIndefinite')}
                 </dd>
               </div>
             </dl>
             <div>
-              <h3 className="text-sm font-semibold text-ink">
-                {t('services.detail.restartDependencies')}
-              </h3>
-              {restartPreview.data.dependentServices.length === 0 ? (
-                <p className="mt-1 text-sm text-ink-muted">
-                  {t('services.detail.restartNoDependencies')}
-                </p>
+              <h3 className="text-sm font-semibold text-ink">{t('services.detail.opDependencies')}</h3>
+              {op.preview.data.dependentServices.length === 0 ? (
+                <p className="mt-1 text-sm text-ink-muted">{t('services.detail.opNoDependencies')}</p>
               ) : (
                 <ul className="mt-2 divide-y divide-line-soft rounded-md border border-line-soft">
-                  {restartPreview.data.dependentServices.map((service) => (
-                    <li
-                      key={`${service.kind}-${service.name}`}
-                      className="px-3 py-2 text-sm text-ink"
-                    >
+                  {op.preview.data.dependentServices.map((service) => (
+                    <li key={`${service.kind}-${service.name}`} className="px-3 py-2 text-sm text-ink">
                       <span>{service.name}</span>
                       <span className="ml-2 font-mono text-2xs text-ink-faint">{service.kind}</span>
                     </li>
@@ -369,12 +422,10 @@ export function ServiceDetailPage() {
                 </ul>
               )}
             </div>
-            {restart.isError && (
-              <p className="text-2xs text-err">{t('services.detail.restartFailed')}</p>
-            )}
+            {op.mutate.isError && <p className="text-2xs text-err">{t(k('Failed'))}</p>}
             <div className="flex justify-end">
-              <Button size="sm" variant="danger" onClick={() => setRestartConfirmOpen(true)}>
-                {t('services.detail.restartNow')}
+              <Button size="sm" variant="danger" onClick={() => op.setConfirmOpen(true)}>
+                {t(k('Now'))}
               </Button>
             </div>
           </div>
@@ -382,18 +433,148 @@ export function ServiceDetailPage() {
       </Dialog>
 
       <ElevationConfirm
-        open={restartConfirmOpen}
-        resourceName={c.name}
-        action="connector.restart"
-        title={t('services.detail.restartConfirmTitle', { name: c.name })}
-        description={t('services.detail.restartConfirmDescription')}
-        confirmLabel={t('services.detail.restartNow')}
-        isPending={restart.isPending}
-        onClose={() => setRestartConfirmOpen(false)}
-        onConfirm={(token) => restart.mutate(token)}
+        open={op.confirmOpen}
+        resourceName={connectorName}
+        action={`connector.${verb}`}
+        title={t(k('ConfirmTitle'), { name: connectorName })}
+        description={t(k('ConfirmDescription'))}
+        confirmLabel={t(k('Now'))}
+        isPending={op.mutate.isPending}
+        onClose={() => op.setConfirmOpen(false)}
+        onConfirm={(token) => op.mutate.mutate(token)}
       />
-    </div>
+    </>
   );
+}
+
+/** Field-level config-push form (ADR 0003): pick a whitelisted field, edit its
+ * value, confirm with step-up. On a 409 (verify-diff mismatch), the backend
+ * has already auto-reverted — this just surfaces that via toast. */
+function ConfigPushPanel({ id, connectorName }: { id: string; connectorName: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const fields = useGetConnectorsConnectorIdConfigFields(id);
+  const [fieldKey, setFieldKey] = useState('');
+  const [entityRef, setEntityRef] = useState('');
+  const [value, setValue] = useState('');
+  const [previousValue, setPreviousValue] = useState<string>('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const selected: ConfigField | undefined = fields.data?.find((f) => f.key === fieldKey);
+
+  const push = useMutation({
+    mutationFn: (token: string | null) =>
+      postConnectorsConnectorIdConfigPush(
+        id,
+        {
+          entityRef: selected?.entityScope ? entityRef : undefined,
+          fieldKey,
+          value: coerceFieldValue(selected?.type, value),
+          previousValue: previousValue === '' ? undefined : coerceFieldValue(selected?.type, previousValue),
+        },
+        token ? { headers: { 'X-Elevation-Token': token } } : undefined,
+      ),
+    onSuccess: () => {
+      setConfirmOpen(false);
+      toast.success(t('services.detail.configPush'));
+      queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
+    },
+    onError: (error) => {
+      setConfirmOpen(false);
+      if (isAxiosError(error) && error.response?.status === 409) {
+        toast.warning(t('services.detail.configPushMismatchTitle'), {
+          description: t('services.detail.configPushMismatchBody'),
+        });
+        return;
+      }
+      toast.error(t('services.detail.configPushFailed'));
+    },
+  });
+
+  if (!fields.data || fields.data.length === 0) {
+    return null;
+  }
+
+  return (
+    <Panel className="p-5">
+      <h2 className="mb-3 text-sm font-semibold text-ink">{t('services.detail.configPushTitle')}</h2>
+      <div className="space-y-2.5">
+        <label className="block">
+          <span className="mb-1 block text-2xs text-ink-faint">{t('services.detail.configPushField')}</span>
+          <select
+            value={fieldKey}
+            onChange={(e) => {
+              setFieldKey(e.target.value);
+              setValue('');
+              setPreviousValue('');
+            }}
+            className="h-8 w-full appearance-none rounded-sm border border-line bg-surface px-2.5 text-xs text-ink outline-none focus-visible:border-accent-primary-soft"
+          >
+            <option value="">{t('services.detail.configPushNone')}</option>
+            {fields.data.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selected?.entityScope && (
+          <input
+            value={entityRef}
+            onChange={(e) => setEntityRef(e.target.value)}
+            placeholder="entityRef"
+            className="h-8 w-full rounded-sm border border-line bg-surface px-2.5 font-mono text-xs text-ink outline-none focus-visible:border-accent-primary-soft"
+          />
+        )}
+        {selected && (
+          <>
+            <input
+              value={previousValue}
+              onChange={(e) => setPreviousValue(e.target.value)}
+              placeholder="current value (for revert)"
+              type={selected.type === 'number' ? 'number' : 'text'}
+              className="h-8 w-full rounded-sm border border-line bg-surface px-2.5 text-xs text-ink outline-none focus-visible:border-accent-primary-soft"
+            />
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={t('services.detail.configPushValue')}
+              type={selected.type === 'number' ? 'number' : 'text'}
+              className="h-8 w-full rounded-sm border border-line bg-surface px-2.5 text-xs text-ink outline-none focus-visible:border-accent-primary-soft"
+            />
+          </>
+        )}
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!selected || value === ''}
+            onClick={() => setConfirmOpen(true)}
+          >
+            {t('services.detail.configPushSubmit')}
+          </Button>
+        </div>
+      </div>
+
+      <ElevationConfirm
+        open={confirmOpen}
+        resourceName={connectorName}
+        action="connector.configPush"
+        title={t('services.detail.configPushConfirmTitle', { field: selected?.label ?? fieldKey, name: connectorName })}
+        description={t('services.detail.configPushConfirmDescription')}
+        confirmLabel={t('services.detail.configPushSubmit')}
+        isPending={push.isPending}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={(token) => push.mutate(token)}
+      />
+    </Panel>
+  );
+}
+
+function coerceFieldValue(type: string | undefined, raw: string): unknown {
+  if (type === 'number') return Number(raw);
+  if (type === 'toggle') return raw === 'true';
+  return raw;
 }
 
 function SnapshotPanel({ id }: { id: string }) {

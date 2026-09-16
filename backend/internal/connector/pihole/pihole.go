@@ -150,6 +150,120 @@ func (c *Connector) Restart(ctx context.Context, _ map[string]any, _ string) err
 	return nil
 }
 
+// Start re-enables Pi-hole DNS blocking. Pi-hole's FTL service has no
+// start/stop lifecycle exposed via the API (only restart), so Start/Stop
+// here map to the closest on/off concept the API actually exposes: the
+// blocking toggle.
+func (c *Connector) Start(ctx context.Context, _ map[string]any, _ string) error {
+	return c.setBlocking(ctx, true)
+}
+
+// Stop disables Pi-hole DNS blocking. See Start for why this maps to the
+// blocking toggle rather than a literal service stop.
+func (c *Connector) Stop(ctx context.Context, _ map[string]any, _ string) error {
+	return c.setBlocking(ctx, false)
+}
+
+func (c *Connector) setBlocking(ctx context.Context, blocking bool) error {
+	sid, err := c.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]any{"blocking": blocking, "timer": nil})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/dns/blocking", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("sid", sid)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data))
+	}
+	return nil
+}
+
+// WritableFields lists the config-push-eligible local DNS record field.
+func (c *Connector) WritableFields() []connector.ConfigField {
+	return []connector.ConfigField{
+		{Key: "ip", Label: "Record IP", Type: "text", EntityScope: true},
+	}
+}
+
+// ConfigPush repoints the local DNS record for the hostname identified by
+// entityRef to a new IP. Pi-hole's hosts config is a flat set of "ip
+// hostname" strings with no update verb, so this deletes the existing
+// entry for entityRef (if any) and adds the new one.
+// ponytail: one field (ip) per call, matching the handler's one-field
+// revert contract — not a batch hosts-file replace.
+func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
+	if entityRef == "" {
+		return fmt.Errorf("pihole config-push requires a target hostname")
+	}
+	if fieldKey != "ip" {
+		return fmt.Errorf("unsupported field %q", fieldKey)
+	}
+	newIP, _ := value.(string)
+	sid, err := c.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	if raw, err := c.doRequest(ctx, sid, "/api/config/dns/hosts"); err == nil {
+		_, entities := buildHostsTable(raw)
+		for _, e := range entities {
+			if e.Hostname == entityRef && e.IP != "" {
+				if err := c.hostsItem(ctx, sid, "DELETE", e.IP, e.Hostname); err != nil {
+					return fmt.Errorf("remove old record: %w", err)
+				}
+				break
+			}
+		}
+	}
+	return c.hostsItem(ctx, sid, "PUT", newIP, entityRef)
+}
+
+func (c *Connector) hostsItem(ctx context.Context, sid, method, ip, hostname string) error {
+	item := ip + " " + hostname
+	req, err := http.NewRequestWithContext(ctx, method, c.url+"/api/config/dns/hosts/"+strings.TrimSpace(item), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("sid", sid)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data))
+	}
+	return nil
+}
+
 // authenticate exchanges the configured password for a session id (sid) via
 // POST /api/auth.
 func (c *Connector) authenticate(ctx context.Context) (sid string, err error) {

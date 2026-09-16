@@ -2,6 +2,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -152,14 +153,74 @@ func (d *Connector) Restart(ctx context.Context, _ map[string]any, entityRef str
 	return d.doPost(ctx, "/containers/"+entityRef+"/restart")
 }
 
+// Start starts the container identified by entityRef (a container ID).
+// Idempotent-safe: the Docker Engine API returns 304 Not Modified (treated
+// as success) for an already-running container.
+func (d *Connector) Start(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("docker start requires a target container ID")
+	}
+	return d.doPost(ctx, "/containers/"+entityRef+"/start")
+}
+
+// Stop stops the container identified by entityRef (a container ID).
+func (d *Connector) Stop(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("docker stop requires a target container ID")
+	}
+	return d.doPost(ctx, "/containers/"+entityRef+"/stop")
+}
+
+// WritableFields lists the config-push-eligible container fields.
+// ponytail: Docker's Engine API has no live image-swap for a running
+// container (that needs a full stop/remove/recreate) so the whitelist
+// targets what /containers/{id}/update can actually patch in place —
+// restart policy — rather than the image tag; image-tag push is a future
+// extension once recreate-with-rollback is designed.
+func (d *Connector) WritableFields() []connector.ConfigField {
+	return []connector.ConfigField{
+		{Key: "restartPolicy", Label: "Restart Policy", Type: "select", EntityScope: true},
+	}
+}
+
+// ConfigPush updates the container identified by entityRef's restart
+// policy via Docker's /containers/{id}/update endpoint.
+func (d *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
+	if entityRef == "" {
+		return fmt.Errorf("docker config-push requires a target container ID")
+	}
+	if fieldKey != "restartPolicy" {
+		return fmt.Errorf("unsupported field %q", fieldKey)
+	}
+	name, _ := value.(string)
+	body, err := json.Marshal(map[string]any{"RestartPolicy": map[string]string{"Name": name}})
+	if err != nil {
+		return err
+	}
+	return d.doPostBody(ctx, "/containers/"+entityRef+"/update", body)
+}
+
 // doPost issues a POST with no body, tolerating a 204 No Content response.
 func (d *Connector) doPost(ctx context.Context, path string) error {
+	return d.doPostBody(ctx, path, nil)
+}
+
+// doPostBody issues a POST with an optional JSON body, tolerating a 204 No
+// Content response.
+func (d *Connector) doPostBody(ctx context.Context, path string, body []byte) error {
 	if d.configErr != nil {
 		return d.configErr
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", d.baseURL+path, nil)
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", d.baseURL+path, reqBody)
 	if err != nil {
 		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
