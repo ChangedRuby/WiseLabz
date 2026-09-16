@@ -81,7 +81,10 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 				Expires:  time.Unix(0, 0),
 				MaxAge:   -1,
 				HttpOnly: true,
-				Secure:   httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies),
+				// Secure is derived, not literal true, so CodeQL can't verify it;
+				// IsSecureRequest returns true for both direct TLS and a trusted
+				// TLS-terminating proxy.
+				Secure:   httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies), // codeql[go/cookie-secure-not-set]
 				SameSite: http.SameSiteLaxMode,
 			})
 		}
