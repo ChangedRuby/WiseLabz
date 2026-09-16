@@ -159,6 +159,8 @@ func NewRouter(cfg Config) chi.Router {
 			r.Get("/{id}/syncs", connH.Syncs)
 			r.Get("/{id}/removal-impact", connH.RemovalImpact)
 			r.Get("/{id}/config-fields", connH.ConfigFields)
+			r.Get("/{id}/maintenance-window", connH.GetMaintenanceWindow)
+			r.Get("/maintenance-windows", connH.ListActiveMaintenance)
 
 			r.Group(func(r chi.Router) {
 				r.Use(operatorOnly)
@@ -173,6 +175,8 @@ func NewRouter(cfg Config) chi.Router {
 				r.Put("/{id}", connH.Update)
 				r.Put("/{id}/enabled", connH.ToggleEnabled)
 				r.Post("/{id}/sync", connH.Sync)
+				r.Post("/{id}/maintenance-window", connH.OpenMaintenanceWindow) // no elevation: reversible and time-boxed
+				r.Delete("/{id}/maintenance-window", connH.CloseMaintenanceWindow)
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireElevation(cfg.JWT, cfg.Store, "connector.delete"))

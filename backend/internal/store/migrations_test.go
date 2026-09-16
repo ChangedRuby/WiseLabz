@@ -54,6 +54,11 @@ func TestRunMigrations(t *testing.T) {
 	if err := RunMigrations(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrations() second run error: %v", err)
 	}
+
+	var name string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_windows'").Scan(&name); err != nil {
+		t.Errorf("maintenance_windows table missing after migrations: %v", err)
+	}
 }
 
 // TestRunMigrationsPostgres runs the postgres migration path against a real
@@ -123,20 +128,26 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (dns connector category)
-	// should narrow the connectors.category CHECK constraint back to its
-	// previous set, without touching earlier migrations' tables/columns.
+	// Rolling back only the latest migration (maintenance_windows) should
+	// drop that table without touching earlier migrations' tables/columns.
 	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_windows'").Scan(&name)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("maintenance_windows should not exist after rolling back its migration (err=%v)", err)
+	}
+
+	// dns connector category is from the migration before the latest one, so
+	// rolling back only the latest migration must leave it in place.
 	var connectorsSchema string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchema); err != nil {
 		t.Fatalf("query sqlite_master for connectors: %v", err)
 	}
-	if strings.Contains(connectorsSchema, "'dns'") {
-		t.Error("connectors.category should not allow 'dns' after rolling back its migration")
+	if !strings.Contains(connectorsSchema, "'dns'") {
+		t.Error("connectors.category should still allow 'dns' after rolling back only the latest migration")
 	}
 
-	// ai_config_providers is from the migration before the latest one, so
-	// rolling back only the latest migration must leave it in place.
+	// ai_config_providers is from an earlier migration, so rolling back only
+	// the latest migration must leave it in place.
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_config_providers'").Scan(&name)
 	if err != nil {
 		t.Errorf("ai_config_providers should still exist after rolling back only the latest migration (err=%v)", err)

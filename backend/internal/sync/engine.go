@@ -434,8 +434,17 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 
 	broadcast("generating", 85)
 
+	// Under an active maintenance window, the snapshot above is still saved
+	// (so sync history isn't lost) but drift alerting/change-record creation
+	// is suppressed — this is the shared path for both manual "sync now" and
+	// scheduled runs, so this is the one place that check needs to live.
+	maintenance, err := e.store.GetActiveMaintenanceWindow(ctx, connectorID)
+	if err != nil {
+		slog.Error("get active maintenance window failed", "connector", connectorID, "error", err)
+	}
+
 	// Diff against previous snapshot
-	if prevErr == nil {
+	if prevErr == nil && maintenance == nil {
 		var prevSnap connector.ServiceSnapshot
 		if err := json.Unmarshal([]byte(prevSn.Data), &prevSnap); err != nil {
 			slog.Error("sync: previous snapshot unparseable, skipping diff", "connector", connectorID, "snapshot", prevSn.ID, "error", err)

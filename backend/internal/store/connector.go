@@ -275,8 +275,9 @@ func (s *Store) ListDueConnectors(ctx context.Context, now string, limit int) ([
 	rows, err := s.db.QueryContext(ctx, `SELECT `+connectorColumns+`
 		FROM connectors
 		WHERE enabled = 1 AND schedule_seconds IS NOT NULL AND (next_run_at IS NULL OR next_run_at <= ?)
+		AND NOT EXISTS (SELECT 1 FROM maintenance_windows mw WHERE mw.connector_id = connectors.id AND mw.ends_at > ?)
 		ORDER BY next_run_at ASC LIMIT ?
-	`, now, limit)
+	`, now, now, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list due connectors: %w", err)
 	}

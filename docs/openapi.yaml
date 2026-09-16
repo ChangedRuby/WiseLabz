@@ -862,6 +862,70 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Connector' }
 
+  /connectors/{connectorId}/maintenance-window:
+    get:
+      tags: [connectors]
+      summary: Get a connector's active maintenance window, if any
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf: [{ $ref: '#/components/schemas/MaintenanceWindow' }]
+                nullable: true
+    post:
+      tags: [connectors]
+      summary: Open a time-boxed maintenance window on a connector
+      description: >
+        While active, the scheduler skips this connector and drift
+        alerting/change-record creation from any sync (scheduled or manual)
+        is suppressed, though snapshots keep being saved. Operator-only, no
+        step-up elevation required — reversible and time-boxed.
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenMaintenanceWindowRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceWindow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [connectors]
+      summary: Close a connector's active maintenance window early (no-op if none)
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [closed]
+                properties:
+                  closed: { type: boolean }
+
+  /connectors/maintenance-windows:
+    get:
+      tags: [connectors]
+      summary: List every currently active maintenance window, across all connectors
+      description: Used by the services list badge to avoid an N+1 fetch per row.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MaintenanceWindow' }
+
   /sync:
     post:
       tags: [connectors]
@@ -2529,6 +2593,21 @@ components:
           additionalProperties: true
         scheduleSeconds:
           { type: integer, nullable: true, description: 'Auto-sync cadence in seconds; null disables scheduled sync (manual only)' }
+    MaintenanceWindow:
+      type: object
+      required: [id, connectorId, startsAt, endsAt, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        connectorId: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        createdBy: { type: string, description: 'Operator user ID that opened the window' }
+        createdAt: { type: string, format: date-time }
+    OpenMaintenanceWindowRequest:
+      type: object
+      required: [durationMinutes]
+      properties:
+        durationMinutes: { type: integer, minimum: 1, description: 'e.g. 30, 60, 120, or a custom value' }
     ConnectorTypeSchema:
       type: object
       required: [category, type, displayName, fields]
