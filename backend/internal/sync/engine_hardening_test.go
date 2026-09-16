@@ -238,6 +238,78 @@ func TestRunSyncFieldsSurvivesCredentialRefresh(t *testing.T) {
 	}
 }
 
+// TestRefreshCredentialsDirect exercises Engine.RefreshCredentials on its
+// own (not via the sync-time expired-credential path) — the call shape
+// BulkReauth uses. Credentials need not be expired: a direct re-auth request
+// should succeed regardless.
+func TestRefreshCredentialsDirect(t *testing.T) {
+	newExpiry := time.Now().Add(24 * time.Hour)
+	rc := &refreshableConnector{
+		fakeConnector: fakeConnector{snapshot: &connector.ServiceSnapshot{ServiceName: "svc", FetchedAt: time.Now()}},
+		newExpiry:     newExpiry,
+	}
+	connector.Register(
+		connector.TypeSchema{Type: "sync_test_refresh_direct", Category: "test", Name: "RefreshDirect"},
+		func(_ map[string]any) (connector.Connector, error) { return rc, nil },
+	)
+	s := newTestStore(t)
+	ctx := context.Background()
+	conn := &store.ConnectorRecord{
+		Name: "svc", Category: "networking", Type: "sync_test_refresh_direct", Enabled: true,
+		ConfigData: `{"token":"stale-token"}`,
+		// Not expired — RefreshCredentials must not require expiry.
+		CredentialExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}
+	if err := s.CreateConnector(ctx, conn); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	if err := NewEngine(s, nil, nil, nil, "").RefreshCredentials(ctx, conn.ID); err != nil {
+		t.Fatalf("RefreshCredentials: %v", err)
+	}
+
+	got, err := s.GetConnector(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("GetConnector: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(got.ConfigData), &cfg); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	if cfg["token"] != "refreshed-token" {
+		t.Errorf("config_data token = %v, want refreshed-token", cfg["token"])
+	}
+	if got.CredentialExpiresAt == "" {
+		t.Error("credential_expires_at not persisted")
+	}
+}
+
+// TestRefreshCredentialsUnsupportedConnector confirms the error path for a
+// connector that doesn't implement connector.CredentialRefresher, exercised
+// by BulkReauth's per-item error handling.
+func TestRefreshCredentialsUnsupportedConnector(t *testing.T) {
+	connector.Register(
+		connector.TypeSchema{Type: "sync_test_refresh_unsupported", Category: "test", Name: "RefreshUnsupported"},
+		func(_ map[string]any) (connector.Connector, error) {
+			return &fakeConnector{snapshot: &connector.ServiceSnapshot{ServiceName: "svc", FetchedAt: time.Now()}}, nil
+		},
+	)
+	s := newTestStore(t)
+	ctx := context.Background()
+	conn := &store.ConnectorRecord{Name: "svc", Category: "networking", Type: "sync_test_refresh_unsupported", Enabled: true}
+	if err := s.CreateConnector(ctx, conn); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	err := NewEngine(s, nil, nil, nil, "").RefreshCredentials(ctx, conn.ID)
+	if err == nil {
+		t.Fatal("RefreshCredentials() = nil error, want error for non-refresher connector")
+	}
+	if !strings.Contains(err.Error(), "does not support credential refresh") {
+		t.Errorf("error = %v, want it to mention unsupported refresh", err)
+	}
+}
+
 func TestRunSyncFieldsPassesHintToConnector(t *testing.T) {
 	seq := &sequentialConnector{snapshots: []*connector.ServiceSnapshot{{ServiceName: "svc", FetchedAt: time.Now()}}}
 	connector.Register(

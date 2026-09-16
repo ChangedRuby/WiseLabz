@@ -1160,3 +1160,199 @@ func (h *Handler) ListActiveMaintenance(w http.ResponseWriter, r *http.Request) 
 	}
 	httputil.JSON(w, http.StatusOK, windows)
 }
+
+// bulkRequest is the shared body shape for bulk-sync/bulk-reauth/bulk-restart:
+// an explicit, caller-supplied list of connector IDs.
+type bulkRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// bulkItemResult is the per-item outcome in a bulk connector-action response.
+type bulkItemResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"` // "success" | "error"
+	JobID  string `json:"jobId,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// decodeBulkRequest validates the common ids shape shared by all three bulk
+// connector endpoints. Returns ok=false after writing the error response.
+func decodeBulkRequest(w http.ResponseWriter, r *http.Request) (bulkRequest, bool) {
+	req, ok := httputil.DecodeJSON[bulkRequest](w, r)
+	if !ok {
+		return req, false
+	}
+	if len(req.IDs) == 0 {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array")
+		return req, false
+	}
+	if len(req.IDs) > httputil.MaxBulkIDs {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items")
+		return req, false
+	}
+	return req, true
+}
+
+// BulkSync handles POST /api/connectors/bulk-sync. Fans out an async
+// RunSyncFields per connector (same as the single-connector Sync handler),
+// auditing and reporting per-item results. One bad ID never aborts the
+// batch; one audit record is written per resolved item.
+func (h *Handler) BulkSync(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeBulkRequest(w, r)
+	if !ok {
+		return
+	}
+
+	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	results := make([]bulkItemResult, 0, len(req.IDs))
+	auditRecords := make([]store.AuditRecord, 0, len(found))
+	for _, id := range req.IDs {
+		if _, ok := found[id]; !ok {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
+			continue
+		}
+		jobID := uuid.New().String()
+		go func(connectorID, jobID string) {
+			if _, err := h.SyncEngine.RunSyncFields(context.Background(), connectorID, jobID, nil); err != nil {
+				slog.Error("bulk sync failed", "connector", logsafe.Sanitize(connectorID), "job", jobID, "error", logsafe.Sanitize(err.Error()))
+			}
+		}(id, jobID)
+		auditRecords = append(auditRecords, store.AuditRecord{TargetID: id, Detail: fmt.Sprintf(`{"jobId":%q}`, jobID)})
+		results = append(results, bulkItemResult{ID: id, Status: "success", JobID: jobID})
+	}
+
+	if err := h.Store.RecordAuditBatchFromContext(r.Context(), "connector.bulk_sync", "connector", auditRecords); err != nil {
+		slog.Error("failed to record audit", "action", "connector.bulk_sync", "error", err)
+	}
+
+	httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// BulkReauth handles POST /api/connectors/bulk-reauth. For each connector
+// implementing connector.CredentialRefresher, refreshes and persists its
+// credentials via sync.Engine.RefreshCredentials. Not elevation-gated
+// (lower-risk, matches how single sync/re-auth aren't gated today either).
+func (h *Handler) BulkReauth(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeBulkRequest(w, r)
+	if !ok {
+		return
+	}
+
+	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	results := make([]bulkItemResult, 0, len(req.IDs))
+	auditRecords := make([]store.AuditRecord, 0, len(found))
+	for _, id := range req.IDs {
+		if _, ok := found[id]; !ok {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
+			continue
+		}
+		if err := h.SyncEngine.RefreshCredentials(r.Context(), id); err != nil {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: err.Error()})
+			continue
+		}
+		auditRecords = append(auditRecords, store.AuditRecord{TargetID: id})
+		results = append(results, bulkItemResult{ID: id, Status: "success"})
+	}
+
+	if err := h.Store.RecordAuditBatchFromContext(r.Context(), "connector.bulk_reauth", "connector", auditRecords); err != nil {
+		slog.Error("failed to record audit", "action", "connector.bulk_reauth", "error", err)
+	}
+
+	httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// BulkRestart handles POST /api/connectors/bulk-restart. The router gates
+// this route with one elevation check for the whole batch (action
+// "connector.bulkRestart" — a distinct action from "connector.restart"
+// since RequireElevation validates one token against one exact action
+// string, not per item). Per ID, reuses the same restart logic as the
+// single-connector Restart handler.
+func (h *Handler) BulkRestart(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeBulkRequest(w, r)
+	if !ok {
+		return
+	}
+
+	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	results := make([]bulkItemResult, 0, len(req.IDs))
+	auditRecords := make([]store.AuditRecord, 0, len(found))
+	for _, id := range req.IDs {
+		rec, ok := found[id]
+		if !ok {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
+			continue
+		}
+		if err := h.restartConnector(r.Context(), &rec); err != nil {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: err.Error()})
+			continue
+		}
+		auditRecords = append(auditRecords, store.AuditRecord{TargetID: id})
+		results = append(results, bulkItemResult{ID: id, Status: "success"})
+	}
+
+	if err := h.Store.RecordAuditBatchFromContext(r.Context(), "connector.bulk_restart", "connector", auditRecords); err != nil {
+		slog.Error("failed to record audit", "action", "connector.bulk_restart", "error", err)
+	}
+
+	httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// restartConnector performs one connector's restart (config load, Restarter
+// type-assert, call, failure-alert) without the per-call elevation check or
+// per-call audit write — those are handled once, batch-wide, by BulkRestart.
+// The single-connector RestartPreview/mutateOp path still does its own
+// per-call elevation + audit, since it isn't part of a batch.
+func (h *Handler) restartConnector(ctx context.Context, rec *store.ConnectorRecord) error {
+	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, h.Config.Encryption.Key)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	cfg["url"] = rec.URL
+	cfg["verify_tls"] = rec.VerifyTLS
+
+	conn, err := connector.Get(rec.Type, cfg)
+	if err != nil {
+		return err
+	}
+	restarter, ok := conn.(connector.Restarter)
+	if !ok {
+		return fmt.Errorf("connector does not support restart")
+	}
+
+	if err := restarter.Restart(ctx, cfg, ""); err != nil {
+		slog.Error("connector restart failed", "connector", rec.ID, "error", err)
+		alert := &store.AlertRecord{
+			ServiceID:   rec.ID,
+			Severity:    "critical",
+			Title:       fmt.Sprintf("Restart failed for %s", rec.Name),
+			Description: err.Error(),
+		}
+		if createErr := h.Store.CreateAlert(ctx, alert); createErr != nil {
+			slog.Error("failed to create restart failure alert", "error", createErr)
+		} else if h.WSHub != nil {
+			h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
+				"alertId":   alert.ID,
+				"serviceId": rec.ID,
+				"severity":  alert.Severity,
+				"title":     alert.Title,
+			})
+		}
+		return err
+	}
+	return nil
+}

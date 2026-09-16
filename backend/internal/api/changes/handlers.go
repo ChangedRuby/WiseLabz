@@ -28,8 +28,6 @@ type Handler struct {
 	WSHub    *ws.Hub
 }
 
-const maxBulkIDs = 500
-
 // NewHandler creates a new change handler.
 func NewHandler(s *store.Store, settingsH *settings.Handler, aiRegistry *ai.Registry, hub *ws.Hub) *Handler {
 	return &Handler{Store: s, Settings: settingsH, AI: aiRegistry, WSHub: hub}
@@ -212,7 +210,7 @@ func (h *Handler) BulkResolve(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array")
 		return
 	}
-	if len(req.IDs) > maxBulkIDs {
+	if len(req.IDs) > httputil.MaxBulkIDs {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items")
 		return
 	}

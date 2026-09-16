@@ -146,6 +146,53 @@ func (s *Store) GetConnector(ctx context.Context, id string) (*ConnectorRecord, 
 	return c, nil
 }
 
+// ListConnectorsByID returns the requested connectors keyed by ID, for bulk
+// actions (bulk-sync/bulk-reauth/bulk-restart) that need every target's full
+// record in one round trip.
+func (s *Store) ListConnectorsByID(ctx context.Context, ids []string) (map[string]ConnectorRecord, error) {
+	connectors := make(map[string]ConnectorRecord, len(ids))
+	if len(ids) == 0 {
+		return connectors, nil
+	}
+
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+connectorColumns+` FROM connectors WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list connectors by id: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var c ConnectorRecord
+		var verifyTLS, enabled int
+		var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
+		var scheduleSeconds, lastSyncDurationMs sql.NullInt64
+		if err := rows.Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
+			&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
+			&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
+			&c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		c.VerifyTLS = verifyTLS != 0
+		c.Owner = nullStrToStr(owner)
+		c.Enabled = enabled != 0
+		c.LastSyncAt = nullStrToStr(lastSyncAt)
+		c.NextRunAt = nullStrToStr(nextRunAt)
+		c.LastSyncError = nullStrToStr(lastSyncError)
+		c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
+		c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
+		c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
+		connectors[c.ID] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate connectors: %w", err)
+	}
+	return connectors, nil
+}
+
 // UpdateConnector updates fields on an existing connector.
 func (s *Store) UpdateConnector(ctx context.Context, id string, updates map[string]any) error {
 	now := time.Now().UTC().Format(time.RFC3339)

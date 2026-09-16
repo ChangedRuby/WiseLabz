@@ -841,6 +841,77 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/SyncRun' }
+  /connectors/bulk-sync:
+    post:
+      tags: [connectors]
+      summary: Trigger a sync for an explicit list of connectors in one request
+      description: >
+        Fans out an async sync per connector (same as POST
+        /connectors/{connectorId}/sync); progress for each streams over /ws.
+        The caller must supply an explicit list of connector IDs. One bad ID
+        never aborts the batch — the response reports a per-item outcome, and
+        one audit record is written per successfully-started item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectorBulkSyncRequest' }
+      responses:
+        '200':
+          description: OK — per-item outcomes (individual items may still have failed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectorBulkSyncResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /connectors/bulk-reauth:
+    post:
+      tags: [connectors]
+      summary: Refresh credentials for an explicit list of connectors in one request
+      description: >
+        For each connector implementing credential refresh, refreshes and
+        persists its credentials. Not elevation-gated (matches how
+        single-connector sync/re-auth aren't gated today either). One bad ID
+        never aborts the batch; one audit record is written per
+        successfully-refreshed item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectorBulkReauthRequest' }
+      responses:
+        '200':
+          description: OK — per-item outcomes (individual items may still have failed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectorBulkReauthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /connectors/bulk-restart:
+    post:
+      tags: [connectors]
+      summary: Restart an explicit list of connectors in one request
+      description: >
+        Gated by X-Elevation-Token, action `connector.bulkRestart` — one
+        elevation covers the whole batch, not one per item. One bad ID never
+        aborts the batch; one audit record is written per
+        successfully-restarted item.
+      parameters:
+        - name: X-Elevation-Token
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectorBulkRestartRequest' }
+      responses:
+        '200':
+          description: OK — per-item outcomes (individual items may still have failed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectorBulkRestartResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /connectors/{connectorId}/enabled:
     put:
       tags: [connectors]
@@ -3067,6 +3138,84 @@ components:
         results:
           type: array
           items: { $ref: '#/components/schemas/AlertBulkSnoozeItemResult' }
+    ConnectorBulkSyncRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: Explicit connector IDs to sync — never "all matching the current filter".
+    ConnectorBulkSyncItemResult:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [success, error] }
+        jobId:
+          type: string
+          description: Present when status is success — the async sync job's ID (see SyncJobRef).
+        reason:
+          type: string
+          description: 'Present when status is error, e.g. not_found.'
+    ConnectorBulkSyncResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/ConnectorBulkSyncItemResult' }
+    ConnectorBulkReauthRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: Explicit connector IDs to re-authenticate — never "all matching the current filter".
+    ConnectorBulkReauthItemResult:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [success, error] }
+        reason:
+          type: string
+          description: 'Present when status is error, e.g. not_found, or the refresh failure.'
+    ConnectorBulkReauthResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/ConnectorBulkReauthItemResult' }
+    ConnectorBulkRestartRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: Explicit connector IDs to restart — never "all matching the current filter".
+    ConnectorBulkRestartItemResult:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [success, error] }
+        reason:
+          type: string
+          description: 'Present when status is error, e.g. not_found, or the restart failure.'
+    ConnectorBulkRestartResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/ConnectorBulkRestartItemResult' }
     Diff:
       type: object
       description: >

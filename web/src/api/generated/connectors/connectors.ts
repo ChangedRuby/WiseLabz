@@ -23,6 +23,12 @@ import type {
   BadRequestResponse,
   ConfigField,
   Connector,
+  ConnectorBulkReauthRequest,
+  ConnectorBulkReauthResponse,
+  ConnectorBulkRestartRequest,
+  ConnectorBulkRestartResponse,
+  ConnectorBulkSyncRequest,
+  ConnectorBulkSyncResponse,
   ConnectorCreate,
   ConnectorTypeSchema,
   ConnectorUpdate,
@@ -50,6 +56,7 @@ import type {
   SyncJobRef,
   SyncRun,
   TestResult,
+  UnauthorizedResponse,
 } from '../../model';
 
 import { customInstance } from '../../axios-instance';
@@ -2611,6 +2618,433 @@ export function useGetConnectorsConnectorIdSyncs<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetConnectorsConnectorIdSyncsQueryOptions(connectorId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Fans out an async sync per connector (same as POST /connectors/{connectorId}/sync); progress for each streams over /ws. The caller must supply an explicit list of connector IDs. One bad ID never aborts the batch — the response reports a per-item outcome, and one audit record is written per successfully-started item.
+ * @summary Trigger a sync for an explicit list of connectors in one request
+ */
+export const postConnectorsBulkSync = (
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ConnectorBulkSyncResponse>(
+    {
+      url: `/connectors/bulk-sync`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: connectorBulkSyncRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostConnectorsBulkSyncQueryKey = (
+  connectorBulkSyncRequest?: BodyType<ConnectorBulkSyncRequest>
+) => {
+  return ['POST', `/connectors/bulk-sync`, connectorBulkSyncRequest] as const;
+};
+
+export const getPostConnectorsBulkSyncQueryOptions = <
+  TData = Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkSync>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPostConnectorsBulkSyncQueryKey(connectorBulkSyncRequest);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postConnectorsBulkSync>>> = ({ signal }) =>
+    postConnectorsBulkSync(connectorBulkSyncRequest, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostConnectorsBulkSyncQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postConnectorsBulkSync>>
+>;
+export type PostConnectorsBulkSyncQueryError = ErrorType<BadRequestResponse>;
+
+export function usePostConnectorsBulkSync<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkSync>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkSync>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkSync<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkSync>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkSync>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkSync<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkSync>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Trigger a sync for an explicit list of connectors in one request
+ */
+
+export function usePostConnectorsBulkSync<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkSync>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkSyncRequest: BodyType<ConnectorBulkSyncRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkSync>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostConnectorsBulkSyncQueryOptions(connectorBulkSyncRequest, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * For each connector implementing credential refresh, refreshes and persists its credentials. Not elevation-gated (matches how single-connector sync/re-auth aren't gated today either). One bad ID never aborts the batch; one audit record is written per successfully-refreshed item.
+ * @summary Refresh credentials for an explicit list of connectors in one request
+ */
+export const postConnectorsBulkReauth = (
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ConnectorBulkReauthResponse>(
+    {
+      url: `/connectors/bulk-reauth`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: connectorBulkReauthRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostConnectorsBulkReauthQueryKey = (
+  connectorBulkReauthRequest?: BodyType<ConnectorBulkReauthRequest>
+) => {
+  return ['POST', `/connectors/bulk-reauth`, connectorBulkReauthRequest] as const;
+};
+
+export const getPostConnectorsBulkReauthQueryOptions = <
+  TData = Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkReauth>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPostConnectorsBulkReauthQueryKey(connectorBulkReauthRequest);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postConnectorsBulkReauth>>> = ({
+    signal,
+  }) => postConnectorsBulkReauth(connectorBulkReauthRequest, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostConnectorsBulkReauthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postConnectorsBulkReauth>>
+>;
+export type PostConnectorsBulkReauthQueryError = ErrorType<BadRequestResponse>;
+
+export function usePostConnectorsBulkReauth<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkReauth>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkReauth>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkReauth<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkReauth>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkReauth>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkReauth<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkReauth>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Refresh credentials for an explicit list of connectors in one request
+ */
+
+export function usePostConnectorsBulkReauth<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkReauth>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  connectorBulkReauthRequest: BodyType<ConnectorBulkReauthRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkReauth>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostConnectorsBulkReauthQueryOptions(connectorBulkReauthRequest, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Gated by X-Elevation-Token, action `connector.bulkRestart` — one elevation covers the whole batch, not one per item. One bad ID never aborts the batch; one audit record is written per successfully-restarted item.
+ * @summary Restart an explicit list of connectors in one request
+ */
+export const postConnectorsBulkRestart = (
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ConnectorBulkRestartResponse>(
+    {
+      url: `/connectors/bulk-restart`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: connectorBulkRestartRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostConnectorsBulkRestartQueryKey = (
+  connectorBulkRestartRequest?: BodyType<ConnectorBulkRestartRequest>
+) => {
+  return ['POST', `/connectors/bulk-restart`, connectorBulkRestartRequest] as const;
+};
+
+export const getPostConnectorsBulkRestartQueryOptions = <
+  TData = Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+>(
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkRestart>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPostConnectorsBulkRestartQueryKey(connectorBulkRestartRequest);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postConnectorsBulkRestart>>> = ({
+    signal,
+  }) => postConnectorsBulkRestart(connectorBulkRestartRequest, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostConnectorsBulkRestartQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postConnectorsBulkRestart>>
+>;
+export type PostConnectorsBulkRestartQueryError = ErrorType<
+  BadRequestResponse | UnauthorizedResponse
+>;
+
+export function usePostConnectorsBulkRestart<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+>(
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkRestart>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkRestart>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkRestart<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+>(
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkRestart>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsBulkRestart>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsBulkRestart<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+>(
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkRestart>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Restart an explicit list of connectors in one request
+ */
+
+export function usePostConnectorsBulkRestart<
+  TData = Awaited<ReturnType<typeof postConnectorsBulkRestart>>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+>(
+  connectorBulkRestartRequest: BodyType<ConnectorBulkRestartRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postConnectorsBulkRestart>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostConnectorsBulkRestartQueryOptions(
+    connectorBulkRestartRequest,
+    options
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

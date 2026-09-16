@@ -131,6 +131,48 @@ export const curatedHandlers = [
     return HttpResponse.json({ jobId: `job-${Date.now().toString(36)}`, serviceId: null });
   }),
 
+  // Bulk connector actions — deterministic against the submitted ids and the
+  // fixture connector set, instead of the generated faker mock's random 1-4
+  // fake ids/statuses unrelated to what was actually selected.
+  http.post('*/connectors/bulk-sync', async ({ request }) => {
+    await delay(LATENCY);
+    const body = (await request.json().catch(() => ({}))) as { ids?: string[] };
+    const results = (body.ids ?? []).map((id) =>
+      connectors.some((c) => c.id === id)
+        ? { id, status: 'success' as const, jobId: `job-${Date.now().toString(36)}` }
+        : { id, status: 'error' as const, reason: 'not_found' }
+    );
+    return HttpResponse.json({ results });
+  }),
+
+  http.post('*/connectors/bulk-reauth', async ({ request }) => {
+    await delay(LATENCY);
+    const body = (await request.json().catch(() => ({}))) as { ids?: string[] };
+    const results = (body.ids ?? []).map((id) =>
+      connectors.some((c) => c.id === id)
+        ? { id, status: 'success' as const }
+        : { id, status: 'error' as const, reason: 'not_found' }
+    );
+    return HttpResponse.json({ results });
+  }),
+
+  http.post('*/connectors/bulk-restart', async ({ request }) => {
+    await delay(LATENCY);
+    if (authConfig.stepUpForDestructive && !request.headers.get('X-Elevation-Token')) {
+      return HttpResponse.json(
+        { code: 'elevation-required', message: 'Step-up required' },
+        { status: 400 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as { ids?: string[] };
+    const results = (body.ids ?? []).map((id) =>
+      connectors.some((c) => c.id === id)
+        ? { id, status: 'success' as const }
+        : { id, status: 'error' as const, reason: 'not_found' }
+    );
+    return HttpResponse.json({ results });
+  }),
+
   http.post('*/connectors', async ({ request }) => {
     await delay(LATENCY);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -360,5 +402,36 @@ export const curatedHandlers = [
     const doc = docs[params.docId as string];
     if (!doc) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json(doc);
+  }),
+
+  // Flat searchable doc list — deterministic (filtered from the fixture set)
+  // instead of the generated faker mock, so TopologyPage's "does a Lab
+  // Topology doc already exist" lookup behaves like the real backend
+  // instead of matching random titles.
+  http.get('*/docs', async ({ request }) => {
+    await delay(LATENCY);
+    const search = new URL(request.url).searchParams.get('search')?.toLowerCase() ?? '';
+    const items = Object.values(docs).filter((d) => d.title.toLowerCase().includes(search));
+    return HttpResponse.json({ items, total: items.length, page: 1, pageSize: items.length || 20 });
+  }),
+
+  // Generate (or refresh) the lab-wide topology doc, deterministically —
+  // the generated faker mock returns a random docId that no fixture knows
+  // about, so the page TopologyPage redirects into 404s every time.
+  http.post('*/docs/topology', async () => {
+    await delay(LATENCY);
+    const existing = Object.values(docs).find((d) => d.title === 'Lab Topology');
+    const id = existing?.docId ?? 'doc-topology';
+    const now = new Date().toISOString();
+    const content = '# Lab Topology\n\nGenerated from the current connector set.\n';
+    docs[id] = {
+      docId: id,
+      title: 'Lab Topology',
+      kind: 'lab',
+      content,
+      currentVersion: (existing?.currentVersion ?? 0) + 1,
+      updatedAt: now,
+    };
+    return HttpResponse.json({ docId: id, title: 'Lab Topology', content });
   }),
 ];

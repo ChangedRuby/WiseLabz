@@ -12,6 +12,9 @@ import {
   putConnectorsConnectorIdEnabled,
   getGetConnectorsQueryKey,
   useGetConnectorsMaintenanceWindows,
+  postConnectorsBulkSync,
+  postConnectorsBulkReauth,
+  postConnectorsBulkRestart,
 } from '../../api/generated/connectors/connectors';
 import { useLive } from '../../store/live';
 import { useCanMutate } from '../../hooks/useRole';
@@ -22,11 +25,14 @@ import { SavedViewsMenu } from '../../components/views/SavedViewsMenu';
 import { Panel } from '../../components/ui/Panel';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
 import { ConfirmDestructive } from '../../components/manager/ConfirmDestructive';
+import { ElevationConfirm } from '../../components/manager/ElevationConfirm';
 import { MaintenanceWindowMenu } from '../../components/manager/MaintenanceWindowMenu';
 import { relativeTime } from '../../lib/time';
+import { toast } from '../../lib/toast';
 import { SearchIcon, SyncIcon, PlusIcon, XIcon } from '../../components/icons';
 import { categoryIcon } from '../../components/categoryIcon';
 import type { Connector, ServiceStatus } from '../../api/model';
+import type { ConnectorBulkSyncItemResult } from '../../api/model';
 
 export function ServicesPage() {
   const { t } = useTranslation();
@@ -42,11 +48,73 @@ export function ServicesPage() {
   const canMutate = useCanMutate();
   const [q, setQ] = useState('');
   const [removing, setRemoving] = useState<Connector | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [restarting, setRestarting] = useState(false);
 
   const toggleEnabled = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       putConnectorsConnectorIdEnabled(id, { enabled }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() }),
+  });
+
+  // Drop any selected id no longer in the connector list (e.g. deleted by
+  // this or another session) before it's submitted — otherwise a stale id
+  // lingers in `selected` and rides along with the next bulk action,
+  // coming back as a confusing extra "not_found" result the user never
+  // knowingly picked.
+  const selectedIds = useMemo(
+    () => (data ? Array.from(selected).filter((id) => data.some((c) => c.id === id)) : []),
+    [selected, data]
+  );
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const reportBulkResult = (
+    results: ConnectorBulkSyncItemResult[],
+    allSucceededKey: string
+  ) => {
+    const succeeded = results.filter((r) => r.status === 'success').length;
+    const failed = results.filter((r) => r.status === 'error');
+    if (failed.length === 0) {
+      toast.success(t(allSucceededKey, { count: succeeded }));
+    } else {
+      toast.warning(
+        t('services.bulk.bulkPartial', { succeeded, failed: failed.length, reason: failed[0].reason })
+      );
+    }
+    setSelected(new Set());
+    queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
+  };
+
+  const bulkSync = useMutation({
+    mutationFn: () => postConnectorsBulkSync({ ids: selectedIds }),
+    onSuccess: (res) => reportBulkResult(res.results, 'services.bulk.syncAllSucceeded'),
+    onError: () => toast.error(t('services.bulk.bulkError')),
+  });
+
+  const bulkReauth = useMutation({
+    mutationFn: () => postConnectorsBulkReauth({ ids: selectedIds }),
+    onSuccess: (res) => reportBulkResult(res.results, 'services.bulk.reauthAllSucceeded'),
+    onError: () => toast.error(t('services.bulk.bulkError')),
+  });
+
+  const bulkRestart = useMutation({
+    mutationFn: (token: string | null) =>
+      postConnectorsBulkRestart(
+        { ids: selectedIds },
+        token ? { headers: { 'X-Elevation-Token': token } } : undefined
+      ),
+    onSuccess: (res) => {
+      setRestarting(false);
+      reportBulkResult(res.results, 'services.bulk.restartAllSucceeded');
+    },
+    onError: () => toast.error(t('services.bulk.bulkError')),
   });
 
   const rows = useMemo(() => {
@@ -90,6 +158,35 @@ export function ServicesPage() {
         </div>
       </header>
 
+      {canMutate && selectedIds.length > 0 && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-canvas-sunken px-4 py-2.5">
+          <span className="text-xs text-ink-muted">
+            {t('services.bulk.selectedCount', { count: selectedIds.length })}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={bulkSync.isPending}
+              onClick={() => bulkSync.mutate()}
+            >
+              <SyncIcon size={13} /> {t('services.bulk.sync')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={bulkReauth.isPending}
+              onClick={() => bulkReauth.mutate()}
+            >
+              {t('services.bulk.reauth')}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setRestarting(true)}>
+              {t('services.bulk.restart')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Panel>
         {isLoading ? (
           <SkeletonRows rows={6} />
@@ -105,6 +202,7 @@ export function ServicesPage() {
           <table className="w-full min-w-140 text-sm">
             <thead>
               <tr className="border-b border-line-soft text-left text-2xs text-ink-faint">
+                {canMutate && <th className="w-8 px-4 py-2.5" />}
                 <th className="px-4 py-2.5 font-semibold">{t('services.col.service')}</th>
                 <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">
                   {t('services.col.category')}
@@ -130,6 +228,17 @@ export function ServicesPage() {
                     transition={{ delay: idx * 0.03, duration: 0.25 }}
                     className="group border-b border-line-soft transition-colors last:border-0 hover:bg-surface-raised"
                   >
+                    {canMutate && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label={t('services.bulk.selectLabel', { name: c.name })}
+                          checked={selected.has(c.id)}
+                          onChange={() => toggleSelected(c.id)}
+                          className="size-3.5 shrink-0 accent-[var(--color-accent-primary)]"
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <span className="flex h-8 w-8 items-center justify-center rounded-md bg-canvas-sunken text-ink-faint">
@@ -220,6 +329,20 @@ export function ServicesPage() {
         connectorName={removing?.name ?? ''}
         onClose={() => setRemoving(null)}
         onConfirmed={() => setRemoving(null)}
+      />
+
+      <ElevationConfirm
+        open={restarting}
+        onClose={() => setRestarting(false)}
+        resourceName={t('services.bulk.restartConfirmToken', { count: selectedIds.length })}
+        action="connector.bulkRestart"
+        title={t('services.bulk.restartConfirmTitle', { count: selectedIds.length })}
+        description={t('services.bulk.restartConfirmDescription')}
+        confirmLabel={t('services.bulk.restart')}
+        isPending={bulkRestart.isPending}
+        onConfirm={async (token) => {
+          await bulkRestart.mutateAsync(token);
+        }}
       />
     </div>
   );
