@@ -521,3 +521,94 @@ func TestConnectorsDeleteElevationBoundary(t *testing.T) {
 		}
 	})
 }
+
+func TestConnectorsBulkSyncAndReauthRoleBoundary(t *testing.T) {
+	app := newTestApp(t)
+	_, viewerToken := app.user(t, "viewer")
+
+	for _, path := range []string{"/api/connectors/bulk-sync", "/api/connectors/bulk-reauth"} {
+		rec := app.req(t, http.MethodPost, path, map[string]any{"ids": []string{"x"}}, viewerToken)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: status = %d, want 403; body = %s", path, rec.Code, rec.Body)
+		}
+	}
+}
+
+// TestConnectorsBulkRestartElevationBoundary exercises bulk-restart's
+// router-level elevation gate — one token covers the whole batch via its
+// own distinct "connector.bulkRestart" action string (not per-item, and not
+// reusable from a "connector.restart" token).
+func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
+	app := newTestApp(t)
+	opID, opToken := app.user(t, "operator")
+	_, viewerToken := app.user(t, "viewer")
+
+	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
+	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
+		t.Fatalf("seed connector: %v", err)
+	}
+	body := map[string]any{"ids": []string{conn.ID}}
+
+	t.Run("viewer forbidden", func(t *testing.T) {
+		rec := app.req(t, http.MethodPost, "/api/connectors/bulk-restart", body, viewerToken)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("operator missing elevation token", func(t *testing.T) {
+		rec := app.req(t, http.MethodPost, "/api/connectors/bulk-restart", body, opToken)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("operator invalid elevation token", func(t *testing.T) {
+		req := app.newRequest(t, http.MethodPost, "/api/connectors/bulk-restart", body, opToken)
+		req.Header.Set("X-Elevation-Token", "garbage")
+		rec := app.serve(req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("operator elevation token scoped to single-restart action is rejected", func(t *testing.T) {
+		// connector.restart must NOT satisfy bulk-restart's gate: bulk-restart
+		// uses its own distinct action string precisely so per-item restart
+		// elevation can't be reused to authorize a whole batch.
+		tok := app.elevationToken(t, opID, "connector.restart")
+		req := app.newRequest(t, http.MethodPost, "/api/connectors/bulk-restart", body, opToken)
+		req.Header.Set("X-Elevation-Token", tok)
+		rec := app.serve(req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("operator valid elevation token covers the whole batch", func(t *testing.T) {
+		conn2 := &store.ConnectorRecord{Name: "svc2", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
+		if err := app.Store.CreateConnector(context.Background(), conn2); err != nil {
+			t.Fatalf("seed connector2: %v", err)
+		}
+		tok := app.elevationToken(t, opID, "connector.bulkRestart")
+		req := app.newRequest(t, http.MethodPost, "/api/connectors/bulk-restart",
+			map[string]any{"ids": []string{conn.ID, conn2.ID}}, opToken)
+		req.Header.Set("X-Elevation-Token", tok)
+		rec := app.serve(req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+		}
+		var got struct {
+			Results []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if len(got.Results) != 2 {
+			t.Fatalf("results = %+v, want one entry per connector in the batch", got.Results)
+		}
+	})
+}

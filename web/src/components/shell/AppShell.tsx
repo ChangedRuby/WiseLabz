@@ -4,7 +4,7 @@
  * command palette (⌘K) live here.
  */
 import { Suspense, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Toaster } from 'sonner';
 import { ShellDock } from './ShellDock';
@@ -25,8 +25,13 @@ function NavigatorBridge() {
 }
 
 function Content() {
+  const location = useLocation();
   return (
     <ErrorBoundary
+      // Reset whenever the route changes — otherwise a crash on one page
+      // keeps showing this fallback for every page navigated to afterward,
+      // since Outlet just swaps children under the same mounted boundary.
+      resetKeys={[location.pathname]}
       fallbackRender={({ resetErrorBoundary }) => (
         <ErrorState
           title="This page hit an error"

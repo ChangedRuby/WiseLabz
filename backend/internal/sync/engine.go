@@ -134,6 +134,58 @@ func (e *Engine) RunSync(ctx context.Context, connectorID string, jobID string) 
 	return e.RunSyncFields(ctx, connectorID, jobID, nil)
 }
 
+// RefreshCredentials refreshes a connector's credentials via its
+// connector.CredentialRefresher implementation and persists the result
+// (config_data + credential_expires_at). Shared by the sync-time
+// expired-credential path in RunSyncFields and the bulk-reauth API handler.
+func (e *Engine) RefreshCredentials(ctx context.Context, connectorID string) error {
+	rec, err := e.store.GetConnector(ctx, connectorID)
+	if err != nil {
+		return fmt.Errorf("get connector: %w", err)
+	}
+	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, e.encKey)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	cfg["url"] = rec.URL
+	cfg["verify_tls"] = rec.VerifyTLS
+
+	conn, err := connector.Get(rec.Type, cfg)
+	if err != nil {
+		return fmt.Errorf("get connector impl: %w", err)
+	}
+	refresher, ok := conn.(connector.CredentialRefresher)
+	if !ok {
+		return fmt.Errorf("connector does not support credential refresh")
+	}
+
+	newCfg, expiresAt, err := refresher.RefreshCredentials(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("credential refresh failed: %w", err)
+	}
+
+	// Persist the refreshed credentials on their own — url/verify_tls
+	// already live in their own columns and "fields" is a per-request
+	// hint, not connector config; strip them regardless of whether the
+	// refresher's newConfig (often built by copying its input, which
+	// already carries these) included them.
+	toStore := make(map[string]any, len(newCfg))
+	for k, v := range newCfg {
+		toStore[k] = v
+	}
+	delete(toStore, "url")
+	delete(toStore, "verify_tls")
+	delete(toStore, "fields")
+	configData, err := store.MarshalConnectorConfig(rec.Type, toStore, e.encKey)
+	if err != nil {
+		return fmt.Errorf("marshal refreshed config: %w", err)
+	}
+	return e.store.UpdateConnector(ctx, connectorID, map[string]any{
+		"config_data":           configData,
+		"credential_expires_at": expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
 // RunSyncFields runs a sync for a single connector, optionally requesting
 // only a subset of fields (e.g. []string{"vms","storage"}) so a caller like
 // a dashboard quick-check doesn't force a full fetch. A connector type that
@@ -303,8 +355,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// it) rather than let an expired credential fail Fetch with a confusing
 	// upstream error.
 	if rec.IsCredentialExpired(time.Now()) {
-		refresher, ok := conn.(connector.CredentialRefresher)
-		if !ok {
+		if _, ok := conn.(connector.CredentialRefresher); !ok {
 			authErr := connector.NewAuthError(fmt.Errorf("credentials expired at %s", rec.CredentialExpiresAt))
 			_ = e.store.UpdateConnector(ctx, connectorID, map[string]any{
 				"status":         "offline",
@@ -313,8 +364,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 			finish("error", authErr)
 			return markError(result, start, authErr)
 		}
-		newCfg, expiresAt, refreshErr := refresher.RefreshCredentials(ctx, cfg)
-		if refreshErr != nil {
+		if refreshErr := e.RefreshCredentials(ctx, connectorID); refreshErr != nil {
 			authErr := connector.NewAuthError(fmt.Errorf("credential refresh failed: %w", refreshErr))
 			_ = e.store.UpdateConnector(ctx, connectorID, map[string]any{
 				"status":         "offline",
@@ -323,25 +373,17 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 			finish("error", authErr)
 			return markError(result, start, authErr)
 		}
-		// Persist the refreshed credentials on their own — url/verify_tls
-		// already live in their own columns and "fields" is a per-request
-		// hint, not connector config; strip them regardless of whether the
-		// refresher's newConfig (often built by copying its input, which
-		// already carries these) included them.
-		toStore := make(map[string]any, len(newCfg))
-		for k, v := range newCfg {
-			toStore[k] = v
+		// Reload: RefreshCredentials persisted the new config_data/expiry.
+		rec, err = e.store.GetConnector(ctx, connectorID)
+		if err != nil {
+			finish("error", err)
+			return markError(result, start, fmt.Errorf("get connector after refresh: %w", err))
 		}
-		delete(toStore, "url")
-		delete(toStore, "verify_tls")
-		delete(toStore, "fields")
-		if configData, err := store.MarshalConnectorConfig(rec.Type, toStore, e.encKey); err == nil {
-			_ = e.store.UpdateConnector(ctx, connectorID, map[string]any{
-				"config_data":           configData,
-				"credential_expires_at": expiresAt.UTC().Format(time.RFC3339),
-			})
+		cfg, err = store.ParseConnectorConfig(rec.Type, rec.ConfigData, e.encKey)
+		if err != nil {
+			finish("error", err)
+			return markError(result, start, fmt.Errorf("parse config after refresh: %w", err))
 		}
-		cfg = newCfg
 		cfg["url"] = rec.URL
 		cfg["verify_tls"] = rec.VerifyTLS
 		if len(fields) > 0 {

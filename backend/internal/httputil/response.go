@@ -89,6 +89,9 @@ const (
 	// MaxPage is the maximum page number, chosen so (MaxPage-1)*MaxPageSize
 	// cannot overflow int and stays well within any reasonable dataset size.
 	MaxPage = 1_000_000
+	// MaxBulkIDs is the maximum number of IDs accepted by any bulk-action
+	// endpoint (bulk-resolve, bulk-snooze, bulk-sync, bulk-reauth, bulk-restart).
+	MaxBulkIDs = 500
 )
 
 // Paginate extracts pagination parameters from the request query string.

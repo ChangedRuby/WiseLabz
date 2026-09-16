@@ -35,6 +35,9 @@ object, action-specific), and `createdAt`.
 | `connector.configPush` | `POST /api/connectors/{id}/config-push` (successful, verified push only) | connector / id |
 | `connector.maintenanceWindow.open` | `POST /api/connectors/{id}/maintenance-window` | connector / id |
 | `connector.maintenanceWindow.close` | `DELETE /api/connectors/{id}/maintenance-window` (only when a window was actually active) | connector / id |
+| `connector.bulk_sync` | `POST /api/connectors/bulk-sync` | connector / id — one record per resolved item |
+| `connector.bulk_reauth` | `POST /api/connectors/bulk-reauth` | connector / id — one record per resolved item |
+| `connector.bulk_restart` | `POST /api/connectors/bulk-restart` | connector / id — one record per resolved item |
 | `auth.elevate` | `POST /api/auth/elevate` | action / the elevated action name |
 | `auth.elevation_requested` | Any step-up-gated endpoint receiving `X-Elevation-Token` | action / the required action name |
 | `auth.elevation_denied` | Failed elevation-token validation on a step-up-gated endpoint | action / the required action name |

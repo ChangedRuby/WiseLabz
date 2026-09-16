@@ -12,6 +12,9 @@ import { ConnectorCategory, ServiceStatus } from '../../model';
 import type {
   ConfigField,
   Connector,
+  ConnectorBulkReauthResponse,
+  ConnectorBulkRestartResponse,
+  ConnectorBulkSyncResponse,
   ConnectorTypeSchema,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
   HealthCheckResult,
@@ -453,6 +456,58 @@ export const getGetConnectorsConnectorIdSyncsResponseMock = (): SyncRun[] =>
     changesCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
     alertsCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   }));
+
+export const getPostConnectorsBulkSyncResponseMock = (
+  overrideResponse: Partial<Extract<ConnectorBulkSyncResponse, object>> = {}
+): ConnectorBulkSyncResponse => ({
+  results: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      status: faker.helpers.arrayElement(['success', 'error'] as const),
+      jobId: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      reason: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+    })
+  ),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsBulkReauthResponseMock = (
+  overrideResponse: Partial<Extract<ConnectorBulkReauthResponse, object>> = {}
+): ConnectorBulkReauthResponse => ({
+  results: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      status: faker.helpers.arrayElement(['success', 'error'] as const),
+      reason: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+    })
+  ),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsBulkRestartResponseMock = (
+  overrideResponse: Partial<Extract<ConnectorBulkRestartResponse, object>> = {}
+): ConnectorBulkRestartResponse => ({
+  results: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      status: faker.helpers.arrayElement(['success', 'error'] as const),
+      reason: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+    })
+  ),
+  ...overrideResponse,
+});
 
 export const getPutConnectorsConnectorIdEnabledResponseMock = (
   overrideResponse: Partial<Extract<Connector, object>> = {}

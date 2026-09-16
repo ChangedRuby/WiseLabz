@@ -177,10 +177,19 @@ func NewRouter(cfg Config) chi.Router {
 				r.Post("/{id}/sync", connH.Sync)
 				r.Post("/{id}/maintenance-window", connH.OpenMaintenanceWindow) // no elevation: reversible and time-boxed
 				r.Delete("/{id}/maintenance-window", connH.CloseMaintenanceWindow)
+				r.Post("/bulk-sync", connH.BulkSync)
+				r.Post("/bulk-reauth", connH.BulkReauth)
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireElevation(cfg.JWT, cfg.Store, "connector.delete"))
 					r.Delete("/{id}", connH.Delete)
+				})
+
+				r.Group(func(r chi.Router) {
+					// One elevation token covers the whole bulk-restart batch,
+					// via its own distinct action string (see BulkRestart).
+					r.Use(auth.RequireElevation(cfg.JWT, cfg.Store, "connector.bulkRestart"))
+					r.Post("/bulk-restart", connH.BulkRestart)
 				})
 			})
 		})
