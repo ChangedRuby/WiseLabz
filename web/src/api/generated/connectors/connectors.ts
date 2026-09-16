@@ -20,16 +20,17 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  BadRequestResponse,
   Connector,
   ConnectorCreate,
   ConnectorTypeSchema,
   ConnectorUpdate,
   ElevationRequiredResponse,
+  Error,
   ForbiddenResponse,
   GetConnectorsConnectorIdSyncsParams,
   HealthCheckResult,
   NotFoundResponse,
+  PostConnectorsConnectorIdRestartBody,
   PostConnectorsConnectorIdRestartParams,
   PostConnectorsConnectorIdSyncBody,
   PutConnectorsConnectorIdEnabledBody,
@@ -994,34 +995,49 @@ export function useGetConnectorsConnectorIdRemovalImpact<
 }
 
 /**
- * Returns a restart preview from the latest stored service snapshot. The mutating restart action is not implemented; `dryRun=true` is required.
- * @summary Preview a future service restart (dry-run only)
+ * With `dryRun=true`, returns a restart preview from the latest stored service snapshot without touching the connector — no elevation token required. With `dryRun` absent or `false`, performs the real restart: requires a valid `X-Elevation-Token` for action `connector.restart` (from `POST /auth/elevate`), and 400s with `unsupported_operation` if the connector type has no restart capability. On success, records a `connector.restart` audit row; on failure, raises an `AlertRecord` instead of retrying (see ADR 0001).
+ * @summary Preview or perform a service restart (operator, elevation-gated)
  */
 export const postConnectorsConnectorIdRestart = (
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
+  params?: PostConnectorsConnectorIdRestartParams,
   options?: SecondParameter<typeof customInstance>,
   signal?: AbortSignal
 ) => {
   return customInstance<RestartPreview>(
-    { url: `/connectors/${connectorId}/restart`, method: 'POST', params, signal },
+    {
+      url: `/connectors/${connectorId}/restart`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: postConnectorsConnectorIdRestartBody,
+      params,
+      signal,
+    },
     options
   );
 };
 
 export const getPostConnectorsConnectorIdRestartQueryKey = (
   connectorId: string,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
   params?: PostConnectorsConnectorIdRestartParams
 ) => {
-  return ['POST', `/connectors/${connectorId}/restart`, ...(params ? [params] : [])] as const;
+  return [
+    'POST',
+    `/connectors/${connectorId}/restart`,
+    ...(params ? [params] : []),
+    postConnectorsConnectorIdRestartBody,
+  ] as const;
 };
 
 export const getPostConnectorsConnectorIdRestartQueryOptions = <
   TData = Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>,
-  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
+  params?: PostConnectorsConnectorIdRestartParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>, TError, TData>
@@ -1032,11 +1048,23 @@ export const getPostConnectorsConnectorIdRestartQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getPostConnectorsConnectorIdRestartQueryKey(connectorId, params);
+    queryOptions?.queryKey ??
+    getPostConnectorsConnectorIdRestartQueryKey(
+      connectorId,
+      postConnectorsConnectorIdRestartBody,
+      params
+    );
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>> = ({
     signal,
-  }) => postConnectorsConnectorIdRestart(connectorId, params, requestOptions, signal);
+  }) =>
+    postConnectorsConnectorIdRestart(
+      connectorId,
+      postConnectorsConnectorIdRestartBody,
+      params,
+      requestOptions,
+      signal
+    );
 
   return {
     queryKey,
@@ -1054,15 +1082,16 @@ export type PostConnectorsConnectorIdRestartQueryResult = NonNullable<
   Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>
 >;
 export type PostConnectorsConnectorIdRestartQueryError = ErrorType<
-  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+  Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse
 >;
 
 export function usePostConnectorsConnectorIdRestart<
   TData = Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>,
-  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody: undefined | BodyType<PostConnectorsConnectorIdRestartBody>,
+  params: undefined | PostConnectorsConnectorIdRestartParams,
   options: {
     query: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>, TError, TData>
@@ -1081,10 +1110,11 @@ export function usePostConnectorsConnectorIdRestart<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostConnectorsConnectorIdRestart<
   TData = Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>,
-  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
+  params?: PostConnectorsConnectorIdRestartParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>, TError, TData>
@@ -1103,10 +1133,11 @@ export function usePostConnectorsConnectorIdRestart<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostConnectorsConnectorIdRestart<
   TData = Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>,
-  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
+  params?: PostConnectorsConnectorIdRestartParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>, TError, TData>
@@ -1116,15 +1147,16 @@ export function usePostConnectorsConnectorIdRestart<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * @summary Preview a future service restart (dry-run only)
+ * @summary Preview or perform a service restart (operator, elevation-gated)
  */
 
 export function usePostConnectorsConnectorIdRestart<
   TData = Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>,
-  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
-  params: PostConnectorsConnectorIdRestartParams,
+  postConnectorsConnectorIdRestartBody?: BodyType<PostConnectorsConnectorIdRestartBody>,
+  params?: PostConnectorsConnectorIdRestartParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof postConnectorsConnectorIdRestart>>, TError, TData>
@@ -1135,6 +1167,7 @@ export function usePostConnectorsConnectorIdRestart<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getPostConnectorsConnectorIdRestartQueryOptions(
     connectorId,
+    postConnectorsConnectorIdRestartBody,
     params,
     options
   );

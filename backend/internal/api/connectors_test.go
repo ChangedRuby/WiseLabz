@@ -411,25 +411,17 @@ func TestConnectorRestartPreview(t *testing.T) {
 	})
 }
 
-func TestConnectorRestartPreviewRejectsNonDryRun(t *testing.T) {
+func TestConnectorRestartNonDryRunOnMissingConnectorReturnsNotFound(t *testing.T) {
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
+	// Any value other than an exact "dryRun=true" now takes the real,
+	// mutating restart path (gated by elevation) instead of the preview.
 	for _, suffix := range []string{"", "?dryRun=false", "?dryRun=", "?dryRun=True", "?dryRun=true&dryRun=false"} {
 		t.Run(suffix, func(t *testing.T) {
 			rec := app.req(t, http.MethodPost, "/api/connectors/unknown/restart"+suffix, nil, opToken)
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body)
-			}
-			var body struct {
-				Message string `json:"message"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatalf("decode body: %v", err)
-			}
-			const want = "restart is not yet implemented, only dry-run preview is available"
-			if body.Message != want {
-				t.Fatalf("message = %q, want %q", body.Message, want)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body)
 			}
 		})
 	}

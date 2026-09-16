@@ -172,6 +172,28 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 	}, nil
 }
 
+// Restart restarts the service identified by entityRef (an OPNSense service
+// name, e.g. "unbound" or "dpinger") via the core service-control API.
+func (c *Connector) Restart(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("opnsense restart requires a target service name")
+	}
+	raw, err := c.doRequest(ctx, "POST", "/api/core/service/restart/"+entityRef)
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return connector.NewMalformedResponseError(fmt.Errorf("decode restart response: %w", err))
+	}
+	if resp.Status != "ok" {
+		return fmt.Errorf("restart failed: status %q", resp.Status)
+	}
+	return nil
+}
+
 func (c *Connector) doRequest(ctx context.Context, method, path string) (data []byte, err error) {
 	url := c.url + path
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)

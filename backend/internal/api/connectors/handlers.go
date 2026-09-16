@@ -14,12 +14,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
+	"github.com/WiseLabz/wiselabz/internal/ws"
 )
 
 // Handler holds dependencies for connector endpoints.
@@ -27,11 +29,13 @@ type Handler struct {
 	Store      *store.Store
 	SyncEngine *sync.Engine
 	Config     *config.Config
+	JWT        *auth.Service
+	WSHub      *ws.Hub
 }
 
 // NewHandler creates a new connector handler.
-func NewHandler(s *store.Store, e *sync.Engine, cfg *config.Config) *Handler {
-	return &Handler{Store: s, SyncEngine: e, Config: cfg}
+func NewHandler(s *store.Store, e *sync.Engine, cfg *config.Config, jwtSvc *auth.Service, hub *ws.Hub) *Handler {
+	return &Handler{Store: s, SyncEngine: e, Config: cfg, JWT: jwtSvc, WSHub: hub}
 }
 
 // List handles GET /api/connectors.
@@ -529,17 +533,13 @@ func (h *Handler) RemovalImpact(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RestartPreview handles POST /api/connectors/{id}/restart?dryRun=true.
-// It previews the future restart action from the latest stored snapshot.
+// RestartPreview handles POST /api/connectors/{id}/restart. dryRun=true
+// previews the restart from the latest stored snapshot without touching the
+// connector; dryRun absent/false performs the real, elevation-gated restart.
 func (h *Handler) RestartPreview(w http.ResponseWriter, r *http.Request) {
-	dryRun := r.URL.Query()["dryRun"]
-	if len(dryRun) != 1 || dryRun[0] != "true" {
-		httputil.Error(
-			w,
-			http.StatusBadRequest,
-			"invalid_request",
-			"restart is not yet implemented, only dry-run preview is available",
-		)
+	dryRun := len(r.URL.Query()["dryRun"]) == 1 && r.URL.Query()["dryRun"][0] == "true"
+	if !dryRun {
+		h.restart(w, r)
 		return
 	}
 
@@ -578,6 +578,86 @@ func (h *Handler) RestartPreview(w http.ResponseWriter, r *http.Request) {
 		"estimatedDowntimeSeconds": restartPreviewDowntimeSeconds,
 		"dependentServices":        dependencies,
 	})
+}
+
+// restart handles the real, mutating side of POST /api/connectors/{id}/restart
+// (dryRun absent/false). Per ADR 0001: gated by the "connector.restart"
+// elevation action, no rollback on failure (an AlertRecord is raised
+// instead), and only successes are audited.
+func (h *Handler) restart(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	rec, err := h.Store.GetConnector(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, h.Config.Encryption.Key)
+	if err != nil {
+		httputil.Errorf(w, fmt.Errorf("parse config: %w", err))
+		return
+	}
+	cfg["url"] = rec.URL
+	cfg["verify_tls"] = rec.VerifyTLS
+
+	conn, err := connector.Get(rec.Type, cfg)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
+	restarter, ok := conn.(connector.Restarter)
+	if !ok {
+		httputil.Error(w, http.StatusBadRequest, "unsupported_operation", "connector does not support restart")
+		return
+	}
+
+	if err := auth.ValidateElevationHeader(h.JWT, h.Store, "connector.restart", r); err != nil {
+		auth.WriteElevationError(w, err)
+		return
+	}
+
+	var body struct {
+		EntityRef string `json:"entityRef"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body) // ponytail: absent/empty body means entityRef == "", matches default
+	}
+
+	if err := restarter.Restart(r.Context(), cfg, body.EntityRef); err != nil {
+		slog.Error("connector restart failed", "connector", id, "error", err)
+		alert := &store.AlertRecord{
+			ServiceID:   id,
+			Severity:    "critical",
+			Title:       fmt.Sprintf("Restart failed for %s", rec.Name),
+			Description: err.Error(),
+		}
+		if createErr := h.Store.CreateAlert(r.Context(), alert); createErr != nil {
+			slog.Error("failed to create restart failure alert", "error", createErr)
+		} else if h.WSHub != nil {
+			h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
+				"alertId":   alert.ID,
+				"serviceId": id,
+				"severity":  alert.Severity,
+				"title":     alert.Title,
+			})
+		}
+		httputil.Error(w, http.StatusBadGateway, "restart_failed", err.Error())
+		return
+	}
+
+	if err := h.Store.RecordAuditFromContext(r.Context(), "connector.restart", "connector", id, map[string]any{
+		"entityRef": body.EntityRef,
+	}); err != nil {
+		slog.Error("failed to record audit", "action", "connector.restart", "error", err)
+	}
+
+	httputil.JSON(w, http.StatusOK, map[string]any{"status": "restarted"})
 }
 
 // validateConnectorConfig checks a connector config against its type's

@@ -3,6 +3,7 @@ package pfsense
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -236,5 +237,49 @@ func TestBuildRuleTableValidRules(t *testing.T) {
 	result, _ := buildRuleTable(data)
 	if !strings.Contains(result, "Allow SSH") || !strings.Contains(result, "Block DNS") {
 		t.Errorf("buildRuleTable() missing expected rules in: %q", result)
+	}
+}
+
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		statusCode int
+		wantErr    bool
+	}{
+		{name: "success", entityRef: "unbound", statusCode: http.StatusOK},
+		{name: "empty entityRef errors", entityRef: "", wantErr: true},
+		{name: "http error", entityRef: "unbound", statusCode: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", client: server.Client()}
+			err := c.Restart(context.Background(), nil, tt.entityRef)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Restart() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Restart() error = %v", err)
+			}
+			if gotMethod != "POST" || gotPath != "/api/v2/status/service" {
+				t.Errorf("request = %s %s, want POST /api/v2/status/service", gotMethod, gotPath)
+			}
+			if !strings.Contains(gotBody, tt.entityRef) || !strings.Contains(gotBody, "restart") {
+				t.Errorf("body = %q, want it to reference %q and restart action", gotBody, tt.entityRef)
+			}
+		})
 	}
 }

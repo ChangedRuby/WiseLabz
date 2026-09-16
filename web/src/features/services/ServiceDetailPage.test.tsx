@@ -54,6 +54,7 @@ vi.mock('../../store/live', () => ({
 }));
 vi.mock('../../lib/runSync', () => ({ runSync: vi.fn() }));
 vi.mock('../../components/manager/ConfirmDestructive', () => ({ ConfirmDestructive: () => null }));
+vi.mock('../../components/manager/ElevationConfirm', () => ({ ElevationConfirm: () => null }));
 vi.mock('../../components/ui/Dialog', () => ({
   Dialog: ({
     open,
@@ -94,11 +95,13 @@ describe('ServiceDetailPage restart preview', () => {
     });
 
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Preview restart impact' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
 
-    await waitFor(() => expect(restart).toHaveBeenCalledWith('svc-pve1', { dryRun: true }));
+    await waitFor(() =>
+      expect(restart).toHaveBeenCalledWith('svc-pve1', undefined, { dryRun: true })
+    );
     expect(await screen.findByRole('dialog', { name: 'Restart impact' })).toHaveTextContent(
-      'Read-only preview. No service will be restarted.'
+      'Review the impact below, then confirm to restart.'
     );
     expect(screen.getByText('30 seconds')).toBeInTheDocument();
     expect(screen.getByText('home-assistant')).toBeInTheDocument();

@@ -181,6 +181,72 @@ func TestDoRequestErrorCases(t *testing.T) {
 	}
 }
 
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		resources  string
+		rebootPath string
+		wantErr    bool
+	}{
+		{
+			name:       "success qemu",
+			entityRef:  "100",
+			resources:  `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`,
+			rebootPath: "/nodes/pve1/qemu/100/status/reboot",
+		},
+		{
+			name:       "success lxc",
+			entityRef:  "101",
+			resources:  `{"data":[{"vmid":101,"node":"pve1","type":"lxc"}]}`,
+			rebootPath: "/nodes/pve1/lxc/101/status/reboot",
+		},
+		{
+			name:      "empty entityRef errors",
+			entityRef: "",
+			wantErr:   true,
+		},
+		{
+			name:      "vmid not found",
+			entityRef: "999",
+			resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`,
+			wantErr:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rebooted := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/cluster/resources":
+					_, _ = w.Write([]byte(tt.resources))
+				case r.URL.Path == tt.rebootPath && r.Method == "POST":
+					rebooted = true
+					_, _ = w.Write([]byte(`{"data":null}`))
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, tokenID: "user@pam!token", tokenSecret: "secret", client: server.Client()}
+			err := c.Restart(context.Background(), nil, tt.entityRef)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Restart() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Restart() error = %v", err)
+			}
+			if !rebooted {
+				t.Errorf("expected reboot request to %s", tt.rebootPath)
+			}
+		})
+	}
+}
+
 func TestDoRequestContextTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(1 * time.Second)

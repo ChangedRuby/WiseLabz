@@ -147,6 +147,7 @@ export * from './pageParameter';
 export * from './pageSizeParameter';
 export * from './passwordChange';
 export * from './postAlertsAlertIdSnoozeBody';
+export * from './postConnectorsConnectorIdRestartBody';
 export * from './postConnectorsConnectorIdRestartParams';
 export * from './postConnectorsConnectorIdSyncBody';
 export * from './postDocsGenerateBody';

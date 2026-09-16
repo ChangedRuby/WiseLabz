@@ -7,9 +7,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PostConnectorsConnectorIdRestartParams = {
-  /**
-   * true previews the restart without performing it; absent/false performs the real, elevation-gated restart.
-   */
-  dryRun?: boolean;
+export type PostConnectorsConnectorIdRestartBody = {
+  /** Target entity's SnapshotEntity.externalId (e.g. a VM ID, container ID, or service name), or omitted for connectors that manage a single implicit service. Ignored for dry-run previews. */
+  entityRef?: string;
 };

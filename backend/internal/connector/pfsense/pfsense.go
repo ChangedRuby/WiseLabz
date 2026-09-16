@@ -3,6 +3,7 @@
 package pfsense
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -133,10 +134,36 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 	}, nil
 }
 
+// Restart restarts the service identified by entityRef (a pfSense service
+// name, e.g. "unbound" or "dpinger") via the pfsense-api service-control
+// endpoint.
+func (c *Connector) Restart(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("pfsense restart requires a target service name")
+	}
+	body, err := json.Marshal(map[string]string{"name": entityRef, "action": "restart"})
+	if err != nil {
+		return err
+	}
+	_, err = c.doRequestBody(ctx, "POST", "/api/v2/status/service", body)
+	return err
+}
+
 func (c *Connector) doRequest(ctx context.Context, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.url+path, nil)
+	return c.doRequestBody(ctx, "GET", path, nil)
+}
+
+func (c *Connector) doRequestBody(ctx context.Context, method, path string, body []byte) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.url+path, reqBody)
 	if err != nil {
 		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
