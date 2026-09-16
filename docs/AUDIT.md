@@ -30,6 +30,9 @@ object, action-specific), and `createdAt`.
 | `connector.sync` | `POST /api/connectors/{id}/sync` | connector / id |
 | `connector.sync_all` | `POST /api/sync` | connector / (none) |
 | `connector.restart` | `POST /api/connectors/{id}/restart` (dryRun omitted/false) | connector / id |
+| `connector.start` | `POST /api/connectors/{id}/start` (dryRun omitted/false) | connector / id |
+| `connector.stop` | `POST /api/connectors/{id}/stop` (dryRun omitted/false) | connector / id |
+| `connector.configPush` | `POST /api/connectors/{id}/config-push` (successful, verified push only) | connector / id |
 | `auth.elevate` | `POST /api/auth/elevate` | action / the elevated action name |
 | `auth.elevation_requested` | Any step-up-gated endpoint receiving `X-Elevation-Token` | action / the required action name |
 | `auth.elevation_denied` | Failed elevation-token validation on a step-up-gated endpoint | action / the required action name |
@@ -49,6 +52,8 @@ object, action-specific), and `createdAt`.
 `auth.config.update` record which *fields* changed (a name list), not
 their values — connector config can hold credentials, and this keeps the
 audit log safe to expose to any operator without redaction logic.
+`connector.configPush` follows the same discipline: `detail` records the
+pushed `fieldKey` (name) and `entityRef`, never the pushed `value`.
 
 ## What's not recorded
 

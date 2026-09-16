@@ -565,3 +565,104 @@ func TestRestart(t *testing.T) {
 		})
 	}
 }
+
+func TestStartStop(t *testing.T) {
+	tests := []struct {
+		name       string
+		action     string
+		entityRef  string
+		statusCode int
+		wantErr    bool
+	}{
+		{name: "start success", action: "start", entityRef: "abc123", statusCode: http.StatusNoContent},
+		{name: "stop success", action: "stop", entityRef: "abc123", statusCode: http.StatusNoContent},
+		{name: "start empty entityRef errors", action: "start", entityRef: "", wantErr: true},
+		{name: "stop not found", action: "stop", entityRef: "missing", statusCode: http.StatusNotFound, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+			var err error
+			if tt.action == "start" {
+				err = c.Start(context.Background(), nil, tt.entityRef)
+			} else {
+				err = c.Stop(context.Background(), nil, tt.entityRef)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error", tt.action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.action, err)
+			}
+			wantPath := "/containers/" + tt.entityRef + "/" + tt.action
+			if gotMethod != "POST" || gotPath != wantPath {
+				t.Errorf("request = %s %s, want POST %s", gotMethod, gotPath, wantPath)
+			}
+		})
+	}
+}
+
+func TestConfigPush(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		fieldKey   string
+		value      any
+		statusCode int
+		wantErr    bool
+	}{
+		{name: "success", entityRef: "abc123", fieldKey: "restartPolicy", value: "always", statusCode: http.StatusOK},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "restartPolicy", value: "always", wantErr: true},
+		{name: "unsupported field errors", entityRef: "abc123", fieldKey: "image", value: "nginx:latest", wantErr: true},
+		{name: "upstream error", entityRef: "abc123", fieldKey: "restartPolicy", value: "always", statusCode: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			wantPath := "/containers/" + tt.entityRef + "/update"
+			if gotMethod != "POST" || gotPath != wantPath {
+				t.Errorf("request = %s %s, want POST %s", gotMethod, gotPath, wantPath)
+			}
+			if !strings.Contains(gotBody, "always") {
+				t.Errorf("body = %q, want it to reference the pushed value", gotBody)
+			}
+		})
+	}
+}
+
+func TestDockerWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) != 1 || fields[0].Key != "restartPolicy" {
+		t.Errorf("WritableFields() = %+v, want one field \"restartPolicy\"", fields)
+	}
+}

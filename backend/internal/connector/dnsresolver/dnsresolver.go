@@ -4,6 +4,7 @@
 package dnsresolver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -103,10 +104,78 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 	}, nil
 }
 
+// WritableFields lists the config-push-eligible host override field. No
+// Starter/Stopper here: like PR1's restart, this connector monitors a DNS
+// Resolver service it doesn't own the lifecycle of (see the pfSense/OPNsense
+// connectors for that role) — same scope decision, mirrored.
+func (c *Connector) WritableFields() []connector.ConfigField {
+	return []connector.ConfigField{
+		{Key: "ip", Label: "Host Override IP", Type: "text", EntityScope: true},
+	}
+}
+
+// ConfigPush repoints the host override identified by entityRef (its
+// "host.domain" hostname, as built by buildHostOverrideTable) to a new IP.
+// ponytail: one field (ip) per call, matching the handler's one-field
+// revert contract.
+func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
+	if entityRef == "" {
+		return fmt.Errorf("dnsresolver config-push requires a target hostname")
+	}
+	if fieldKey != "ip" {
+		return fmt.Errorf("unsupported field %q", fieldKey)
+	}
+	raw, err := c.doRequest(ctx, "/api/v2/services/dns_resolver/host_override")
+	if err != nil {
+		return fmt.Errorf("resolve host override id: %w", err)
+	}
+	var resp struct {
+		Data []struct {
+			ID     json.Number `json:"id"`
+			Host   string      `json:"host"`
+			Domain string      `json:"domain"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return connector.NewMalformedResponseError(fmt.Errorf("decode host overrides: %w", err))
+	}
+	for _, o := range resp.Data {
+		hostname := o.Domain
+		if o.Host != "" {
+			hostname = fmt.Sprintf("%s.%s", o.Host, o.Domain)
+		}
+		if hostname != entityRef {
+			continue
+		}
+		body, err := json.Marshal(map[string]any{"id": o.ID, "ip": value})
+		if err != nil {
+			return err
+		}
+		return c.doRequestBody(ctx, "PATCH", "/api/v2/services/dns_resolver/host_override", body)
+	}
+	return fmt.Errorf("host override %q not found", entityRef)
+}
+
 func (c *Connector) doRequest(ctx context.Context, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.url+path, nil)
+	return c.doRequestBodyRaw(ctx, "GET", path, nil)
+}
+
+func (c *Connector) doRequestBody(ctx context.Context, method, path string, body []byte) error {
+	_, err := c.doRequestBodyRaw(ctx, method, path, body)
+	return err
+}
+
+func (c *Connector) doRequestBodyRaw(ctx context.Context, method, path string, body []byte) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.url+path, reqBody)
 	if err != nil {
 		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")

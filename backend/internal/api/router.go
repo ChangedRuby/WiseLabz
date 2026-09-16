@@ -158,6 +158,7 @@ func NewRouter(cfg Config) chi.Router {
 			r.Get("/{id}/data", connH.Data)
 			r.Get("/{id}/syncs", connH.Syncs)
 			r.Get("/{id}/removal-impact", connH.RemovalImpact)
+			r.Get("/{id}/config-fields", connH.ConfigFields)
 
 			r.Group(func(r chi.Router) {
 				r.Use(operatorOnly)
@@ -165,6 +166,9 @@ func NewRouter(cfg Config) chi.Router {
 				r.Post("/{id}/test", connH.Test)
 				r.Post("/{id}/health", connH.Health)
 				r.Post("/{id}/restart", connH.RestartPreview)
+				r.Post("/{id}/start", connH.StartPreview)
+				r.Post("/{id}/stop", connH.StopPreview)
+				r.Post("/{id}/config-push", connH.ConfigPush)
 				r.Patch("/{id}", connH.Update) // compatibility for clients predating the OpenAPI PUT contract
 				r.Put("/{id}", connH.Update)
 				r.Put("/{id}/enabled", connH.ToggleEnabled)

@@ -2,6 +2,7 @@ package pihole
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,5 +121,136 @@ func TestRestart(t *testing.T) {
 				t.Errorf("request = %s %s, want POST /api/action/restartdns", gotMethod, gotPath)
 			}
 		})
+	}
+}
+
+func TestStartStop(t *testing.T) {
+	tests := []struct {
+		name        string
+		action      string // "start" or "stop"
+		blockStatus int
+		wantErr     bool
+	}{
+		{name: "start success", action: "start", blockStatus: http.StatusOK},
+		{name: "stop success", action: "stop", blockStatus: http.StatusOK},
+		{name: "start blocking request fails", action: "start", blockStatus: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/auth" {
+					_, _ = w.Write([]byte(`{"session":{"sid":"abc","valid":true}}`))
+					return
+				}
+				gotPath, gotMethod = r.URL.Path, r.Method
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				w.WriteHeader(tt.blockStatus)
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, password: "secret", client: server.Client()}
+			var err error
+			if tt.action == "start" {
+				err = c.Start(context.Background(), nil, "")
+			} else {
+				err = c.Stop(context.Background(), nil, "")
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error", tt.action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.action, err)
+			}
+			if gotMethod != "POST" || gotPath != "/api/dns/blocking" {
+				t.Errorf("request = %s %s, want POST /api/dns/blocking", gotMethod, gotPath)
+			}
+			wantBlocking := tt.action == "start"
+			if strings.Contains(gotBody, `"blocking":true`) != wantBlocking {
+				t.Errorf("body = %q, want blocking=%v", gotBody, wantBlocking)
+			}
+		})
+	}
+}
+
+func TestPiholeConfigPush(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		fieldKey   string
+		value      any
+		hostsBody  string
+		wantErr    bool
+		wantDelete bool
+	}{
+		{
+			name:       "success updates existing record",
+			entityRef:  "host.example.com",
+			fieldKey:   "ip",
+			value:      "10.0.0.9",
+			hostsBody:  `{"config":{"dns":{"hosts":["10.0.0.5 host.example.com"]}}}`,
+			wantDelete: true,
+		},
+		{
+			name:      "success adds new record when none exists",
+			entityRef: "new.example.com",
+			fieldKey:  "ip",
+			value:     "10.0.0.9",
+			hostsBody: `{"config":{"dns":{"hosts":[]}}}`,
+		},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "ip", value: "10.0.0.9", wantErr: true},
+		{name: "unsupported field errors", entityRef: "host.example.com", fieldKey: "ttl", value: 300, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var putCalled, deleteCalled bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/api/auth":
+					_, _ = w.Write([]byte(`{"session":{"sid":"abc","valid":true}}`))
+				case r.URL.Path == "/api/config/dns/hosts":
+					_, _ = w.Write([]byte(tt.hostsBody))
+				case strings.HasPrefix(r.URL.Path, "/api/config/dns/hosts/") && r.Method == "DELETE":
+					deleteCalled = true
+					w.WriteHeader(http.StatusOK)
+				case strings.HasPrefix(r.URL.Path, "/api/config/dns/hosts/") && r.Method == "PUT":
+					putCalled = true
+					w.WriteHeader(http.StatusCreated)
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, password: "secret", client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			if !putCalled {
+				t.Errorf("expected PUT to add the new record")
+			}
+			if deleteCalled != tt.wantDelete {
+				t.Errorf("deleteCalled = %v, want %v", deleteCalled, tt.wantDelete)
+			}
+		})
+	}
+}
+
+func TestPiholeWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) != 1 || fields[0].Key != "ip" {
+		t.Errorf("WritableFields() = %+v, want one field \"ip\"", fields)
 	}
 }

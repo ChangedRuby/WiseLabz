@@ -13,6 +13,7 @@ import type { RequestHandlerOptions } from 'msw';
 
 import { ConnectorCategory, ServiceStatus } from '../../model';
 import type {
+  ConfigField,
   Connector,
   ConnectorTypeSchema,
   HealthCheckResult,
@@ -303,6 +304,74 @@ export const getPostConnectorsConnectorIdRestartResponseMock = (
       undefined,
     ]),
   })),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsConnectorIdStartResponseMock = (
+  overrideResponse: Partial<Extract<RestartPreview, object>> = {}
+): RestartPreview => ({
+  targetService: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  estimatedDowntimeSeconds: faker.number.int({ min: 0 }),
+  dependentServices: Array.from(
+    { length: faker.number.int({ min: 1, max: 4 }) },
+    (_, i) => i + 1
+  ).map(() => ({
+    kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    ref: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  })),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsConnectorIdStopResponseMock = (
+  overrideResponse: Partial<Extract<RestartPreview, object>> = {}
+): RestartPreview => ({
+  targetService: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  estimatedDowntimeSeconds: faker.number.int({ min: 0 }),
+  dependentServices: Array.from(
+    { length: faker.number.int({ min: 1, max: 4 }) },
+    (_, i) => i + 1
+  ).map(() => ({
+    kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    ref: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  })),
+  ...overrideResponse,
+});
+
+export const getGetConnectorsConnectorIdConfigFieldsResponseMock = (): ConfigField[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    key: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    label: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    type: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entityScope: faker.datatype.boolean(),
+  }));
+
+export const getPostConnectorsConnectorIdConfigPushResponseMock = (
+  overrideResponse: Partial<Extract<ServiceSnapshot, object>> = {}
+): ServiceSnapshot => ({
+  serviceName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  type: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  sections: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      order: faker.number.int(),
+    })
+  ),
+  metadata: faker.helpers.arrayElement([
+    {
+      [faker.string.alphanumeric(5)]: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    },
+    undefined,
+  ]),
+  fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   ...overrideResponse,
 });
 
@@ -626,6 +695,102 @@ export const getPostConnectorsConnectorIdRestartMockHandler = (
   );
 };
 
+export const getPostConnectorsConnectorIdStartMockHandler = (
+  overrideResponse?:
+    | RestartPreview
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<RestartPreview> | RestartPreview),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/connectors/:connectorId/start',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostConnectorsConnectorIdStartResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPostConnectorsConnectorIdStopMockHandler = (
+  overrideResponse?:
+    | RestartPreview
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<RestartPreview> | RestartPreview),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/connectors/:connectorId/stop',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostConnectorsConnectorIdStopResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdConfigFieldsMockHandler = (
+  overrideResponse?:
+    | ConfigField[]
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<ConfigField[]> | ConfigField[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/connectors/:connectorId/config-fields',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetConnectorsConnectorIdConfigFieldsResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPostConnectorsConnectorIdConfigPushMockHandler = (
+  overrideResponse?:
+    | ServiceSnapshot
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<ServiceSnapshot> | ServiceSnapshot),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/connectors/:connectorId/config-push',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostConnectorsConnectorIdConfigPushResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
 export const getGetConnectorsConnectorIdDataMockHandler = (
   overrideResponse?:
     | ServiceSnapshot
@@ -792,6 +957,10 @@ export const getConnectorsMock = () => [
   getDeleteConnectorsConnectorIdMockHandler(),
   getGetConnectorsConnectorIdRemovalImpactMockHandler(),
   getPostConnectorsConnectorIdRestartMockHandler(),
+  getPostConnectorsConnectorIdStartMockHandler(),
+  getPostConnectorsConnectorIdStopMockHandler(),
+  getGetConnectorsConnectorIdConfigFieldsMockHandler(),
+  getPostConnectorsConnectorIdConfigPushMockHandler(),
   getGetConnectorsConnectorIdDataMockHandler(),
   getPostConnectorsConnectorIdTestMockHandler(),
   getPostConnectorsConnectorIdHealthMockHandler(),

@@ -2,6 +2,7 @@
 package opnsense
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -194,11 +195,86 @@ func (c *Connector) Restart(ctx context.Context, _ map[string]any, entityRef str
 	return nil
 }
 
+// Start starts the service identified by entityRef via the core
+// service-control API. Idempotent-safe: OPNSense returns "ok" for an
+// already-running service.
+func (c *Connector) Start(ctx context.Context, _ map[string]any, entityRef string) error {
+	return c.serviceAction(ctx, entityRef, "start")
+}
+
+// Stop stops the service identified by entityRef via the core
+// service-control API.
+func (c *Connector) Stop(ctx context.Context, _ map[string]any, entityRef string) error {
+	return c.serviceAction(ctx, entityRef, "stop")
+}
+
+func (c *Connector) serviceAction(ctx context.Context, entityRef, action string) error {
+	if entityRef == "" {
+		return fmt.Errorf("opnsense %s requires a target service name", action)
+	}
+	raw, err := c.doRequest(ctx, "POST", "/api/core/service/"+action+"/"+entityRef)
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return connector.NewMalformedResponseError(fmt.Errorf("decode %s response: %w", action, err))
+	}
+	if resp.Status != "ok" {
+		return fmt.Errorf("%s failed: status %q", action, resp.Status)
+	}
+	return nil
+}
+
+// WritableFields lists the config-push-eligible firewall rule field.
+func (c *Connector) WritableFields() []connector.ConfigField {
+	return []connector.ConfigField{
+		{Key: "enabled", Label: "Rule Enabled", Type: "toggle", EntityScope: true},
+	}
+}
+
+// ConfigPush toggles the "enabled" state of the firewall rule identified by
+// entityRef (the rule UUID) and applies the change.
+func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
+	if entityRef == "" {
+		return fmt.Errorf("opnsense config-push requires a target rule UUID")
+	}
+	if fieldKey != "enabled" {
+		return fmt.Errorf("unsupported field %q", fieldKey)
+	}
+	enabled := "0"
+	if b, _ := value.(bool); b {
+		enabled = "1"
+	}
+	body, err := json.Marshal(map[string]any{"rule": map[string]string{"enabled": enabled}})
+	if err != nil {
+		return err
+	}
+	if _, err := c.doRequestBody(ctx, "POST", "/api/firewall/filter/setRule/"+entityRef, body); err != nil {
+		return err
+	}
+	_, err = c.doRequest(ctx, "POST", "/api/firewall/filter/apply")
+	return err
+}
+
 func (c *Connector) doRequest(ctx context.Context, method, path string) (data []byte, err error) {
+	return c.doRequestBody(ctx, method, path, nil)
+}
+
+func (c *Connector) doRequestBody(ctx context.Context, method, path string, body []byte) (data []byte, err error) {
 	url := c.url + path
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.SetBasicAuth(c.apiKey, c.apiSecret)
 	req.Header.Set("Accept", "application/json")
