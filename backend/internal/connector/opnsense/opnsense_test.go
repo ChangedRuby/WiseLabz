@@ -281,3 +281,106 @@ func TestRestart(t *testing.T) {
 		})
 	}
 }
+
+func TestStartStop(t *testing.T) {
+	tests := []struct {
+		name       string
+		action     string
+		entityRef  string
+		statusCode int
+		body       string
+		wantErr    bool
+	}{
+		{name: "start success", action: "start", entityRef: "unbound", statusCode: http.StatusOK, body: `{"status":"ok"}`},
+		{name: "stop success", action: "stop", entityRef: "unbound", statusCode: http.StatusOK, body: `{"status":"ok"}`},
+		{name: "start empty entityRef errors", action: "start", entityRef: "", wantErr: true},
+		{name: "stop status not ok errors", action: "stop", entityRef: "unbound", statusCode: http.StatusOK, body: `{"status":"failed"}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", apiSecret: "secret", client: server.Client()}
+			var err error
+			if tt.action == "start" {
+				err = c.Start(context.Background(), nil, tt.entityRef)
+			} else {
+				err = c.Stop(context.Background(), nil, tt.entityRef)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error", tt.action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.action, err)
+			}
+			wantPath := "/api/core/service/" + tt.action + "/" + tt.entityRef
+			if gotMethod != "POST" || gotPath != wantPath {
+				t.Errorf("request = %s %s, want POST %s", gotMethod, gotPath, wantPath)
+			}
+		})
+	}
+}
+
+func TestConfigPush(t *testing.T) {
+	tests := []struct {
+		name      string
+		entityRef string
+		fieldKey  string
+		value     any
+		wantErr   bool
+	}{
+		{name: "success", entityRef: "rule-uuid", fieldKey: "enabled", value: true},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "enabled", value: true, wantErr: true},
+		{name: "unsupported field errors", entityRef: "rule-uuid", fieldKey: "action", value: "block", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var setRuleCalled, applyCalled bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasPrefix(r.URL.Path, "/api/firewall/filter/setRule/"):
+					setRuleCalled = true
+					_, _ = w.Write([]byte(`{"result":"saved"}`))
+				case r.URL.Path == "/api/firewall/filter/apply":
+					applyCalled = true
+					_, _ = w.Write([]byte(`{"status":"ok"}`))
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", apiSecret: "secret", client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			if !setRuleCalled || !applyCalled {
+				t.Errorf("setRuleCalled=%v applyCalled=%v, want both true", setRuleCalled, applyCalled)
+			}
+		})
+	}
+}
+
+func TestOpnsenseWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) != 1 || fields[0].Key != "enabled" {
+		t.Errorf("WritableFields() = %+v, want one field \"enabled\"", fields)
+	}
+}

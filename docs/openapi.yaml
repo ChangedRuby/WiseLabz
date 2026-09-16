@@ -546,6 +546,219 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /connectors/{connectorId}/start:
+    post:
+      tags: [connectors]
+      summary: Preview or perform a service start (operator, elevation-gated)
+      description: >
+        Same dry-run/elevation-gated-mutate shape as /restart (see ADR 0002):
+        dryRun=true previews from the latest stored snapshot; absent/false
+        performs the real start, requiring a valid X-Elevation-Token for
+        action connector.start. 400s with unsupported_operation if the
+        connector type has no start capability. On success, records a
+        connector.start audit row; on failure, raises an AlertRecord.
+      parameters:
+        - { $ref: '#/components/parameters/ConnectorId' }
+        - name: dryRun
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: >
+            true previews the start without performing it; absent/false
+            performs the real, elevation-gated start.
+        - name: X-Elevation-Token
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Elevation token from POST /auth/elevate, scoped to action
+            connector.start. Required only when dryRun is absent/false.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityRef:
+                  type: string
+                  description: >
+                    Target entity's SnapshotEntity.externalId, or omitted for
+                    connectors that manage a single implicit service.
+                    Ignored for dry-run previews.
+      responses:
+        '200':
+          description: Start preview, or start performed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestartPreview' }
+        '400':
+          description: >
+            Bad request, missing elevation token, or the connector type
+            doesn't support start (`unsupported_operation`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/ElevationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: Start failed upstream; an AlertRecord was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /connectors/{connectorId}/stop:
+    post:
+      tags: [connectors]
+      summary: Preview or perform a service stop (operator, elevation-gated)
+      description: >
+        Same dry-run/elevation-gated-mutate shape as /restart (see ADR 0002):
+        dryRun=true previews from the latest stored snapshot; absent/false
+        performs the real stop, requiring a valid X-Elevation-Token for
+        action connector.stop. estimatedDowntimeSeconds is 0 in the preview
+        since a stop's downtime is indefinite until an explicit start. 400s
+        with unsupported_operation if the connector type has no stop
+        capability. On success, records a connector.stop audit row; on
+        failure, raises an AlertRecord.
+      parameters:
+        - { $ref: '#/components/parameters/ConnectorId' }
+        - name: dryRun
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: >
+            true previews the stop without performing it; absent/false
+            performs the real, elevation-gated stop.
+        - name: X-Elevation-Token
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Elevation token from POST /auth/elevate, scoped to action
+            connector.stop. Required only when dryRun is absent/false.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityRef:
+                  type: string
+                  description: >
+                    Target entity's SnapshotEntity.externalId, or omitted for
+                    connectors that manage a single implicit service.
+                    Ignored for dry-run previews.
+      responses:
+        '200':
+          description: Stop preview, or stop performed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestartPreview' }
+        '400':
+          description: >
+            Bad request, missing elevation token, or the connector type
+            doesn't support stop (`unsupported_operation`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/ElevationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: Stop failed upstream; an AlertRecord was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /connectors/{connectorId}/config-fields:
+    get:
+      tags: [connectors]
+      summary: List a connector's whitelisted config-push fields
+      description: >
+        Returns the connector's WritableFields() (ADR 0003), or an empty
+        array if the connector type doesn't implement config-push.
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ConfigField' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /connectors/{connectorId}/config-push:
+    post:
+      tags: [connectors]
+      summary: Push one whitelisted config field (operator, elevation-gated)
+      description: >
+        Field-level partial update per ADR 0003: requires a valid
+        X-Elevation-Token for action connector.configPush. Snapshots the
+        connector before the write, applies it, re-fetches, and diffs. On a
+        verified match, records a connector.configPush audit row and returns
+        the post-push snapshot. On mismatch, auto-reverts to previousValue
+        and raises a critical AlertRecord (escalated further if the revert
+        itself fails), returning 409. 400s with unsupported_operation if the
+        connector doesn't implement config-push, or unsupported_field if
+        fieldKey isn't in WritableFields().
+      parameters:
+        - { $ref: '#/components/parameters/ConnectorId' }
+        - name: X-Elevation-Token
+          in: header
+          required: true
+          schema: { type: string }
+          description: >
+            Elevation token from POST /auth/elevate, scoped to action
+            connector.configPush.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fieldKey, value]
+              properties:
+                entityRef:
+                  type: string
+                  description: >
+                    Target entity ref, required when the field's
+                    ConfigField.entityScope is true.
+                fieldKey: { type: string }
+                value: {}
+                previousValue:
+                  description: >
+                    The field's currently-displayed value (read from GET
+                    /{connectorId}/data before editing), used to revert if
+                    the push doesn't verify.
+      responses:
+        '200':
+          description: Config push verified; post-push snapshot returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceSnapshot' }
+        '400':
+          description: >
+            Bad request, missing elevation token, unsupported_operation, or
+            unsupported_field.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/ElevationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >
+            config_push_mismatch — the push didn't verify; auto-revert was
+            attempted (see the new critical AlertRecord for whether it
+            succeeded).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: Config push failed upstream (write itself errored).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /connectors/{connectorId}/data:
     get:
       tags: [connectors]
@@ -3093,6 +3306,15 @@ components:
               kind: { type: string, description: 'e.g. host, network, storage, upstream_service' }
               name: { type: string }
               ref: { type: string }
+    ConfigField:
+      type: object
+      description: One field a connector exposes for config-push (ADR 0003).
+      required: [key, label, type, entityScope]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type: { type: string, description: 'Reuses the SchemaField Type vocabulary (text, number, toggle, select, ...).' }
+        entityScope: { type: boolean, description: 'true if per-entity (requires entityRef), false if connector-global.' }
     OidcProvider:
       type: object
       description: >

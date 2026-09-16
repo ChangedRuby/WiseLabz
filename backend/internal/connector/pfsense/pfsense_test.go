@@ -283,3 +283,107 @@ func TestRestart(t *testing.T) {
 		})
 	}
 }
+
+func TestStartStop(t *testing.T) {
+	tests := []struct {
+		name       string
+		action     string
+		entityRef  string
+		statusCode int
+		wantErr    bool
+	}{
+		{name: "start success", action: "start", entityRef: "unbound", statusCode: http.StatusOK},
+		{name: "stop success", action: "stop", entityRef: "unbound", statusCode: http.StatusOK},
+		{name: "start empty entityRef errors", action: "start", entityRef: "", wantErr: true},
+		{name: "stop http error", action: "stop", entityRef: "unbound", statusCode: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", client: server.Client()}
+			var err error
+			if tt.action == "start" {
+				err = c.Start(context.Background(), nil, tt.entityRef)
+			} else {
+				err = c.Stop(context.Background(), nil, tt.entityRef)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error", tt.action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.action, err)
+			}
+			if gotMethod != "POST" || gotPath != "/api/v2/status/service" {
+				t.Errorf("request = %s %s, want POST /api/v2/status/service", gotMethod, gotPath)
+			}
+			if !strings.Contains(gotBody, tt.entityRef) || !strings.Contains(gotBody, tt.action) {
+				t.Errorf("body = %q, want it to reference %q and %q action", gotBody, tt.entityRef, tt.action)
+			}
+		})
+	}
+}
+
+func TestConfigPush(t *testing.T) {
+	tests := []struct {
+		name      string
+		entityRef string
+		fieldKey  string
+		value     any
+		wantErr   bool
+	}{
+		{name: "success", entityRef: "1", fieldKey: "enabled", value: true},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "enabled", value: true, wantErr: true},
+		{name: "unsupported field errors", entityRef: "1", fieldKey: "action", value: "block", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			if gotMethod != "PATCH" || gotPath != "/api/v2/firewall/rule" {
+				t.Errorf("request = %s %s, want PATCH /api/v2/firewall/rule", gotMethod, gotPath)
+			}
+			if !strings.Contains(gotBody, tt.entityRef) {
+				t.Errorf("body = %q, want it to reference id %q", gotBody, tt.entityRef)
+			}
+		})
+	}
+}
+
+func TestPfsenseWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) != 1 || fields[0].Key != "enabled" {
+		t.Errorf("WritableFields() = %+v, want one field \"enabled\"", fields)
+	}
+}

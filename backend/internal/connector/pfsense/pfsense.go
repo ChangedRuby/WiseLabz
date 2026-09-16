@@ -149,6 +149,56 @@ func (c *Connector) Restart(ctx context.Context, _ map[string]any, entityRef str
 	return err
 }
 
+// Start starts the service identified by entityRef via the pfsense-api
+// service-control endpoint. Idempotent-safe against an already-running
+// service.
+func (c *Connector) Start(ctx context.Context, _ map[string]any, entityRef string) error {
+	return c.serviceAction(ctx, entityRef, "start")
+}
+
+// Stop stops the service identified by entityRef via the pfsense-api
+// service-control endpoint.
+func (c *Connector) Stop(ctx context.Context, _ map[string]any, entityRef string) error {
+	return c.serviceAction(ctx, entityRef, "stop")
+}
+
+func (c *Connector) serviceAction(ctx context.Context, entityRef, action string) error {
+	if entityRef == "" {
+		return fmt.Errorf("pfsense %s requires a target service name", action)
+	}
+	body, err := json.Marshal(map[string]string{"name": entityRef, "action": action})
+	if err != nil {
+		return err
+	}
+	_, err = c.doRequestBody(ctx, "POST", "/api/v2/status/service", body)
+	return err
+}
+
+// WritableFields lists the config-push-eligible firewall rule field.
+func (c *Connector) WritableFields() []connector.ConfigField {
+	return []connector.ConfigField{
+		{Key: "enabled", Label: "Rule Enabled", Type: "toggle", EntityScope: true},
+	}
+}
+
+// ConfigPush toggles the "enabled" state of the firewall rule identified by
+// entityRef (the rule ID).
+func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
+	if entityRef == "" {
+		return fmt.Errorf("pfsense config-push requires a target rule ID")
+	}
+	if fieldKey != "enabled" {
+		return fmt.Errorf("unsupported field %q", fieldKey)
+	}
+	enabled, _ := value.(bool)
+	body, err := json.Marshal(map[string]any{"id": entityRef, "enabled": enabled})
+	if err != nil {
+		return err
+	}
+	_, err = c.doRequestBody(ctx, "PATCH", "/api/v2/firewall/rule", body)
+	return err
+}
+
 func (c *Connector) doRequest(ctx context.Context, path string) ([]byte, error) {
 	return c.doRequestBody(ctx, "GET", path, nil)
 }

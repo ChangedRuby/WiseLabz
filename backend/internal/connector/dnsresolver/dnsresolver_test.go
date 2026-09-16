@@ -1,11 +1,70 @@
 package dnsresolver
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
+
+func TestDNSResolverConfigPush(t *testing.T) {
+	listBody := `{"data":[{"id":1,"host":"web","domain":"example.com","ip":"10.0.0.5","descr":""}]}`
+	tests := []struct {
+		name      string
+		entityRef string
+		fieldKey  string
+		value     any
+		wantErr   bool
+	}{
+		{name: "success", entityRef: "web.example.com", fieldKey: "ip", value: "10.0.0.9"},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "ip", value: "10.0.0.9", wantErr: true},
+		{name: "unsupported field errors", entityRef: "web.example.com", fieldKey: "ttl", value: 300, wantErr: true},
+		{name: "not found errors", entityRef: "missing.example.com", fieldKey: "ip", value: "10.0.0.9", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodGet:
+					_, _ = w.Write([]byte(listBody))
+				case http.MethodPatch:
+					gotPath, gotMethod = r.URL.Path, r.Method
+					_, _ = w.Write([]byte(`{"data":null}`))
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			if gotMethod != "PATCH" || gotPath != "/api/v2/services/dns_resolver/host_override" {
+				t.Errorf("request = %s %s, want PATCH /api/v2/services/dns_resolver/host_override", gotMethod, gotPath)
+			}
+		})
+	}
+}
+
+func TestDNSResolverWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) != 1 || fields[0].Key != "ip" {
+		t.Errorf("WritableFields() = %+v, want one field \"ip\"", fields)
+	}
+}
 
 func TestBuildHostOverrideTableMalformedCases(t *testing.T) {
 	tests := []struct {

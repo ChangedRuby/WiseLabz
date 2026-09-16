@@ -3,6 +3,7 @@ package proxmox
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -244,6 +245,127 @@ func TestRestart(t *testing.T) {
 				t.Errorf("expected reboot request to %s", tt.rebootPath)
 			}
 		})
+	}
+}
+
+func TestStartStop(t *testing.T) {
+	tests := []struct {
+		name       string
+		action     string // "start" or "stop"
+		entityRef  string
+		resources  string
+		actionPath string
+		wantErr    bool
+	}{
+		{name: "start success", action: "start", entityRef: "100", resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`, actionPath: "/nodes/pve1/qemu/100/status/start"},
+		{name: "stop success", action: "stop", entityRef: "100", resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`, actionPath: "/nodes/pve1/qemu/100/status/stop"},
+		{name: "start empty entityRef errors", action: "start", entityRef: "", wantErr: true},
+		{name: "stop vmid not found", action: "stop", entityRef: "999", resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/cluster/resources":
+					_, _ = w.Write([]byte(tt.resources))
+				case r.URL.Path == tt.actionPath && r.Method == "POST":
+					called = true
+					_, _ = w.Write([]byte(`{"data":null}`))
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, tokenID: "user@pam!token", tokenSecret: "secret", client: server.Client()}
+			var err error
+			if tt.action == "start" {
+				err = c.Start(context.Background(), nil, tt.entityRef)
+			} else {
+				err = c.Stop(context.Background(), nil, tt.entityRef)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("%s() error = nil, want error", tt.action)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.action, err)
+			}
+			if !called {
+				t.Errorf("expected %s request to %s", tt.action, tt.actionPath)
+			}
+		})
+	}
+}
+
+func TestConfigPush(t *testing.T) {
+	tests := []struct {
+		name      string
+		entityRef string
+		fieldKey  string
+		value     any
+		resources string
+		wantErr   bool
+	}{
+		{name: "memory success", entityRef: "100", fieldKey: "memory", value: 2048, resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`},
+		{name: "cores success", entityRef: "100", fieldKey: "cores", value: 4, resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`},
+		{name: "empty entityRef errors", entityRef: "", fieldKey: "memory", value: 1024, wantErr: true},
+		{name: "vmid not found", entityRef: "999", fieldKey: "memory", value: 1024, resources: `{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/cluster/resources":
+					_, _ = w.Write([]byte(tt.resources))
+				case r.URL.Path == "/nodes/pve1/qemu/100/config" && r.Method == "PUT":
+					b, _ := io.ReadAll(r.Body)
+					gotBody = string(b)
+					_, _ = w.Write([]byte(`{"data":null}`))
+				default:
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, tokenID: "user@pam!token", tokenSecret: "secret", client: server.Client()}
+			err := c.ConfigPush(context.Background(), nil, tt.entityRef, tt.fieldKey, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ConfigPush() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfigPush() error = %v", err)
+			}
+			if !strings.Contains(gotBody, tt.fieldKey) {
+				t.Errorf("body = %q, want it to reference field %q", gotBody, tt.fieldKey)
+			}
+		})
+	}
+}
+
+func TestWritableFields(t *testing.T) {
+	c := &Connector{}
+	fields := c.WritableFields()
+	if len(fields) == 0 {
+		t.Fatal("WritableFields() returned none")
+	}
+	for _, want := range []string{"memory", "cores"} {
+		found := false
+		for _, f := range fields {
+			if f.Key == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("WritableFields() missing %q", want)
+		}
 	}
 }
 

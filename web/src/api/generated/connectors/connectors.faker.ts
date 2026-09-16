@@ -10,6 +10,7 @@ import { faker } from '@faker-js/faker';
 
 import { ConnectorCategory, ServiceStatus } from '../../model';
 import type {
+  ConfigField,
   Connector,
   ConnectorTypeSchema,
   HealthCheckResult,
@@ -300,6 +301,74 @@ export const getPostConnectorsConnectorIdRestartResponseMock = (
       undefined,
     ]),
   })),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsConnectorIdStartResponseMock = (
+  overrideResponse: Partial<Extract<RestartPreview, object>> = {}
+): RestartPreview => ({
+  targetService: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  estimatedDowntimeSeconds: faker.number.int({ min: 0 }),
+  dependentServices: Array.from(
+    { length: faker.number.int({ min: 1, max: 4 }) },
+    (_, i) => i + 1
+  ).map(() => ({
+    kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    ref: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  })),
+  ...overrideResponse,
+});
+
+export const getPostConnectorsConnectorIdStopResponseMock = (
+  overrideResponse: Partial<Extract<RestartPreview, object>> = {}
+): RestartPreview => ({
+  targetService: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  estimatedDowntimeSeconds: faker.number.int({ min: 0 }),
+  dependentServices: Array.from(
+    { length: faker.number.int({ min: 1, max: 4 }) },
+    (_, i) => i + 1
+  ).map(() => ({
+    kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    ref: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  })),
+  ...overrideResponse,
+});
+
+export const getGetConnectorsConnectorIdConfigFieldsResponseMock = (): ConfigField[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    key: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    label: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    type: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entityScope: faker.datatype.boolean(),
+  }));
+
+export const getPostConnectorsConnectorIdConfigPushResponseMock = (
+  overrideResponse: Partial<Extract<ServiceSnapshot, object>> = {}
+): ServiceSnapshot => ({
+  serviceName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  type: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  sections: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      order: faker.number.int(),
+    })
+  ),
+  metadata: faker.helpers.arrayElement([
+    {
+      [faker.string.alphanumeric(5)]: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    },
+    undefined,
+  ]),
+  fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   ...overrideResponse,
 });
 

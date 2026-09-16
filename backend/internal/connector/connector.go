@@ -38,6 +38,37 @@ type Restarter interface {
 	Restart(ctx context.Context, config map[string]any, entityRef string) error
 }
 
+// Starter is implemented by connectors whose vendor API exposes a start
+// action. Same entityRef convention as Restarter.
+type Starter interface {
+	Start(ctx context.Context, config map[string]any, entityRef string) error
+}
+
+// Stopper is implemented by connectors whose vendor API exposes a stop
+// action. Same entityRef convention as Restarter.
+type Stopper interface {
+	Stop(ctx context.Context, config map[string]any, entityRef string) error
+}
+
+// ConfigField describes one field a connector exposes for config-push: a
+// curated subset of what the connector's config schema could theoretically
+// write, deliberately narrower than the full Fetch/Validate config shape.
+type ConfigField struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Type        string `json:"type"`        // reuse the existing SchemaField Type vocabulary
+	EntityScope bool   `json:"entityScope"` // true if per-entity (needs entityRef), false if connector-global
+}
+
+// ConfigPusher is implemented by connectors that expose a curated whitelist
+// of writable fields for field-level partial config updates (ADR 0003).
+// value is a driver value, not user input: the handler assigns fieldKey and
+// value only after checking fieldKey against WritableFields.
+type ConfigPusher interface {
+	WritableFields() []ConfigField
+	ConfigPush(ctx context.Context, config map[string]any, entityRef, fieldKey string, value any) error
+}
+
 // AuthError indicates a connector rejected credentials (expired, revoked, or
 // invalid). Retrying with the same credentials will not help.
 type AuthError struct{ Err error }
