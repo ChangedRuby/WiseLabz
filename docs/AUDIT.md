@@ -33,6 +33,8 @@ object, action-specific), and `createdAt`.
 | `connector.start` | `POST /api/connectors/{id}/start` (dryRun omitted/false) | connector / id |
 | `connector.stop` | `POST /api/connectors/{id}/stop` (dryRun omitted/false) | connector / id |
 | `connector.configPush` | `POST /api/connectors/{id}/config-push` (successful, verified push only) | connector / id |
+| `connector.maintenanceWindow.open` | `POST /api/connectors/{id}/maintenance-window` | connector / id |
+| `connector.maintenanceWindow.close` | `DELETE /api/connectors/{id}/maintenance-window` (only when a window was actually active) | connector / id |
 | `auth.elevate` | `POST /api/auth/elevate` | action / the elevated action name |
 | `auth.elevation_requested` | Any step-up-gated endpoint receiving `X-Elevation-Token` | action / the required action name |
 | `auth.elevation_denied` | Failed elevation-token validation on a step-up-gated endpoint | action / the required action name |

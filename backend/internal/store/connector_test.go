@@ -196,3 +196,91 @@ func TestListDueConnectors(t *testing.T) {
 		t.Fatalf("ListDueConnectors() = %+v, want exactly [dueID, dueNullID]", due)
 	}
 }
+
+// TestListDueConnectorsExcludesMaintenanceWindow verifies a connector with an
+// active maintenance window is skipped by the scheduler query even though it
+// is otherwise due, per #236.
+func TestListDueConnectorsExcludesMaintenanceWindow(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+
+	now := time.Now().UTC()
+	past := now.Add(-time.Hour).Format(time.RFC3339)
+	nowStr := now.Format(time.RFC3339)
+	schedule := 60
+
+	mustCreate := func(name string) string {
+		c := &ConnectorRecord{Name: name, Category: "virtualization", Type: "proxmox", URL: "https://example.com", Enabled: true}
+		if err := s.CreateConnector(ctx, c); err != nil {
+			t.Fatalf("CreateConnector(%s) error: %v", name, err)
+		}
+		if err := s.UpdateConnector(ctx, c.ID, map[string]any{"schedule_seconds": schedule, "next_run_at": past}); err != nil {
+			t.Fatalf("UpdateConnector(%s) error: %v", name, err)
+		}
+		return c.ID
+	}
+
+	windowedID := mustCreate("windowed")
+	dueID := mustCreate("plain-due")
+
+	if err := s.CreateMaintenanceWindow(ctx, &MaintenanceWindowRecord{
+		ConnectorID: windowedID, StartsAt: nowStr, EndsAt: now.Add(time.Hour).Format(time.RFC3339), CreatedBy: "user-1",
+	}); err != nil {
+		t.Fatalf("CreateMaintenanceWindow() error: %v", err)
+	}
+
+	due, err := s.ListDueConnectors(ctx, nowStr, 20)
+	if err != nil {
+		t.Fatalf("ListDueConnectors() error: %v", err)
+	}
+	gotIDs := map[string]bool{}
+	for _, c := range due {
+		gotIDs[c.ID] = true
+	}
+	if gotIDs[windowedID] {
+		t.Fatalf("ListDueConnectors() included windowed connector %s, want excluded", windowedID)
+	}
+	if !gotIDs[dueID] {
+		t.Fatalf("ListDueConnectors() = %+v, want plain due connector %s included", due, dueID)
+	}
+}
+
+// TestListDueConnectorsIncludesExpiredMaintenanceWindow verifies a connector
+// whose maintenance window has already ended is due again, matching
+// GetActiveMaintenanceWindow's own ends_at > now cutoff.
+func TestListDueConnectorsIncludesExpiredMaintenanceWindow(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+
+	now := time.Now().UTC()
+	past := now.Add(-time.Hour).Format(time.RFC3339)
+	nowStr := now.Format(time.RFC3339)
+	schedule := 60
+
+	c := &ConnectorRecord{Name: "was-windowed", Category: "virtualization", Type: "proxmox", URL: "https://example.com", Enabled: true}
+	if err := s.CreateConnector(ctx, c); err != nil {
+		t.Fatalf("CreateConnector() error: %v", err)
+	}
+	if err := s.UpdateConnector(ctx, c.ID, map[string]any{"schedule_seconds": schedule, "next_run_at": past}); err != nil {
+		t.Fatalf("UpdateConnector() error: %v", err)
+	}
+	if err := s.CreateMaintenanceWindow(ctx, &MaintenanceWindowRecord{
+		ConnectorID: c.ID, StartsAt: past, EndsAt: past, CreatedBy: "user-1",
+	}); err != nil {
+		t.Fatalf("CreateMaintenanceWindow() error: %v", err)
+	}
+
+	due, err := s.ListDueConnectors(ctx, nowStr, 20)
+	if err != nil {
+		t.Fatalf("ListDueConnectors() error: %v", err)
+	}
+	found := false
+	for _, d := range due {
+		if d.ID == c.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("ListDueConnectors() = %+v, want connector %s with an expired window included", due, c.ID)
+	}
+}

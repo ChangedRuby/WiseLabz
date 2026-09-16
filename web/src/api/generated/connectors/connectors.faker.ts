@@ -13,7 +13,9 @@ import type {
   ConfigField,
   Connector,
   ConnectorTypeSchema,
+  DeleteConnectorsConnectorIdMaintenanceWindow200,
   HealthCheckResult,
+  MaintenanceWindow,
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
@@ -501,6 +503,47 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
   ]),
   ...overrideResponse,
 });
+
+export const getGetConnectorsConnectorIdMaintenanceWindowResponseMock =
+  (): MaintenanceWindow | null => ({
+    ...{
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      startsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      endsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      createdBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    },
+  });
+
+export const getPostConnectorsConnectorIdMaintenanceWindowResponseMock = (
+  overrideResponse: Partial<Extract<MaintenanceWindow, object>> = {}
+): MaintenanceWindow => ({
+  id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  startsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  endsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  createdBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
+
+export const getDeleteConnectorsConnectorIdMaintenanceWindowResponseMock = (
+  overrideResponse: Partial<Extract<DeleteConnectorsConnectorIdMaintenanceWindow200, object>> = {}
+): DeleteConnectorsConnectorIdMaintenanceWindow200 => ({
+  closed: faker.datatype.boolean(),
+  ...overrideResponse,
+});
+
+export const getGetConnectorsMaintenanceWindowsResponseMock = (): MaintenanceWindow[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    startsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    endsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    createdBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  }));
 
 export const getPostSyncResponseMock = (
   overrideResponse: Partial<Extract<SyncJobRef, object>> = {}

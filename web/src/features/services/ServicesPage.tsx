@@ -11,6 +11,7 @@ import {
   useGetConnectors,
   putConnectorsConnectorIdEnabled,
   getGetConnectorsQueryKey,
+  useGetConnectorsMaintenanceWindows,
 } from '../../api/generated/connectors/connectors';
 import { useLive } from '../../store/live';
 import { useCanMutate } from '../../hooks/useRole';
@@ -21,6 +22,7 @@ import { SavedViewsMenu } from '../../components/views/SavedViewsMenu';
 import { Panel } from '../../components/ui/Panel';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
 import { ConfirmDestructive } from '../../components/manager/ConfirmDestructive';
+import { MaintenanceWindowMenu } from '../../components/manager/MaintenanceWindowMenu';
 import { relativeTime } from '../../lib/time';
 import { SearchIcon, SyncIcon, PlusIcon, XIcon } from '../../components/icons';
 import { categoryIcon } from '../../components/categoryIcon';
@@ -29,6 +31,11 @@ import type { Connector, ServiceStatus } from '../../api/model';
 export function ServicesPage() {
   const { t } = useTranslation();
   const { data, isLoading, isError, refetch } = useGetConnectors();
+  const { data: maintenanceWindows } = useGetConnectorsMaintenanceWindows();
+  const activeMaintenanceIds = useMemo(
+    () => new Set((maintenanceWindows ?? []).map((w) => w.connectorId)),
+    [maintenanceWindows]
+  );
   const overrides = useLive((s) => s.statusOverrides);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -141,6 +148,11 @@ export function ServicesPage() {
                                 {t('services.disabledTag')}
                               </span>
                             )}
+                            {activeMaintenanceIds.has(c.id) && (
+                              <span className="rounded bg-idle-tint px-1.5 py-0.5 text-2xs font-medium text-ink-faint">
+                                {t('services.maintenance.badge')}
+                              </span>
+                            )}
                           </p>
                           <p className="font-mono text-2xs text-ink-faint">{c.type}</p>
                         </div>
@@ -182,6 +194,7 @@ export function ServicesPage() {
                           >
                             {c.enabled ? t('common.disable') : t('common.enable')}
                           </Button>
+                          <MaintenanceWindowMenu connectorId={c.id} active={activeMaintenanceIds.has(c.id)} />
                           <IconButton
                             label={t('services.removeLabel', { name: c.name })}
                             onClick={() => setRemoving(c)}

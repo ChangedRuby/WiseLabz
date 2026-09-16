@@ -20,17 +20,21 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BadRequestResponse,
   ConfigField,
   Connector,
   ConnectorCreate,
   ConnectorTypeSchema,
   ConnectorUpdate,
+  DeleteConnectorsConnectorIdMaintenanceWindow200,
   ElevationRequiredResponse,
   Error,
   ForbiddenResponse,
   GetConnectorsConnectorIdSyncsParams,
   HealthCheckResult,
+  MaintenanceWindow,
   NotFoundResponse,
+  OpenMaintenanceWindowRequest,
   PostConnectorsConnectorIdConfigPushBody,
   PostConnectorsConnectorIdRestartBody,
   PostConnectorsConnectorIdRestartParams,
@@ -2774,6 +2778,645 @@ export function usePutConnectorsConnectorIdEnabled<
     putConnectorsConnectorIdEnabledBody,
     options
   );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Get a connector's active maintenance window, if any
+ */
+export const getConnectorsConnectorIdMaintenanceWindow = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<MaintenanceWindow | null>(
+    { url: `/connectors/${connectorId}/maintenance-window`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdMaintenanceWindowQueryKey = (connectorId: string) => {
+  return [`/connectors/${connectorId}/maintenance-window`] as const;
+};
+
+export const getGetConnectorsConnectorIdMaintenanceWindowQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetConnectorsConnectorIdMaintenanceWindowQueryKey(connectorId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>
+  > = ({ signal }) =>
+    getConnectorsConnectorIdMaintenanceWindow(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdMaintenanceWindowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>
+>;
+export type GetConnectorsConnectorIdMaintenanceWindowQueryError = ErrorType<unknown>;
+
+export function useGetConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get a connector's active maintenance window, if any
+ */
+
+export function useGetConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdMaintenanceWindowQueryOptions(
+    connectorId,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * While active, the scheduler skips this connector and drift alerting/change-record creation from any sync (scheduled or manual) is suppressed, though snapshots keep being saved. Operator-only, no step-up elevation required — reversible and time-boxed.
+ * @summary Open a time-boxed maintenance window on a connector
+ */
+export const postConnectorsConnectorIdMaintenanceWindow = (
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<MaintenanceWindow>(
+    {
+      url: `/connectors/${connectorId}/maintenance-window`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: openMaintenanceWindowRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostConnectorsConnectorIdMaintenanceWindowQueryKey = (
+  connectorId: string,
+  openMaintenanceWindowRequest?: BodyType<OpenMaintenanceWindowRequest>
+) => {
+  return [
+    'POST',
+    `/connectors/${connectorId}/maintenance-window`,
+    openMaintenanceWindowRequest,
+  ] as const;
+};
+
+export const getPostConnectorsConnectorIdMaintenanceWindowQueryOptions = <
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getPostConnectorsConnectorIdMaintenanceWindowQueryKey(
+      connectorId,
+      openMaintenanceWindowRequest
+    );
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>
+  > = ({ signal }) =>
+    postConnectorsConnectorIdMaintenanceWindow(
+      connectorId,
+      openMaintenanceWindowRequest,
+      requestOptions,
+      signal
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostConnectorsConnectorIdMaintenanceWindowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>
+>;
+export type PostConnectorsConnectorIdMaintenanceWindowQueryError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export function usePostConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Open a time-boxed maintenance window on a connector
+ */
+
+export function usePostConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  openMaintenanceWindowRequest: BodyType<OpenMaintenanceWindowRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostConnectorsConnectorIdMaintenanceWindowQueryOptions(
+    connectorId,
+    openMaintenanceWindowRequest,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Close a connector's active maintenance window early (no-op if none)
+ */
+export const deleteConnectorsConnectorIdMaintenanceWindow = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<DeleteConnectorsConnectorIdMaintenanceWindow200>(
+    { url: `/connectors/${connectorId}/maintenance-window`, method: 'DELETE', signal },
+    options
+  );
+};
+
+export const getDeleteConnectorsConnectorIdMaintenanceWindowQueryKey = (connectorId: string) => {
+  return ['DELETE', `/connectors/${connectorId}/maintenance-window`] as const;
+};
+
+export const getDeleteConnectorsConnectorIdMaintenanceWindowQueryOptions = <
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDeleteConnectorsConnectorIdMaintenanceWindowQueryKey(connectorId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>
+  > = ({ signal }) =>
+    deleteConnectorsConnectorIdMaintenanceWindow(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type DeleteConnectorsConnectorIdMaintenanceWindowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>
+>;
+export type DeleteConnectorsConnectorIdMaintenanceWindowQueryError = ErrorType<unknown>;
+
+export function useDeleteConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Close a connector's active maintenance window early (no-op if none)
+ */
+
+export function useDeleteConnectorsConnectorIdMaintenanceWindow<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdMaintenanceWindow>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getDeleteConnectorsConnectorIdMaintenanceWindowQueryOptions(
+    connectorId,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Used by the services list badge to avoid an N+1 fetch per row.
+ * @summary List every currently active maintenance window, across all connectors
+ */
+export const getConnectorsMaintenanceWindows = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<MaintenanceWindow[]>(
+    { url: `/connectors/maintenance-windows`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsMaintenanceWindowsQueryKey = () => {
+  return [`/connectors/maintenance-windows`] as const;
+};
+
+export const getGetConnectorsMaintenanceWindowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>, TError, TData>
+  >;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetConnectorsMaintenanceWindowsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>> = ({
+    signal,
+  }) => getConnectorsMaintenanceWindows(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsMaintenanceWindowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>
+>;
+export type GetConnectorsMaintenanceWindowsQueryError = ErrorType<unknown>;
+
+export function useGetConnectorsMaintenanceWindows<
+  TData = Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsMaintenanceWindows<
+  TData = Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsMaintenanceWindows<
+  TData = Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List every currently active maintenance window, across all connectors
+ */
+
+export function useGetConnectorsMaintenanceWindows<
+  TData = Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsMaintenanceWindows>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsMaintenanceWindowsQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
