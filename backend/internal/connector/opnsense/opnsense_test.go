@@ -240,3 +240,44 @@ func TestBuildRuleTableValidRules(t *testing.T) {
 		t.Errorf("buildRuleTable() missing expected rules in: %q", result)
 	}
 }
+
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		statusCode int
+		body       string
+		wantErr    bool
+	}{
+		{name: "success", entityRef: "unbound", statusCode: http.StatusOK, body: `{"status":"ok"}`},
+		{name: "empty entityRef errors", entityRef: "", wantErr: true},
+		{name: "status not ok errors", entityRef: "unbound", statusCode: http.StatusOK, body: `{"status":"failed"}`, wantErr: true},
+		{name: "http error", entityRef: "unbound", statusCode: http.StatusInternalServerError, body: `{}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, apiKey: "key", apiSecret: "secret", client: server.Client()}
+			err := c.Restart(context.Background(), nil, tt.entityRef)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Restart() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Restart() error = %v", err)
+			}
+			if gotMethod != "POST" || gotPath != "/api/core/service/restart/"+tt.entityRef {
+				t.Errorf("request = %s %s, want POST /api/core/service/restart/%s", gotMethod, gotPath, tt.entityRef)
+			}
+		})
+	}
+}

@@ -1,6 +1,9 @@
 package pihole
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -73,5 +76,49 @@ func TestBuildHostsTableValidRecords(t *testing.T) {
 		if entities[i] != w {
 			t.Errorf("entities[%d] = %+v, want %+v", i, entities[i], w)
 		}
+	}
+}
+
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name       string
+		authStatus int
+		authBody   string
+		dnsStatus  int
+		wantErr    bool
+	}{
+		{name: "success", authStatus: http.StatusOK, authBody: `{"session":{"sid":"abc","valid":true}}`, dnsStatus: http.StatusOK},
+		{name: "auth failure", authStatus: http.StatusUnauthorized, authBody: `{"session":{"valid":false,"message":"bad password"}}`, wantErr: true},
+		{name: "restart request fails", authStatus: http.StatusOK, authBody: `{"session":{"sid":"abc","valid":true}}`, dnsStatus: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/auth" {
+					w.WriteHeader(tt.authStatus)
+					_, _ = w.Write([]byte(tt.authBody))
+					return
+				}
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.WriteHeader(tt.dnsStatus)
+			}))
+			defer server.Close()
+
+			c := &Connector{url: server.URL, password: "secret", client: server.Client()}
+			err := c.Restart(context.Background(), nil, "")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Restart() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Restart() error = %v", err)
+			}
+			if gotMethod != "POST" || gotPath != "/api/action/restartdns" {
+				t.Errorf("request = %s %s, want POST /api/action/restartdns", gotMethod, gotPath)
+			}
+		})
 	}
 }

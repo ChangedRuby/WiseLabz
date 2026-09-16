@@ -485,26 +485,67 @@ paths:
   /connectors/{connectorId}/restart:
     post:
       tags: [connectors]
-      summary: Preview a future service restart (dry-run only)
+      summary: Preview or perform a service restart (operator, elevation-gated)
       description: >
-        Returns a restart preview from the latest stored service snapshot.
-        The mutating restart action is not implemented; `dryRun=true` is required.
+        With `dryRun=true`, returns a restart preview from the latest stored
+        service snapshot without touching the connector — no elevation token
+        required. With `dryRun` absent or `false`, performs the real restart:
+        requires a valid `X-Elevation-Token` for action `connector.restart`
+        (from `POST /auth/elevate`), and 400s with `unsupported_operation` if
+        the connector type has no restart capability. On success, records a
+        `connector.restart` audit row; on failure, raises an `AlertRecord`
+        instead of retrying (see ADR 0001).
       parameters:
         - { $ref: '#/components/parameters/ConnectorId' }
         - name: dryRun
           in: query
-          required: true
-          schema: { type: boolean, enum: [true] }
-          description: Must be true; only the non-mutating preview is available.
+          required: false
+          schema: { type: boolean }
+          description: >
+            true previews the restart without performing it; absent/false
+            performs the real, elevation-gated restart.
+        - name: X-Elevation-Token
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Elevation token from POST /auth/elevate, scoped to action
+            connector.restart. Required only when dryRun is absent/false.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityRef:
+                  type: string
+                  description: >
+                    Target entity's SnapshotEntity.externalId (e.g. a VM ID,
+                    container ID, or service name), or omitted for connectors
+                    that manage a single implicit service. Ignored for
+                    dry-run previews.
       responses:
         '200':
-          description: Restart preview
+          description: Restart preview, or restart performed
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RestartPreview' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400':
+          description: >
+            Bad request, missing elevation token, or the connector type
+            doesn't support restart (`unsupported_operation`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/ElevationRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: Restart failed upstream; an AlertRecord was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /connectors/{connectorId}/data:
     get:
       tags: [connectors]

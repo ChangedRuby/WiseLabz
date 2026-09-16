@@ -29,6 +29,15 @@ type CredentialRefresher interface {
 	RefreshCredentials(ctx context.Context, config map[string]any) (newConfig map[string]any, expiresAt time.Time, err error)
 }
 
+// Restarter is implemented by connectors whose vendor API exposes a restart
+// action. entityRef is the target entity's SnapshotEntity.ExternalID (a VM
+// ID, container ID, service name, ...), or "" for connectors that manage a
+// single implicit service. A connector that doesn't implement Restarter is
+// simply not restart-capable.
+type Restarter interface {
+	Restart(ctx context.Context, config map[string]any, entityRef string) error
+}
+
 // AuthError indicates a connector rejected credentials (expired, revoked, or
 // invalid). Retrying with the same credentials will not help.
 type AuthError struct{ Err error }

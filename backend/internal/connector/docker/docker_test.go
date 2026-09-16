@@ -527,3 +527,41 @@ func TestValidateAndFetchWithMalformedJSON(t *testing.T) {
 		t.Errorf("System section = %q, want malformed response placeholder", snap.Sections[0].Content)
 	}
 }
+
+func TestRestart(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityRef  string
+		statusCode int
+		wantErr    bool
+	}{
+		{name: "success", entityRef: "abc123", statusCode: http.StatusNoContent},
+		{name: "empty entityRef errors", entityRef: "", wantErr: true},
+		{name: "not found", entityRef: "missing", statusCode: http.StatusNotFound, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			c := &Connector{host: "tcp://example", baseURL: server.URL, client: server.Client()}
+			err := c.Restart(context.Background(), nil, tt.entityRef)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Restart() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Restart() error = %v", err)
+			}
+			if gotMethod != "POST" || gotPath != "/containers/"+tt.entityRef+"/restart" {
+				t.Errorf("request = %s %s, want POST /containers/%s/restart", gotMethod, gotPath, tt.entityRef)
+			}
+		})
+	}
+}

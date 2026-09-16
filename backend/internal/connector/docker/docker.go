@@ -144,6 +144,46 @@ func (d *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	}, nil
 }
 
+// Restart restarts the container identified by entityRef (a container ID).
+func (d *Connector) Restart(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("docker restart requires a target container ID")
+	}
+	return d.doPost(ctx, "/containers/"+entityRef+"/restart")
+}
+
+// doPost issues a POST with no body, tolerating a 204 No Content response.
+func (d *Connector) doPost(ctx context.Context, path string) error {
+	if d.configErr != nil {
+		return d.configErr
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", d.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return fmt.Errorf("not found: %s", string(data))
+	case resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout:
+		return connector.NewServiceUnavailableError(fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data)))
+	case resp.StatusCode >= 400:
+		return fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data))
+	}
+	return nil
+}
+
 // fetchSection runs a single endpoint fetch and renders it with build,
 // tolerating failure as a placeholder section rather than failing Fetch.
 func (d *Connector) fetchSection(ctx context.Context, title, path string, build func([]byte) string) connector.SnapshotSection {

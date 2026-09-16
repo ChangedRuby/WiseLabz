@@ -118,6 +118,38 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
 	}, nil
 }
 
+// Restart restarts the Pi-hole DNS resolver (FTL). Pi-hole manages a single
+// implicit DNS service, so entityRef is ignored.
+func (c *Connector) Restart(ctx context.Context, _ map[string]any, _ string) error {
+	sid, err := c.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/action/restartdns", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("sid", sid)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data))
+	}
+	return nil
+}
+
 // authenticate exchanges the configured password for a session id (sid) via
 // POST /api/auth.
 func (c *Connector) authenticate(ctx context.Context) (sid string, err error) {

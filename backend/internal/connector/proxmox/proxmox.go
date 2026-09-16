@@ -296,6 +296,37 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	}, nil
 }
 
+// Restart reboots the VM or container identified by entityRef (a Proxmox
+// VMID). It resolves the owning node and guest type via /cluster/resources
+// since a bare VMID alone doesn't say which.
+func (p *Connector) Restart(ctx context.Context, _ map[string]any, entityRef string) error {
+	if entityRef == "" {
+		return fmt.Errorf("proxmox restart requires a target VMID")
+	}
+	raw, err := p.doRequest(ctx, "GET", "/cluster/resources?type=vm", nil)
+	if err != nil {
+		return fmt.Errorf("resolve VM node: %w", err)
+	}
+	var resp struct {
+		Data []struct {
+			VMID int    `json:"vmid"`
+			Node string `json:"node"`
+			Type string `json:"type"` // "qemu" or "lxc"
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return connector.NewMalformedResponseError(fmt.Errorf("decode cluster resources: %w", err))
+	}
+	for _, res := range resp.Data {
+		if fmt.Sprintf("%d", res.VMID) != entityRef {
+			continue
+		}
+		_, err := p.doRequest(ctx, "POST", fmt.Sprintf("/nodes/%s/%s/%d/status/reboot", res.Node, res.Type, res.VMID), nil)
+		return err
+	}
+	return fmt.Errorf("VMID %s not found", entityRef)
+}
+
 // fetchQemuIP returns the first non-loopback IPv4 address reported by the
 // QEMU guest agent, or "" if the agent isn't installed/running (most labs
 // won't have it on every VM) or reports nothing usable. Soft-fails: any

@@ -1,22 +1,29 @@
 package connectors
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/sync"
+
+	// Register connector implementations (proxmox, custom, ...) for restart tests.
+	_ "github.com/WiseLabz/wiselabz/internal/connector/all"
 )
 
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
 	s := apitest.NewStore(t)
 	cfg := &config.Config{Encryption: config.EncryptionSettings{Key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="}}
-	return NewHandler(s, sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key), cfg)
+	jwtSvc := auth.NewService("test-secret-test-secret-test-secret", time.Hour, time.Hour)
+	return NewHandler(s, sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key), cfg, jwtSvc, nil)
 }
 
 func TestListEmpty(t *testing.T) {
@@ -294,6 +301,162 @@ func TestRemovalImpactNotFound(t *testing.T) {
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 	}
+}
+
+func TestRestart(t *testing.T) {
+	createConnector := func(t *testing.T, h *Handler, typ, url string) string {
+		t.Helper()
+		body := `{"name":"Test","category":"virtualization","type":"` + typ + `","url":"` + url + `","config":{"token_id":"u@pam!t","token_secret":"secret"}}`
+		req := httptest.NewRequest(http.MethodPost, "/api/connectors", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		h.Create(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("create status = %d, want %d; body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+		}
+		var created map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+			t.Fatalf("unmarshal create: %v", err)
+		}
+		id, _ := created["id"].(string)
+		if id == "" {
+			t.Fatalf("no id in create response: %s", rr.Body.String())
+		}
+		return id
+	}
+
+	restartReq := func(id, entityRef, elevationToken string) *http.Request {
+		var body string
+		if entityRef != "" {
+			body = `{"entityRef":"` + entityRef + `"}`
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/connectors/"+id+"/restart", strings.NewReader(body))
+		req.SetPathValue("id", id)
+		if elevationToken != "" {
+			req.Header.Set("X-Elevation-Token", elevationToken)
+		}
+		return req
+	}
+
+	t.Run("dry-run works without elevation token", func(t *testing.T) {
+		h := newTestHandler(t)
+		id := createConnector(t, h, "custom", "https://test.example.com")
+		req := httptest.NewRequest(http.MethodPost, "/api/connectors/"+id+"/restart?dryRun=true", nil)
+		req.SetPathValue("id", id)
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		// No snapshot exists yet, but the important part is it's not rejected
+		// for missing elevation.
+		if rr.Code == http.StatusBadRequest && strings.Contains(rr.Body.String(), "elevation_required") {
+			t.Fatalf("dry-run required elevation: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("unsupported connector returns 400", func(t *testing.T) {
+		h := newTestHandler(t)
+		id := createConnector(t, h, "custom", "https://test.example.com")
+		req := restartReq(id, "", "")
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "unsupported_operation") {
+			t.Fatalf("status = %d, body = %s, want 400 unsupported_operation", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("missing elevation token returns 400", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			t.Fatalf("unexpected request to connector API: %s", r.URL.Path)
+		}))
+		defer server.Close()
+		h := newTestHandler(t)
+		id := createConnector(t, h, "proxmox", server.URL)
+		req := restartReq(id, "100", "")
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "elevation_required") {
+			t.Fatalf("status = %d, body = %s, want 400 elevation_required", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("invalid elevation token returns 401", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			t.Fatalf("unexpected request to connector API: %s", r.URL.Path)
+		}))
+		defer server.Close()
+		h := newTestHandler(t)
+		id := createConnector(t, h, "proxmox", server.URL)
+		req := restartReq(id, "100", "not-a-real-token")
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, body = %s, want 401", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("success writes audit row", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/cluster/resources":
+				_, _ = w.Write([]byte(`{"data":[{"vmid":100,"node":"pve1","type":"qemu"}]}`))
+			case "/nodes/pve1/qemu/100/status/reboot":
+				_, _ = w.Write([]byte(`{"data":null}`))
+			default:
+				t.Fatalf("unexpected request: %s", r.URL.Path)
+			}
+		}))
+		defer server.Close()
+		h := newTestHandler(t)
+		id := createConnector(t, h, "proxmox", server.URL)
+		token, err := h.JWT.IssueElevation("", "connector.restart")
+		if err != nil {
+			t.Fatalf("IssueElevation() error = %v", err)
+		}
+		req := restartReq(id, "100", token.Token)
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s, want 200", rr.Code, rr.Body.String())
+		}
+		records, _, err := h.Store.ListAuditRecords(context.Background(), "connector.restart", "connector", "", "", 0, 10)
+		if err != nil {
+			t.Fatalf("ListAuditRecords() error = %v", err)
+		}
+		if len(records) != 1 || records[0].TargetID != id {
+			t.Fatalf("audit records = %+v, want one row for connector %s", records, id)
+		}
+	})
+
+	t.Run("failure creates alert and no audit row", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"data":[]}`)) // vmid never found
+		}))
+		defer server.Close()
+		h := newTestHandler(t)
+		id := createConnector(t, h, "proxmox", server.URL)
+		token, err := h.JWT.IssueElevation("", "connector.restart")
+		if err != nil {
+			t.Fatalf("IssueElevation() error = %v", err)
+		}
+		req := restartReq(id, "100", token.Token)
+		rr := httptest.NewRecorder()
+		h.RestartPreview(rr, req)
+		if rr.Code != http.StatusBadGateway {
+			t.Fatalf("status = %d, body = %s, want 502", rr.Code, rr.Body.String())
+		}
+		alerts, _, err := h.Store.ListAlerts(context.Background(), id, "", "", "", 0, 10)
+		if err != nil {
+			t.Fatalf("ListAlerts() error = %v", err)
+		}
+		if len(alerts) != 1 {
+			t.Fatalf("alerts = %+v, want one alert", alerts)
+		}
+		records, _, err := h.Store.ListAuditRecords(context.Background(), "connector.restart", "connector", "", "", 0, 10)
+		if err != nil {
+			t.Fatalf("ListAuditRecords() error = %v", err)
+		}
+		if len(records) != 0 {
+			t.Fatalf("audit records = %+v, want none on failure", records)
+		}
+	})
 }
 
 func TestSyncAllSuccess(t *testing.T) {

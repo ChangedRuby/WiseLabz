@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -184,38 +185,75 @@ func RequirePermission(checker PermissionChecker, permission string) func(http.H
 func RequireElevation(jwtSvc *Service, recorder AuditRecorder, action string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			values, ok := r.Header["X-Elevation-Token"]
-			if !ok {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"code":    "elevation_required",
-					"message": "X-Elevation-Token header required for " + action,
-				})
-				return
-			}
-			token := ""
-			if len(values) > 0 {
-				token = values[0]
-			}
-			recordElevationAudit(r.Context(), recorder, "auth.elevation_requested", action, nil)
-			_, err := jwtSvc.ValidateElevation(token, action, UserIDFromContext(r.Context()))
-			if err != nil {
-				recordElevationAudit(r.Context(), recorder, "auth.elevation_denied", action, map[string]any{
-					"action": action,
-					"reason": elevationFailureReason(err),
-				})
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"code":    "unauthorized",
-					"message": "Invalid elevation token: " + err.Error(),
-				})
+			if err := ValidateElevationHeader(jwtSvc, recorder, action, r); err != nil {
+				WriteElevationError(w, err)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// elevationError carries the HTTP status and body an elevation failure
+// should produce, so ValidateElevationHeader can be called both as
+// middleware and directly from a handler that only elevates conditionally.
+type elevationError struct {
+	status int
+	code   string
+	msg    string
+}
+
+func (e *elevationError) Error() string { return e.msg }
+
+// ValidateElevationHeader checks the request's X-Elevation-Token header
+// against a token scoped to action, recording the same
+// auth.elevation_requested / auth.elevation_denied audit events RequireElevation
+// records. Returns nil if the token is valid; otherwise an *elevationError
+// describing the HTTP response to send (use WriteElevationError, or inspect
+// via errors.As for a custom response).
+func ValidateElevationHeader(jwtSvc *Service, recorder AuditRecorder, action string, r *http.Request) error {
+	values, ok := r.Header["X-Elevation-Token"]
+	if !ok {
+		return &elevationError{
+			status: http.StatusBadRequest,
+			code:   "elevation_required",
+			msg:    "X-Elevation-Token header required for " + action,
+		}
+	}
+	token := ""
+	if len(values) > 0 {
+		token = values[0]
+	}
+	recordElevationAudit(r.Context(), recorder, "auth.elevation_requested", action, nil)
+	_, err := jwtSvc.ValidateElevation(token, action, UserIDFromContext(r.Context()))
+	if err != nil {
+		recordElevationAudit(r.Context(), recorder, "auth.elevation_denied", action, map[string]any{
+			"action": action,
+			"reason": elevationFailureReason(err),
+		})
+		return &elevationError{
+			status: http.StatusUnauthorized,
+			code:   "unauthorized",
+			msg:    "Invalid elevation token: " + err.Error(),
+		}
+	}
+	return nil
+}
+
+// WriteElevationError writes the HTTP response for an error returned by
+// ValidateElevationHeader.
+func WriteElevationError(w http.ResponseWriter, err error) {
+	var elevErr *elevationError
+	if !errors.As(err, &elevErr) {
+		httputil.Errorf(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(elevErr.status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"code":    elevErr.code,
+		"message": elevErr.msg,
+	})
 }
 
 func recordElevationAudit(ctx context.Context, recorder AuditRecorder, event, action string, detail any) {

@@ -40,6 +40,7 @@ import { Dialog } from '../../components/ui/Dialog';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
 import { Markdown } from '../../components/docs/Markdown';
 import { ConfirmDestructive } from '../../components/manager/ConfirmDestructive';
+import { ElevationConfirm } from '../../components/manager/ElevationConfirm';
 import {
   ArrowRightIcon,
   SyncIcon,
@@ -96,8 +97,26 @@ export function ServiceDetailPage() {
     },
   });
 
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+
   const restartPreview = useMutation({
-    mutationFn: () => postConnectorsConnectorIdRestart(id, { dryRun: true }),
+    mutationFn: () => postConnectorsConnectorIdRestart(id, undefined, { dryRun: true }),
+  });
+
+  const restart = useMutation({
+    mutationFn: (token: string | null) =>
+      postConnectorsConnectorIdRestart(
+        id,
+        {},
+        { dryRun: false },
+        token ? { headers: { 'X-Elevation-Token': token } } : undefined,
+      ),
+    onSuccess: () => {
+      setRestartConfirmOpen(false);
+      setRestartPreviewOpen(false);
+      queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
+      void connector.refetch();
+    },
   });
 
   const healthCheck = useMutation({
@@ -350,9 +369,29 @@ export function ServiceDetailPage() {
                 </ul>
               )}
             </div>
+            {restart.isError && (
+              <p className="text-2xs text-err">{t('services.detail.restartFailed')}</p>
+            )}
+            <div className="flex justify-end">
+              <Button size="sm" variant="danger" onClick={() => setRestartConfirmOpen(true)}>
+                {t('services.detail.restartNow')}
+              </Button>
+            </div>
           </div>
         )}
       </Dialog>
+
+      <ElevationConfirm
+        open={restartConfirmOpen}
+        resourceName={c.name}
+        action="connector.restart"
+        title={t('services.detail.restartConfirmTitle', { name: c.name })}
+        description={t('services.detail.restartConfirmDescription')}
+        confirmLabel={t('services.detail.restartNow')}
+        isPending={restart.isPending}
+        onClose={() => setRestartConfirmOpen(false)}
+        onConfirm={(token) => restart.mutate(token)}
+      />
     </div>
   );
 }
