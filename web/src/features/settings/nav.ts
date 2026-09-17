@@ -16,6 +16,7 @@ import {
   ClockIcon,
   HistoryIcon,
   FileTextIcon,
+  ShareIcon,
 } from '../../components/icons';
 
 export interface SettingsSection {
@@ -91,6 +92,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.nav.audit',
     labelDefault: 'Audit log',
     Icon: HistoryIcon,
+    operatorOnly: true,
+  },
+  {
+    segment: 'share-links',
+    labelKey: 'settings.nav.shareLinks',
+    labelDefault: 'Share links',
+    Icon: ShareIcon,
     operatorOnly: true,
   },
   {

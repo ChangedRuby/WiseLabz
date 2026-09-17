@@ -119,6 +119,12 @@ const SystemPage = lazy(() =>
 const RetentionPage = lazy(() =>
   import('./features/settings').then(({ RetentionPage }) => ({ default: RetentionPage }))
 );
+const ShareLinksPage = lazy(() =>
+  import('./features/settings').then(({ ShareLinksPage }) => ({ default: ShareLinksPage }))
+);
+const ShareLinkPage = lazy(() =>
+  import('./features/docs/ShareLinkPage').then(({ ShareLinkPage }) => ({ default: ShareLinkPage }))
+);
 const RunbooksPage = lazy(() =>
   import('./features/settings').then(({ RunbooksPage }) => ({ default: RunbooksPage }))
 );
@@ -159,6 +165,10 @@ const router = createBrowserRouter([
   },
   { path: '/auth/callback', element: <AuthCallbackPage /> },
   { path: '/forbidden', element: <ForbiddenPage /> },
+  // Unauthenticated read-only share-link viewer (#240 PR2) — parallel to
+  // /login, outside RequireAuth: no account needed to view a shared doc tree.
+  { path: '/share/:token', element: <ShareLinkPage /> },
+  { path: '/share/:token/docs/:docId', element: <ShareLinkPage /> },
   {
     // Onboarding sits under auth only (NOT RequireOnboarded) so it never loops.
     path: '/onboarding',
@@ -282,6 +292,11 @@ const router = createBrowserRouter([
               </RequireInstanceAdmin>
             ),
           },
+          // No route guard: any authenticated user with operator on at
+          // least one connector can create share links (nav.ts hides the
+          // link for pure viewers as a UI convenience); the server scopes
+          // the list to the caller's own links regardless.
+          { path: 'share-links', element: <ShareLinksPage /> },
           { path: 'appearance', element: <AppearancePage /> },
         ],
       },

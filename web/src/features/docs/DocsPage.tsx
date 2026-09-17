@@ -17,6 +17,7 @@ import { Skeleton, SkeletonRows, ErrorState, EmptyState } from '../../components
 import { Markdown } from '../../components/docs/Markdown';
 import { DocTree } from '../../components/docs/DocTree';
 import { DocHistory } from './DocHistory';
+import { ShareDialog } from './ShareDialog';
 import { cn } from '../../lib/cn';
 import { relativeTime, fullDate } from '../../lib/time';
 import {
@@ -36,6 +37,7 @@ export function DocsPage() {
   const { docId } = useParams<{ docId: string }>();
   const tree = useGetDocsTree();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [shareNode, setShareNode] = useState<{ docId: string; title: string } | null>(null);
   const drawerTriggerRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -93,7 +95,7 @@ export function DocsPage() {
   ) : tree.isError || !tree.data ? (
     <ErrorState description={t('docs.treeLoadError')} onRetry={() => tree.refetch()} />
   ) : (
-    <DocTree tree={tree.data} />
+    <DocTree tree={tree.data} onShare={setShareNode} />
   );
 
   return (
@@ -176,6 +178,7 @@ export function DocsPage() {
           </Panel>
         )}
       </section>
+      <ShareDialog open={!!shareNode} onClose={() => setShareNode(null)} node={shareNode} />
     </div>
   );
 }

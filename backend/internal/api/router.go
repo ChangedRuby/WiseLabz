@@ -134,6 +134,16 @@ func NewRouter(cfg Config) chi.Router {
 		})
 	})
 
+	// --- Read-only doc share links (unauthenticated, token in the path) ---
+	// Deliberately outside cfg.AuthMiddleware(): the whole point is access
+	// without an account. docH.ResolveShareLink is the token/expiry/revoke
+	// gate; every route in this group is read-only (no save/lock/ai-suggest).
+	r.Route("/api/share/{token}", func(r chi.Router) {
+		r.Use(docH.ResolveShareLink)
+		r.Get("/tree", docH.ShareLinkTree)
+		r.Get("/docs/{docId}", docH.ShareLinkDoc)
+	})
+
 	// --- Protected routes (authenticated) ---
 	r.Group(func(r chi.Router) {
 		r.Use(cfg.AuthMiddleware())
@@ -255,6 +265,15 @@ func NewRouter(cfg Config) chi.Router {
 			// Regenerates the single lab-wide Lab Topology doc — instance-admin,
 			// same as any other lab-wide (no connector) doc mutation.
 			r.With(auth.RequireInstanceAdmin).Post("/topology", docH.GenerateTopology)
+
+			// Share links: creation checks operator on every connector covered
+			// by the requested subtree in-handler (docH.requireShareCreateAccess),
+			// same resolve-then-check pattern as the rest of this group.
+			r.Route("/share-links", func(r chi.Router) {
+				r.Get("/", docH.ListShareLinks)
+				r.Post("/", docH.CreateShareLink)
+				r.Delete("/{id}", docH.RevokeShareLink)
+			})
 		})
 
 		r.Route("/api/chat/conversations", func(r chi.Router) {
