@@ -21,6 +21,16 @@ import (
 
 const typeName = "dnsresolver"
 
+// attributeCatalog declares the structured Attributes this connector fills
+// on "dns_record" entities (see buildHostOverrideTable), exposed via GET
+// /api/compliance/schema.
+var attributeCatalog = map[string][]connector.AttributeSpec{
+	"dns_record": {
+		{Name: "description", Type: "string", Description: "Description of the DNS record"},
+		{Name: "is_ipv6", Type: "boolean", Description: "Whether the IP address is IPv6"},
+	},
+}
+
 func init() {
 	connector.Register(connector.TypeSchema{
 		Type:     typeName,
@@ -54,6 +64,7 @@ func init() {
 			client: client,
 		}, nil
 	})
+	connector.RegisterAttributeCatalog(typeName, attributeCatalog)
 }
 
 // Connector fetches DNS Resolver (Unbound) host overrides from a
@@ -214,6 +225,15 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// isIPv6 returns true if the IP string is an IPv6 address.
+func isIPv6(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ip.To4() == nil
+}
+
 // buildHostOverrideTable renders the DNS Resolver host overrides as a
 // markdown table and extracts one SnapshotEntity per override.
 func buildHostOverrideTable(raw []byte) (content string, entities []connector.SnapshotEntity) {
@@ -242,10 +262,17 @@ func buildHostOverrideTable(raw []byte) (content string, entities []connector.Sn
 		if o.Host != "" {
 			hostname = fmt.Sprintf("%s.%s", o.Host, o.Domain)
 		}
+		attrs := map[string]any{
+			"is_ipv6": isIPv6(o.IP),
+		}
+		if o.Description != "" {
+			attrs["description"] = o.Description
+		}
 		entities = append(entities, connector.SnapshotEntity{
-			Kind:     "dns_record",
-			Hostname: hostname,
-			IP:       o.IP,
+			Kind:       "dns_record",
+			Hostname:   hostname,
+			IP:         o.IP,
+			Attributes: attrs,
 		})
 	}
 	return b.String(), entities

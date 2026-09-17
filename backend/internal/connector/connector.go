@@ -172,6 +172,13 @@ type SnapshotEntity struct {
 	IP         string `json:"ip,omitempty"`
 	Hostname   string `json:"hostname,omitempty"`
 	ExternalID string `json:"externalId,omitempty"` // Proxmox VMID, container ID, etc.
+	// Attributes carries stable, security-relevant, connector-specific
+	// values (enabled, privileged, protocol, ...) for compliance rules to
+	// evaluate (see AttributeSpec/RegisterAttributeCatalog). Values must be
+	// JSON-friendly (bool, string, number, string arrays) and stable across
+	// syncs — no uptime, CPU%, or other counters, since those would make
+	// every snapshot look changed.
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 // SnapshotSection is a named section of infrastructure data.

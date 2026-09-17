@@ -53,6 +53,32 @@ func init() {
 			client:      client,
 		}, nil
 	})
+	connector.RegisterAttributeCatalog(typeName, attributeCatalog)
+}
+
+// attributeCatalog declares the structured Attributes this connector fills
+// on "vm" and "container" entities (see Fetch), exposed via
+// GET /api/compliance/schema.
+var attributeCatalog = map[string][]connector.AttributeSpec{
+	"vm": {
+		{Name: "status", Type: "string", Description: "Guest power state (running, stopped, ...)"},
+		{Name: "firewall_enabled", Type: "boolean", Description: "Whether the per-guest firewall is enabled"},
+		{Name: "onboot", Type: "boolean", Description: "Whether the guest starts automatically on host boot"},
+		{Name: "agent_enabled", Type: "boolean", Description: "Whether the QEMU guest agent is enabled"},
+		{Name: "protection", Type: "boolean", Description: "Whether removal/disk-wipe protection is enabled"},
+		{Name: "template", Type: "boolean", Description: "Whether the guest is a template"},
+		{Name: "os_type", Type: "string", Description: "Configured guest OS type"},
+	},
+	"container": {
+		{Name: "status", Type: "string", Description: "Guest power state (running, stopped, ...)"},
+		{Name: "firewall_enabled", Type: "boolean", Description: "Whether the per-guest firewall is enabled"},
+		{Name: "onboot", Type: "boolean", Description: "Whether the guest starts automatically on host boot"},
+		{Name: "agent_enabled", Type: "boolean", Description: "Whether the QEMU guest agent is enabled"},
+		{Name: "protection", Type: "boolean", Description: "Whether removal/disk-wipe protection is enabled"},
+		{Name: "template", Type: "boolean", Description: "Whether the guest is a template"},
+		{Name: "os_type", Type: "string", Description: "Configured guest OS type"},
+		{Name: "unprivileged", Type: "boolean", Description: "Whether the container runs unprivileged"},
+	},
 }
 
 // Connector fetches data from a Proxmox VE API.
@@ -174,9 +200,25 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 						Name:       vm.Name,
 						ExternalID: fmt.Sprintf("%d", vm.VMID),
 					}
-					if wantEntities && vm.Status == "running" {
-						ent.IP = p.fetchQemuIP(ctx, node.Node, vm.VMID)
+					attrs := map[string]any{"status": vm.Status}
+					if wantEntities {
+						if vm.Status == "running" {
+							ent.IP = p.fetchQemuIP(ctx, node.Node, vm.VMID)
+						}
+						if cfg, ok := p.fetchQemuConfig(ctx, node.Node, vm.VMID); ok {
+							attrs["onboot"] = cfg.Onboot != 0
+							attrs["protection"] = cfg.Protection != 0
+							attrs["template"] = cfg.Template != 0
+							attrs["agent_enabled"] = agentEnabled(cfg.Agent)
+							if cfg.OSType != "" {
+								attrs["os_type"] = cfg.OSType
+							}
+						}
+						if enabled, ok := p.fetchFirewallEnabled(ctx, "qemu", node.Node, vm.VMID); ok {
+							attrs["firewall_enabled"] = enabled
+						}
 					}
+					ent.Attributes = attrs
 					entities = append(entities, ent)
 				}
 				nodeSection += "\n"
@@ -224,9 +266,26 @@ func (p *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 						Name:       ct.Name,
 						ExternalID: fmt.Sprintf("%d", ct.VMID),
 					}
-					if wantEntities && ct.Status == "running" {
-						ent.IP = p.fetchLxcIP(ctx, node.Node, ct.VMID)
+					attrs := map[string]any{"status": ct.Status}
+					if wantEntities {
+						if ct.Status == "running" {
+							ent.IP = p.fetchLxcIP(ctx, node.Node, ct.VMID)
+						}
+						if cfg, ok := p.fetchLxcConfig(ctx, node.Node, ct.VMID); ok {
+							attrs["onboot"] = cfg.Onboot != 0
+							attrs["protection"] = cfg.Protection != 0
+							attrs["template"] = cfg.Template != 0
+							attrs["agent_enabled"] = agentEnabled(cfg.Agent)
+							attrs["unprivileged"] = cfg.Unprivileged != 0
+							if cfg.OSType != "" {
+								attrs["os_type"] = cfg.OSType
+							}
+						}
+						if enabled, ok := p.fetchFirewallEnabled(ctx, "lxc", node.Node, ct.VMID); ok {
+							attrs["firewall_enabled"] = enabled
+						}
 					}
+					ent.Attributes = attrs
 					entities = append(entities, ent)
 				}
 				nodeSection += "\n"
@@ -475,6 +534,94 @@ func (p *Connector) fetchLxcIP(ctx context.Context, node string, vmid int) strin
 		return iface.Inet
 	}
 	return ""
+}
+
+// qemuConfig holds the subset of VM /config fields we surface as
+// Attributes. Fields absent from the Proxmox response decode to their zero
+// value, which is the correct "disabled"/"unset" reading for each of these
+// flags.
+type qemuConfig struct {
+	Onboot     int    `json:"onboot"`
+	Protection int    `json:"protection"`
+	Agent      string `json:"agent"`
+	Template   int    `json:"template"`
+	OSType     string `json:"ostype"`
+}
+
+// fetchQemuConfig fetches a VM's /config and returns the fields relevant to
+// Attributes, or ok=false if the request/decode failed (soft-fail: any
+// error here is not a Fetch failure, the caller just omits the attribute).
+func (p *Connector) fetchQemuConfig(ctx context.Context, node string, vmid int) (qemuConfig, bool) {
+	raw, err := p.doRequest(ctx, "GET", fmt.Sprintf("/nodes/%s/qemu/%d/config", node, vmid), nil)
+	if err != nil {
+		return qemuConfig{}, false
+	}
+	var resp struct {
+		Data qemuConfig `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return qemuConfig{}, false
+	}
+	return resp.Data, true
+}
+
+// lxcConfig holds the subset of container /config fields we surface as
+// Attributes.
+type lxcConfig struct {
+	Onboot       int    `json:"onboot"`
+	Protection   int    `json:"protection"`
+	Template     int    `json:"template"`
+	Agent        string `json:"agent"`
+	Unprivileged int    `json:"unprivileged"`
+	OSType       string `json:"ostype"`
+}
+
+// fetchLxcConfig fetches a container's /config and returns the fields
+// relevant to Attributes, or ok=false on request/decode failure.
+func (p *Connector) fetchLxcConfig(ctx context.Context, node string, vmid int) (lxcConfig, bool) {
+	raw, err := p.doRequest(ctx, "GET", fmt.Sprintf("/nodes/%s/lxc/%d/config", node, vmid), nil)
+	if err != nil {
+		return lxcConfig{}, false
+	}
+	var resp struct {
+		Data lxcConfig `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return lxcConfig{}, false
+	}
+	return resp.Data, true
+}
+
+// fetchFirewallEnabled fetches a guest's firewall/options and reports
+// whether the per-guest firewall is enabled. guestType is "qemu" or "lxc".
+// Soft-fails to ok=false on any request/decode error.
+func (p *Connector) fetchFirewallEnabled(ctx context.Context, guestType, node string, vmid int) (bool, bool) {
+	raw, err := p.doRequest(ctx, "GET", fmt.Sprintf("/nodes/%s/%s/%d/firewall/options", node, guestType, vmid), nil)
+	if err != nil {
+		return false, false
+	}
+	var resp struct {
+		Data struct {
+			Enable int `json:"enable"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return false, false
+	}
+	return resp.Data.Enable != 0, true
+}
+
+// agentEnabled reports whether a QEMU config's "agent" field indicates the
+// guest agent is enabled. Proxmox stores it either as a bare "1"/"0" or a
+// comma-separated option string like "enabled=1,fstrim_cloned_disks=1", so
+// presence of a leading "1" is treated as enabled.
+func agentEnabled(agent string) bool {
+	if agent == "" {
+		return false
+	}
+	first := strings.SplitN(agent, ",", 2)[0]
+	first = strings.TrimPrefix(first, "enabled=")
+	return strings.TrimSpace(first) == "1"
 }
 
 func (p *Connector) doRequest(ctx context.Context, method, path string, body io.Reader) ([]byte, error) {

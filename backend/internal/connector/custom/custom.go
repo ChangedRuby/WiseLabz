@@ -31,6 +31,11 @@ func init() {
 	}, func(_ map[string]any) (connector.Connector, error) {
 		return &Connector{client: newGuardedClient()}, nil
 	})
+	// Custom connectors pass through whatever attributes the source payload provides.
+	// No fixed catalog — the point is operator-defined data passthrough.
+	connector.RegisterAttributeCatalog(typeName, map[string][]connector.AttributeSpec{
+		"*": {{Name: "*", Type: "string", Description: "Custom connectors pass through whatever attributes object the source payload provides under entities[].attributes; there is no fixed schema."}},
+	})
 }
 
 // Connector is a configurable HTTP connector for custom APIs.
@@ -129,7 +134,7 @@ func (c *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	return &connector.ServiceSnapshot{
+	snapshot := &connector.ServiceSnapshot{
 		ServiceName: "Custom: " + rawURL,
 		Type:        typeName,
 		Sections: []connector.SnapshotSection{
@@ -140,7 +145,18 @@ func (c *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 			"url":         rawURL,
 		},
 		FetchedAt: time.Now(),
-	}, nil
+	}
+
+	// Attempt to parse structured entities from the response body.
+	// If the body contains a top-level "entities" array with valid SnapshotEntity shapes,
+	// populate them in the snapshot. This is backward compatible: if parsing fails or
+	// there are no entities, the snapshot is returned as-is (with just the Response section).
+	entities, ok := tryParseEntities(body)
+	if ok && len(entities) > 0 {
+		snapshot.Entities = entities
+	}
+
+	return snapshot, nil
 }
 
 func setHeaders(req *http.Request, config map[string]any) {
@@ -195,6 +211,69 @@ func validateCustomURL(raw string) error {
 	}
 
 	return nil
+}
+
+// tryParseEntities attempts to parse a JSON response body for a top-level
+// "entities" array matching the SnapshotEntity shape. Returns the parsed
+// entities and true if parsing succeeded and at least one entity has a
+// non-empty kind; otherwise returns nil and false. This is backward compatible:
+// if parsing fails or there are no valid entities, the caller treats it as
+// "no structured data" and uses the raw Response section instead.
+func tryParseEntities(body []byte) ([]connector.SnapshotEntity, bool) {
+	var payload struct {
+		Entities []struct {
+			Kind       string         `json:"kind"`
+			Name       string         `json:"name"`
+			IP         string         `json:"ip"`
+			Hostname   string         `json:"hostname"`
+			ExternalID string         `json:"externalId"`
+			Attributes map[string]any `json:"attributes"`
+		} `json:"entities"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// Not valid JSON or missing "entities" key: not an error, just no structured data
+		return nil, false
+	}
+
+	if len(payload.Entities) == 0 {
+		// Valid JSON but no entities: not an error, just no structured data
+		return nil, false
+	}
+
+	// Filter to entities with non-empty kind and validate attributes.
+	var result []connector.SnapshotEntity
+	for _, ent := range payload.Entities {
+		if ent.Kind == "" {
+			// Skip entities without a kind
+			continue
+		}
+
+		entity := connector.SnapshotEntity{
+			Kind:       ent.Kind,
+			Name:       ent.Name,
+			IP:         ent.IP,
+			Hostname:   ent.Hostname,
+			ExternalID: ent.ExternalID,
+		}
+
+		// Validate and pass through attributes as-is if present.
+		// json.Unmarshal into map[string]any already gives us JSON-safe types:
+		// string, float64, bool, []any (of primitives), nil.
+		// No nested objects or other non-JSON types can arrive via this path.
+		if len(ent.Attributes) > 0 {
+			entity.Attributes = ent.Attributes
+		}
+
+		result = append(result, entity)
+	}
+
+	if len(result) == 0 {
+		// No valid entities after filtering
+		return nil, false
+	}
+
+	return result, true
 }
 
 // isTimeout reports whether err represents a request deadline being

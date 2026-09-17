@@ -17,6 +17,7 @@ import (
 	authhandler "github.com/WiseLabz/wiselabz/internal/api/auth"
 	changehandler "github.com/WiseLabz/wiselabz/internal/api/changes"
 	chathandler "github.com/WiseLabz/wiselabz/internal/api/chat"
+	compliancehandler "github.com/WiseLabz/wiselabz/internal/api/compliance"
 	connhandler "github.com/WiseLabz/wiselabz/internal/api/connectors"
 	dashhandler "github.com/WiseLabz/wiselabz/internal/api/dashboard"
 	dochandler "github.com/WiseLabz/wiselabz/internal/api/docs"
@@ -89,6 +90,7 @@ func NewRouter(cfg Config) chi.Router {
 	docH := dochandler.NewHandler(cfg.Store, cfg.DocEngine, settingH, cfg.AIRegistry, cfg.EmbedRegistry, cfg.WSHub)
 	savedViewH := savedviewhandler.NewHandler(cfg.Store)
 	chatH := chathandler.NewHandler(cfg.Store, settingH, cfg.AIRegistry, cfg.EmbedRegistry)
+	complianceH := compliancehandler.NewHandler()
 
 	// --- System endpoints ---
 	r.Get("/api/health", sysH.Health)
@@ -416,6 +418,8 @@ func NewRouter(cfg Config) chi.Router {
 			})
 
 			r.Get("/api/system/diagnostics", sysH.Diagnostics)
+
+			r.Get("/api/compliance/schema", complianceH.Schema)
 
 			r.Route("/api/users", func(r chi.Router) {
 				r.Get("/", authH.ListUsers)
