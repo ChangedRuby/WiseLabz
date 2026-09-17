@@ -19,4 +19,15 @@ export interface ConnectorCreate {
   verifyTls?: boolean;
   /** Schema-driven fields incl. secrets; stored encrypted, never in plaintext config (ARCHITECTURE.md) */
   config: ConnectorCreateConfig;
+  /**
+   * Optional operator-set credential expiry (RFC3339)
+   * @nullable
+   */
+  userExpiresAt?: string | null;
+  /**
+   * Overrides the global rotation.max_age_days for this connector
+   * @minimum 1
+   * @nullable
+   */
+  rotationMaxAgeDays?: number | null;
 }

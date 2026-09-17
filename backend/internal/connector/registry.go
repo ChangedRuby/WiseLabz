@@ -25,6 +25,10 @@ type TypeSchema struct {
 	// (e.g. a WiFi-backed host needs a looser SLA than an on-LAN one). Zero
 	// means "use the global default".
 	DegradedLatencyThresholdMs int `json:"degradedLatencyThresholdMs,omitempty"`
+	// IsCredentialRefresher is computed by ListSchemas, not set at
+	// registration: true if this type's Connector implementation satisfies
+	// CredentialRefresher (see IsCredentialRefresherType).
+	IsCredentialRefresher bool `json:"isCredentialRefresher,omitempty"`
 }
 
 // DegradedLatencyThreshold returns this type's configured health-check
@@ -165,12 +169,18 @@ func IsCredentialRefresherType(typ string) bool {
 	return ok
 }
 
-// ListSchemas returns all registered connector type schemas.
+// ListSchemas returns all registered connector type schemas, with
+// IsCredentialRefresher computed for each.
 func ListSchemas() []TypeSchema {
 	mu.RLock()
 	defer mu.RUnlock()
 	var out []TypeSchema
 	for _, s := range typeSchema {
+		if factory, ok := registry[s.Type]; ok {
+			if inst, err := factory(map[string]any{}); err == nil {
+				_, s.IsCredentialRefresher = inst.(CredentialRefresher)
+			}
+		}
 		out = append(out, s)
 	}
 	return out

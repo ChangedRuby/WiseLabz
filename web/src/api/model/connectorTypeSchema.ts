@@ -18,4 +18,6 @@ export interface ConnectorTypeSchema {
   stub?: boolean;
   /** Health-check latency (ms) above which this connector type reports "degraded" instead of "online". Omitted/zero means use the server's global default. */
   degradedLatencyThresholdMs?: number;
+  /** True if this type's credentials refresh automatically (e.g. OAuth2). The credential_rotation quality check always skips it, and the UI should hide the rotation reminder fields on its connector form. */
+  isCredentialRefresher?: boolean;
 }
