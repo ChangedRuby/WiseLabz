@@ -203,7 +203,7 @@ func (c *Checker) evaluateComplianceRule(ctx context.Context, connectorID string
 	}
 	var snapshot connector.ServiceSnapshot
 	if err := json.Unmarshal([]byte(record.Data), &snapshot); err != nil {
-		slog.Warn("skipping malformed snapshot for compliance rule", "connector", connectorID, "rule", rule.ID, "error", err)
+		slog.Warn("skipping malformed snapshot for compliance rule", "error", err)
 		return nil, nil
 	}
 	entities := make([]compliance.Entity, len(snapshot.Entities))

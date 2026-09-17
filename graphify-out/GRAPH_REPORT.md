@@ -1,7 +1,7 @@
 # Graph Report - WiseLabz  (2026-09-17)
 
 ## Corpus Check
-- 517 files · ~630,757 words
+- 517 files · ~630,753 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
