@@ -8,6 +8,7 @@ export { NotificationsPage } from './NotificationsPage';
 export { SystemPage } from './SystemPage';
 export { RetentionPage } from './RetentionPage';
 export { RunbooksPage } from './RunbooksPage';
+export { ShareLinksPage } from './ShareLinksPage';
 export { AuditPage } from './AuditPage';
 export { AppearancePage } from './AppearancePage';
 export { SETTINGS_SECTIONS } from './nav';
