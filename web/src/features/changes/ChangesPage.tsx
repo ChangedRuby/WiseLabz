@@ -17,7 +17,7 @@ import { Button } from '../../components/ui/Button';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
 import { relativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
-import { useCanMutate } from '../../hooks/useRole';
+import { useOperatorConnectorIds } from '../../hooks/useRole';
 import { ArrowRightIcon, CheckIcon, XIcon } from '../../components/icons';
 import type { Severity } from '../../api/model';
 
@@ -38,7 +38,7 @@ export function ChangesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canMutate = useCanMutate();
+  const operatorIds = useOperatorConnectorIds();
   const [searchParams, setSearchParams] = useSearchParams();
   const pageSize = 20;
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
@@ -135,7 +135,7 @@ export function ChangesPage() {
         </div>
       </header>
 
-      {canMutate && selected.size > 0 && (
+      {operatorIds.size > 0 && selected.size > 0 && (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-canvas-sunken px-4 py-2.5">
           <span className="text-xs text-ink-muted">
             {t('changes.bulkSelectedCount', { count: selected.size })}
@@ -177,7 +177,7 @@ export function ChangesPage() {
               transition={{ delay: idx * 0.03, duration: 0.25 }}
               className="group flex w-full items-center gap-4 border-b border-line-soft px-4 py-3 transition-colors last:border-0 hover:bg-surface-raised"
             >
-              {canMutate && (
+              {operatorIds.has(c.serviceId) && (
                 <input
                   type="checkbox"
                   aria-label={t('changes.bulkSelectLabel', { summary: c.summary })}

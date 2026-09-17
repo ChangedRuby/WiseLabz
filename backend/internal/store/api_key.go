@@ -80,17 +80,18 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 
 // LookupAPIKey adapts the stored key to the auth middleware without coupling
 // the auth package to the store package. It joins users so a key's effective
-// role always reflects the user's current role, and a disabled user's keys
-// are rejected even if the key itself is still active.
+// instance-admin role always reflects the user's current role, and a
+// disabled user's keys are rejected even if the key itself is still active.
 func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKeyClaims, error) {
 	claims := &auth.APIKeyClaims{}
+	var role string
 	var disabled int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT api_keys.id, api_keys.user_id, users.role, api_keys.expires_at, api_keys.revoked_at, users.disabled
+		SELECT api_keys.id, api_keys.user_id, users.instance_admin_role, api_keys.expires_at, api_keys.revoked_at, users.disabled
 		FROM api_keys
 		JOIN users ON users.id = api_keys.user_id
 		WHERE api_keys.token_hash = ?
-	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &claims.Role, &claims.ExpiresAt, &claims.RevokedAt, &disabled)
+	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &role, &claims.ExpiresAt, &claims.RevokedAt, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -100,6 +101,7 @@ func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKe
 	if disabled != 0 {
 		return nil, ErrNotFound
 	}
+	claims.InstanceAdmin = role == "admin"
 	return claims, nil
 }
 

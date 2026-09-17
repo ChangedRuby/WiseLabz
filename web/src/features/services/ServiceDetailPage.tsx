@@ -36,7 +36,7 @@ import {
 } from '../../api/generated/docs/docs';
 import { useGetTemplates } from '../../api/generated/templates/templates';
 import { useLive } from '../../store/live';
-import { useCanMutate } from '../../hooks/useRole';
+import { useConnectorRole } from '../../hooks/useRole';
 import { runSync } from '../../lib/runSync';
 import { relativeTime, durationLabel } from '../../lib/time';
 import { StatusPill, SeverityTag } from '../../components/ui/StatusDot';
@@ -75,7 +75,7 @@ export function ServiceDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canMutate = useCanMutate();
+  const canMutate = useConnectorRole(id) === 'operator';
 
   const connector = useGetConnectorsConnectorId(id);
   const { data: schemas } = useGetConnectorsSchema();
@@ -682,7 +682,7 @@ function LinkedDocPanel({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canMutate = useCanMutate();
+  const canMutate = useConnectorRole(connectorId) === 'operator';
   const doc = useGetDocsServiceConnectorId(connectorId);
   const templates = useGetTemplates();
   const [picking, setPicking] = useState(false);

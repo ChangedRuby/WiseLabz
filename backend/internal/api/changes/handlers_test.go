@@ -12,6 +12,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/api/settings"
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -21,6 +22,15 @@ func newTestHandler(t *testing.T) *Handler {
 	s := apitest.NewStore(t)
 	settingsH := settings.NewHandler(s, &config.Config{}, ai.NewRegistry())
 	return NewHandler(s, settingsH, ai.NewRegistry(), nil)
+}
+
+// withOperatorGrant seeds a user with an operator grant on connectorID and
+// returns req with that user in context, as auth.AuthMiddleware would.
+func withOperatorGrant(t *testing.T, h *Handler, req *http.Request, connectorID string) *http.Request {
+	t.Helper()
+	userID := apitest.NewUser(t, h.Store, "viewer")
+	apitest.GrantConnectorRole(t, h.Store, userID, connectorID, "operator")
+	return req.WithContext(auth.ContextWithUser(req.Context(), userID, false))
 }
 
 func TestListEmpty(t *testing.T) {
@@ -96,6 +106,7 @@ func TestAIUpdate(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/ai-update", nil)
 		req.SetPathValue("id", c.ID)
+		req = withOperatorGrant(t, h2, req, c.ServiceID)
 		rr := httptest.NewRecorder()
 		h2.AIUpdate(rr, req)
 		if rr.Code != http.StatusConflict {
@@ -121,6 +132,7 @@ func TestGetSuccess(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/changes/"+c.ID, nil)
 	req.SetPathValue("id", c.ID)
+	req = withOperatorGrant(t, h, req, c.ServiceID)
 	rr := httptest.NewRecorder()
 	h.Get(rr, req)
 	if rr.Code != http.StatusOK {
@@ -152,6 +164,7 @@ func TestAcknowledgeSuccess(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/ack", nil)
 	req.SetPathValue("id", c.ID)
+	req = withOperatorGrant(t, h, req, c.ServiceID)
 	rr := httptest.NewRecorder()
 	h.Acknowledge(rr, req)
 	if rr.Code != http.StatusOK {
@@ -183,6 +196,7 @@ func TestDismissSuccess(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/dismiss", nil)
 	req.SetPathValue("id", c.ID)
+	req = withOperatorGrant(t, h, req, c.ServiceID)
 	rr := httptest.NewRecorder()
 	h.Dismiss(rr, req)
 	if rr.Code != http.StatusOK {
@@ -299,6 +313,7 @@ func TestExplain(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
 		req.SetPathValue("id", c.ID)
+		req = withOperatorGrant(t, h, req, c.ServiceID)
 		rr := httptest.NewRecorder()
 		h.Explain(rr, req)
 		if rr.Code != http.StatusConflict {
@@ -327,6 +342,7 @@ func TestExplain(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
 		req.SetPathValue("id", c.ID)
+		req = withOperatorGrant(t, h, req, c.ServiceID)
 		rr := httptest.NewRecorder()
 		h.Explain(rr, req)
 		if rr.Code != http.StatusOK {
@@ -345,6 +361,7 @@ func TestExplain(t *testing.T) {
 
 		req2 := httptest.NewRequest(http.MethodPost, "/api/changes/"+c.ID+"/explain", nil)
 		req2.SetPathValue("id", c.ID)
+		req2 = withOperatorGrant(t, h, req2, c.ServiceID)
 		rr2 := httptest.NewRecorder()
 		h.Explain(rr2, req2)
 		if rr2.Code != http.StatusOK {

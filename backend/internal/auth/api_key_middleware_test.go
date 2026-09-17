@@ -24,7 +24,7 @@ func (c *testAPIKeyChecker) TouchAPIKeyLastUsed(context.Context, string) error {
 
 func TestAuthMiddlewareAPIKeyLifecycle(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	checker := &testAPIKeyChecker{claims: &APIKeyClaims{KeyID: "key-1", UserID: "user-1", Role: "operator"}}
+	checker := &testAPIKeyChecker{claims: &APIKeyClaims{KeyID: "key-1", UserID: "user-1", InstanceAdmin: true}}
 	handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -38,15 +38,32 @@ func TestAuthMiddlewareAPIKeyLifecycle(t *testing.T) {
 	}
 }
 
+// TestAuthMiddlewareAcceptsNonAdminAPIKey guards against a regression to the
+// old string-role check: InstanceAdmin's zero value (false) is a valid,
+// ordinary non-admin key, not an invalid/rejected state.
+func TestAuthMiddlewareAcceptsNonAdminAPIKey(t *testing.T) {
+	svc := NewService("test-secret", time.Minute, time.Hour)
+	checker := &testAPIKeyChecker{claims: &APIKeyClaims{KeyID: "key", UserID: "user", InstanceAdmin: false}}
+	handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer wlz_secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
 func TestAuthMiddlewareRejectsExpiredAndRevokedAPIKeys(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
 	for _, tc := range []struct {
 		name   string
 		claims *APIKeyClaims
 	}{
-		{name: "expired", claims: &APIKeyClaims{KeyID: "key", UserID: "user", Role: "viewer", ExpiresAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)}},
-		{name: "revoked", claims: &APIKeyClaims{KeyID: "key", UserID: "user", Role: "viewer", RevokedAt: time.Now().UTC().Format(time.RFC3339)}},
-		{name: "zero role", claims: &APIKeyClaims{KeyID: "key", UserID: "user"}},
+		{name: "expired", claims: &APIKeyClaims{KeyID: "key", UserID: "user", InstanceAdmin: false, ExpiresAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)}},
+		{name: "revoked", claims: &APIKeyClaims{KeyID: "key", UserID: "user", InstanceAdmin: false, RevokedAt: time.Now().UTC().Format(time.RFC3339)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			checker := &testAPIKeyChecker{claims: tc.claims}

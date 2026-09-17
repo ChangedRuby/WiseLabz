@@ -167,7 +167,7 @@ func (s *Store) Init(ctx context.Context, adminPassword string) error {
 		admin := &User{
 			Username:                   "admin",
 			DisplayName:                "Administrator",
-			Role:                       "operator",
+			InstanceAdminRole:          "admin",
 			AuthSource:                 "local",
 			PasswordHash:               hash,
 			CanManageDashboardDefaults: true,

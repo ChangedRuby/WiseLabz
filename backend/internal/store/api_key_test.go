@@ -59,7 +59,7 @@ func TestLookupAPIKeyRejectsDisabledUser(t *testing.T) {
 	s := newDocTestStore(t)
 	ctx := context.Background()
 
-	user := &User{Username: "disabled-key-owner", Role: "operator"}
+	user := &User{Username: "disabled-key-owner", InstanceAdminRole: "admin"}
 	if err := s.CreateUser(ctx, user); err != nil {
 		t.Fatalf("CreateUser() error: %v", err)
 	}
@@ -70,8 +70,8 @@ func TestLookupAPIKeyRejectsDisabledUser(t *testing.T) {
 
 	// Key is valid and unrevoked before the user is disabled.
 	claims, err := s.LookupAPIKey(ctx, key.TokenHash)
-	if err != nil || claims.Role != "operator" {
-		t.Fatalf("LookupAPIKey() before disable = %#v, %v; want role operator, no error", claims, err)
+	if err != nil || !claims.InstanceAdmin {
+		t.Fatalf("LookupAPIKey() before disable = %#v, %v; want InstanceAdmin true, no error", claims, err)
 	}
 
 	if err := s.UpdateUser(ctx, user.ID, map[string]any{"disabled": true}); err != nil {
@@ -92,7 +92,7 @@ func TestLookupAPIKeyReflectsLiveRole(t *testing.T) {
 	s := newDocTestStore(t)
 	ctx := context.Background()
 
-	user := &User{Username: "demoted-key-owner", Role: "operator"}
+	user := &User{Username: "demoted-key-owner", InstanceAdminRole: "admin"}
 	if err := s.CreateUser(ctx, user); err != nil {
 		t.Fatalf("CreateUser() error: %v", err)
 	}
@@ -101,13 +101,13 @@ func TestLookupAPIKeyReflectsLiveRole(t *testing.T) {
 		t.Fatalf("CreateAPIKey() error: %v", err)
 	}
 
-	if err := s.UpdateUser(ctx, user.ID, map[string]any{"role": "viewer"}); err != nil {
+	if err := s.UpdateUser(ctx, user.ID, map[string]any{"instance_admin_role": "user"}); err != nil {
 		t.Fatalf("UpdateUser(role) error: %v", err)
 	}
 
 	claims, err := s.LookupAPIKey(ctx, key.TokenHash)
-	if err != nil || claims.Role != "viewer" {
-		t.Fatalf("LookupAPIKey() after demotion = %#v, %v; want role viewer, no error", claims, err)
+	if err != nil || claims.InstanceAdmin {
+		t.Fatalf("LookupAPIKey() after demotion = %#v, %v; want InstanceAdmin false, no error", claims, err)
 	}
 }
 

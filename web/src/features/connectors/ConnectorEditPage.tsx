@@ -17,11 +17,13 @@ import {
   getGetConnectorsQueryKey,
 } from '../../api/generated/connectors/connectors';
 import { Field } from './ConnectorForm';
+import { ConnectorPermissionsTab } from './ConnectorPermissionsTab';
 import { Button } from '../../components/ui/Button';
 import { Panel } from '../../components/ui/Panel';
 import { SkeletonRows, ErrorState } from '../../components/ui/states';
 import { toast } from '../../lib/toast';
 import { ArrowRightIcon, CheckIcon } from '../../components/icons';
+import { useConnectorRole } from '../../hooks/useRole';
 
 type FormValues = Record<string, string | boolean>;
 
@@ -33,6 +35,7 @@ export function ConnectorEditPage() {
 
   const connector = useGetConnectorsConnectorId(id);
   const { data: schemas } = useGetConnectorsSchema();
+  const canEdit = useConnectorRole(id) === 'operator';
 
   const schema = useMemo(
     () => schemas?.find((s) => s.type === connector.data?.type) ?? null,
@@ -96,6 +99,19 @@ export function ConnectorEditPage() {
   }
 
   const c = connector.data;
+
+  if (!canEdit) {
+    return (
+      <div className="mx-auto max-w-170 px-6 py-6">
+        <Panel className="min-h-[30vh]">
+          <ErrorState
+            title={t('connectors.edit.noAccessTitle')}
+            description={t('connectors.edit.noAccessDesc')}
+          />
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-170 px-6 py-6">
@@ -164,6 +180,8 @@ export function ConnectorEditPage() {
           </div>
         </div>
       </Panel>
+
+      <ConnectorPermissionsTab connectorId={id} />
     </div>
   );
 }

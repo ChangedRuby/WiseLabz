@@ -48,7 +48,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Issue new pair (rotate refresh token)
-	pair, err := h.JWT.IssuePair(user.ID, user.Role)
+	pair, err := h.JWT.IssuePair(user.ID, user.InstanceAdminRole == "admin")
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

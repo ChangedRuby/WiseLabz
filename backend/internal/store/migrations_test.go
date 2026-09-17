@@ -128,16 +128,31 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (maintenance_windows) should
-	// drop that table without touching earlier migrations' tables/columns.
+	// Rolling back only the latest migration (connector_permissions) should
+	// drop user_connector_roles and restore users.role, without touching
+	// earlier migrations' tables/columns.
 	var name string
-	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_windows'").Scan(&name)
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_connector_roles'").Scan(&name)
 	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("maintenance_windows should not exist after rolling back its migration (err=%v)", err)
+		t.Errorf("user_connector_roles should not exist after rolling back its migration (err=%v)", err)
+	}
+	var usersSchema string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").Scan(&usersSchema); err != nil {
+		t.Fatalf("query sqlite_master for users: %v", err)
+	}
+	if !strings.Contains(usersSchema, "role") || strings.Contains(usersSchema, "instance_admin_role") {
+		t.Errorf("users.role should be restored after rolling back the latest migration, got schema: %s", usersSchema)
 	}
 
-	// dns connector category is from the migration before the latest one, so
+	// maintenance_windows is from the migration before the latest one, so
 	// rolling back only the latest migration must leave it in place.
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_windows'").Scan(&name)
+	if err != nil {
+		t.Errorf("maintenance_windows should still exist after rolling back only the latest migration (err=%v)", err)
+	}
+
+	// dns connector category is from an earlier migration, so rolling back
+	// only the latest migration must leave it in place.
 	var connectorsSchema string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchema); err != nil {
 		t.Fatalf("query sqlite_master for connectors: %v", err)

@@ -139,7 +139,7 @@ func TestLogout(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	r.AddCookie(refreshCookie(t, loginRR))
-	rr := th.authedRequest(t, r, user.ID, user.Role, th.H.Logout)
+	rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.Logout)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
 	}
@@ -169,7 +169,7 @@ func TestElevate(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		r := doJSON(t, http.MethodPost, "/api/auth/elevate", map[string]string{"password": password, "action": "connector.delete"})
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.Elevate)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.Elevate)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
 		}
@@ -177,7 +177,7 @@ func TestElevate(t *testing.T) {
 
 	t.Run("wrong password", func(t *testing.T) {
 		r := doJSON(t, http.MethodPost, "/api/auth/elevate", map[string]string{"password": "wrong", "action": "connector.delete"})
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.Elevate)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.Elevate)
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
 		}
@@ -185,7 +185,7 @@ func TestElevate(t *testing.T) {
 
 	t.Run("missing fields", func(t *testing.T) {
 		r := doJSON(t, http.MethodPost, "/api/auth/elevate", map[string]string{"password": password})
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.Elevate)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.Elevate)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -205,7 +205,7 @@ func TestDeleteSession(t *testing.T) {
 	t.Run("cannot delete another user's session", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodDelete, "/api/me/sessions/"+session.ID, nil)
 		r.SetPathValue("id", session.ID)
-		rr := th.authedRequest(t, r, other.ID, other.Role, th.H.DeleteSession)
+		rr := th.authedRequest(t, r, other.ID, other.InstanceAdminRole, th.H.DeleteSession)
 		if rr.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
 		}
@@ -213,7 +213,7 @@ func TestDeleteSession(t *testing.T) {
 
 	t.Run("missing id", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodDelete, "/api/me/sessions/", nil)
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.DeleteSession)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.DeleteSession)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -222,7 +222,7 @@ func TestDeleteSession(t *testing.T) {
 	t.Run("unknown session", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodDelete, "/api/me/sessions/does-not-exist", nil)
 		r.SetPathValue("id", "does-not-exist")
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.DeleteSession)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.DeleteSession)
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 		}
@@ -231,7 +231,7 @@ func TestDeleteSession(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		r := httptest.NewRequest(http.MethodDelete, "/api/me/sessions/"+session.ID, nil)
 		r.SetPathValue("id", session.ID)
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.DeleteSession)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.DeleteSession)
 		if rr.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
 		}

@@ -65,8 +65,8 @@ func TestConnectorCreateProducesAuditRecord(t *testing.T) {
 	if found.ActorUserID != opUserID {
 		t.Errorf("ActorUserID = %q, want %q", found.ActorUserID, opUserID)
 	}
-	if found.ActorRole != "operator" {
-		t.Errorf("ActorRole = %q, want operator", found.ActorRole)
+	if found.ActorRole != "admin" {
+		t.Errorf("ActorRole = %q, want admin", found.ActorRole)
 	}
 	if found.TargetType != "connector" {
 		t.Errorf("TargetType = %q, want connector", found.TargetType)
@@ -109,12 +109,13 @@ func TestAuditListFiltersByAction(t *testing.T) {
 
 func TestElevationAttemptAuditThroughHTTPRoutes(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("CreateConnector() error: %v", err)
 	}
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	missing := app.req(t, http.MethodDelete, "/api/connectors/"+conn.ID, nil, opToken)
 	if missing.Code != http.StatusBadRequest {
@@ -170,6 +171,7 @@ func TestAlertResolveProducesAuditRecord(t *testing.T) {
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/"+a.ID+"/resolve", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -205,8 +207,8 @@ func TestAlertResolveProducesAuditRecord(t *testing.T) {
 	if found.ActorUserID != opUserID {
 		t.Errorf("ActorUserID = %q, want %q", found.ActorUserID, opUserID)
 	}
-	if found.ActorRole != "operator" {
-		t.Errorf("ActorRole = %q, want operator", found.ActorRole)
+	if found.ActorRole != "admin" {
+		t.Errorf("ActorRole = %q, want admin", found.ActorRole)
 	}
 }
 
@@ -214,6 +216,7 @@ func TestAlertDismissProducesAuditRecord(t *testing.T) {
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/"+a.ID+"/dismiss", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -249,8 +252,8 @@ func TestAlertDismissProducesAuditRecord(t *testing.T) {
 	if found.ActorUserID != opUserID {
 		t.Errorf("ActorUserID = %q, want %q", found.ActorUserID, opUserID)
 	}
-	if found.ActorRole != "operator" {
-		t.Errorf("ActorRole = %q, want operator", found.ActorRole)
+	if found.ActorRole != "admin" {
+		t.Errorf("ActorRole = %q, want admin", found.ActorRole)
 	}
 }
 
@@ -258,6 +261,7 @@ func TestAlertSnoozeProducesAuditRecord(t *testing.T) {
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/"+a.ID+"/snooze", map[string]any{"until": "2099-01-01T00:00:00Z"}, opToken)
 	if rec.Code != http.StatusOK {
@@ -293,8 +297,8 @@ func TestAlertSnoozeProducesAuditRecord(t *testing.T) {
 	if found.ActorUserID != opUserID {
 		t.Errorf("ActorUserID = %q, want %q", found.ActorUserID, opUserID)
 	}
-	if found.ActorRole != "operator" {
-		t.Errorf("ActorRole = %q, want operator", found.ActorRole)
+	if found.ActorRole != "admin" {
+		t.Errorf("ActorRole = %q, want admin", found.ActorRole)
 	}
 }
 
@@ -302,6 +306,7 @@ func TestFindingResolveProducesAuditRecord(t *testing.T) {
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, opUserID, finding.ConnectorID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/findings/"+finding.ID+"/resolve", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -337,8 +342,8 @@ func TestFindingResolveProducesAuditRecord(t *testing.T) {
 	if found.ActorUserID != opUserID {
 		t.Errorf("ActorUserID = %q, want %q", found.ActorUserID, opUserID)
 	}
-	if found.ActorRole != "operator" {
-		t.Errorf("ActorRole = %q, want operator", found.ActorRole)
+	if found.ActorRole != "admin" {
+		t.Errorf("ActorRole = %q, want admin", found.ActorRole)
 	}
 }
 

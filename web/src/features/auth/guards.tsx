@@ -1,16 +1,20 @@
 /**
  * Route guards + the auth splash. RequireAuth gates the protected tree on an
- * authenticated session; RequireRole gates operator-only surfaces; RequireOnboarded
- * routes a fresh install (zero connectors) into onboarding. The server enforces the
- * real boundary — these guards are navigation, not security.
+ * authenticated session; RequireInstanceAdmin gates instance-wide surfaces
+ * (user management, API keys, system settings — #240 PR1); RequireOnboarded
+ * routes a fresh install (zero connectors) into onboarding. Connector-scoped
+ * pages (a single connector or doc) don't get a route guard at all — the
+ * server's default-deny list/get filtering already keeps unauthorized data
+ * out, so the page handles "no access" as a normal empty state instead. The
+ * server enforces the real boundary — these guards are navigation, not
+ * security.
  */
 import type { ReactNode } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../store/auth';
-import { useRole } from '../../hooks/useRole';
+import { useIsInstanceAdmin } from '../../hooks/useRole';
 import { useGetConnectors } from '../../api/generated/connectors/connectors';
-import type { Role } from '../../api/model';
 import { EmptyState, SkeletonRows } from '../../components/ui/states';
 
 /** Centered brand splash shown while the session resolves. */
@@ -34,10 +38,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
-  const current = useRole();
-  // viewer < operator. Only operator clears an operator gate.
-  if (role === 'operator' && current !== 'operator') {
+export function RequireInstanceAdmin({ children }: { children: ReactNode }) {
+  const isInstanceAdmin = useIsInstanceAdmin();
+  if (!isInstanceAdmin) {
     return <Navigate to="/forbidden" replace />;
   }
   return <>{children}</>;

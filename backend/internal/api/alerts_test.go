@@ -45,8 +45,9 @@ func TestAlertsResolveRoleBoundary(t *testing.T) {
 
 func TestAlertsResolveSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/"+a.ID+"/resolve", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -64,8 +65,9 @@ func TestAlertsResolveSuccess(t *testing.T) {
 
 func TestAlertsSnoozeValidation(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	tests := []struct {
 		name string
@@ -87,8 +89,9 @@ func TestAlertsSnoozeValidation(t *testing.T) {
 
 func TestAlertsSnoozeSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/"+a.ID+"/snooze", map[string]any{"until": "2099-01-01T00:00:00Z"}, opToken)
 	if rec.Code != http.StatusOK {
@@ -96,6 +99,10 @@ func TestAlertsSnoozeSuccess(t *testing.T) {
 	}
 }
 
+// TestAlertsBulkSnoozeRoleBoundary verifies a caller without an operator
+// grant on the alert's connector gets a per-item "forbidden" outcome, not a
+// blanket 403 — bulk endpoints report per-ID authorization since a batch can
+// span connectors the caller has different access to on each.
 func TestAlertsBulkSnoozeRoleBoundary(t *testing.T) {
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
@@ -103,15 +110,29 @@ func TestAlertsBulkSnoozeRoleBoundary(t *testing.T) {
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/bulk-snooze",
 		map[string]any{"ids": []string{a.ID}, "until": "2099-01-01T00:00:00Z"}, viewerToken)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Results []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Results) != 1 || body.Results[0].Status != "error" || body.Results[0].Reason != "forbidden" {
+		t.Fatalf("results = %+v, want one error/forbidden", body.Results)
 	}
 }
 
 func TestAlertsBulkSnoozeValidation(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 
 	tests := []struct {
 		name string
@@ -135,7 +156,7 @@ func TestAlertsBulkSnoozeValidation(t *testing.T) {
 func TestAlertsBulkSnoozeRejectsTooManyIDs(t *testing.T) {
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
-	ids := make([]string, 501)
+	ids := make([]string, 501) // no connector grant needed: rejected before authorization
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/bulk-snooze", map[string]any{
 		"ids": ids, "until": "2099-01-01T00:00:00Z",
@@ -154,6 +175,7 @@ func TestAlertsBulkSnoozePartialFailure(t *testing.T) {
 	opUserID, opToken := app.user(t, "operator")
 
 	a := seedAlert(t, app)
+	app.connectorGrant(t, opUserID, a.ServiceID, "operator")
 	const missingID = "does-not-exist"
 
 	rec := app.req(t, http.MethodPost, "/api/alerts/bulk-snooze", map[string]any{
@@ -226,7 +248,8 @@ func TestAlertsBulkSnoozePartialFailure(t *testing.T) {
 // "everything" for back-compat with the full Alerts page.
 func TestAlertsListDaysWindow(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerUserID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerUserID, "svc-1", "viewer")
 	ctx := context.Background()
 	now := time.Now().UTC()
 

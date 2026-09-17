@@ -102,11 +102,11 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		identityHash := sha256.Sum256([]byte(claims.Issuer + "\x00" + claims.Subject))
 		username := fmt.Sprintf("oidc_%x", identityHash[:])
 		user = &store.User{
-			Username:    username,
-			DisplayName: displayName,
-			Email:       claims.Email,
-			Role:        role,
-			AuthSource:  "oidc",
+			Username:          username,
+			DisplayName:       displayName,
+			Email:             claims.Email,
+			InstanceAdminRole: role,
+			AuthSource:        "oidc",
 		}
 		created, err := h.Store.CreateOIDCUser(r.Context(), user, claims.Issuer, claims.Subject)
 		if errors.Is(err, store.ErrConflict) {
@@ -126,16 +126,16 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusForbidden, "forbidden", "Account is disabled")
 		return
 	}
-	if !isNewUser && user.AuthSource == "oidc" && user.Role != role {
-		if err := h.Store.UpdateUser(r.Context(), user.ID, map[string]any{"role": role}); err != nil {
+	if !isNewUser && user.AuthSource == "oidc" && user.InstanceAdminRole != role {
+		if err := h.Store.UpdateUser(r.Context(), user.ID, map[string]any{"instance_admin_role": role}); err != nil {
 			httputil.Errorf(w, err)
 			return
 		}
-		user.Role = role
+		user.InstanceAdminRole = role
 	}
 
 	// Issue token pair
-	pair, err := h.JWT.IssuePair(user.ID, user.Role)
+	pair, err := h.JWT.IssuePair(user.ID, user.InstanceAdminRole == "admin")
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
@@ -280,14 +280,19 @@ func emailDomainAllowed(email string, allowlist []string) bool {
 	return false
 }
 
+// oidcRoleForGroups maps OIDC groups to the flat instance-admin role
+// ("admin"/"user") via the admin-configured GroupRoleMapping. Accepts the
+// mapping's legacy "operator"/"viewer" values too, so existing provider
+// configs don't need updating alongside this migration.
 func oidcRoleForGroups(groups []string, mapping map[string]string) string {
-	role := "viewer"
+	role := "user"
 	for _, group := range groups {
-		if strings.EqualFold(mapping[group], "operator") {
-			return "operator"
+		mapped := mapping[group]
+		if strings.EqualFold(mapped, "operator") || strings.EqualFold(mapped, "admin") {
+			return "admin"
 		}
-		if strings.EqualFold(mapping[group], "viewer") {
-			role = "viewer"
+		if strings.EqualFold(mapped, "viewer") || strings.EqualFold(mapped, "user") {
+			role = "user"
 		}
 	}
 	return role

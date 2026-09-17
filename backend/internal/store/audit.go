@@ -86,7 +86,7 @@ func (s *Store) insertAuditRecords(ctx context.Context, records []AuditRecord) e
 func (s *Store) RecordAuditBatchFromContext(ctx context.Context, action, targetType string, records []AuditRecord) error {
 	for i := range records {
 		records[i].ActorUserID = auth.UserIDFromContext(ctx)
-		records[i].ActorRole = auth.RoleFromContext(ctx)
+		records[i].ActorRole = actorRoleLabel(ctx)
 		records[i].Action = action
 		records[i].TargetType = targetType
 	}
@@ -113,12 +113,27 @@ func (s *Store) RecordAuditFromContext(ctx context.Context, action, targetType, 
 
 	return s.CreateAuditRecord(ctx, &AuditRecord{
 		ActorUserID: auth.UserIDFromContext(ctx),
-		ActorRole:   auth.RoleFromContext(ctx),
+		ActorRole:   actorRoleLabel(ctx),
 		Action:      action,
 		TargetType:  targetType,
 		TargetID:    targetID,
 		Detail:      detailJSON,
 	})
+}
+
+// actorRoleLabel records the actor's flat instance-admin role for the audit
+// trail ("admin"/"user"). Per-connector grant changes are self-describing
+// via the audit action/target/detail, so this stays the coarse instance-wide
+// label rather than trying to cram a connector-scoped role into one column.
+// Empty when there's no authenticated actor in ctx (mirrors ActorUserID).
+func actorRoleLabel(ctx context.Context) string {
+	if auth.UserIDFromContext(ctx) == "" {
+		return ""
+	}
+	if auth.InstanceAdminFromContext(ctx) {
+		return "admin"
+	}
+	return "user"
 }
 
 // ListAuditRecords returns a paginated list of audit records, newest first,

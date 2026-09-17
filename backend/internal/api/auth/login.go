@@ -87,7 +87,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Issue token pair
-	pair, err := h.JWT.IssuePair(user.ID, user.Role)
+	pair, err := h.JWT.IssuePair(user.ID, user.InstanceAdminRole == "admin")
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
@@ -208,7 +208,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := h.JWT.IssuePair(userID, auth.RoleFromContext(r.Context()))
+	pair, err := h.JWT.IssuePair(userID, auth.InstanceAdminFromContext(r.Context()))
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

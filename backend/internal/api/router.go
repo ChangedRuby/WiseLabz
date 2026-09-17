@@ -95,8 +95,8 @@ func NewRouter(cfg Config) chi.Router {
 
 	// Shared across the top-level /api/auth route below and the protected
 	// group further down.
-	operatorOnly := auth.RequireRole("operator")
 	dashboardDefaultOnly := auth.RequirePermission(cfg.Store, "can_manage_dashboard_defaults")
+	connOperator := auth.RequireConnectorRole(cfg.Store, "operator", "id")
 
 	// --- Auth routes (mixed public/protected, single mount point) ---
 	// chi only allows one Mount per exact pattern, so the protected /api/auth
@@ -126,7 +126,7 @@ func NewRouter(cfg Config) chi.Router {
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
+				r.Use(auth.RequireInstanceAdmin)
 				r.Get("/config", settingH.GetAuthConfig)
 				r.Put("/config", settingH.UpdateAuthConfig)
 				r.Put("/providers/{providerId}/enabled", settingH.UpdateProviderEnabled)
@@ -151,20 +151,47 @@ func NewRouter(cfg Config) chi.Router {
 		// operator-only group. chi panics if the same pattern is r.Route()'d
 		// twice on one mux, so read/write must share one Route block.
 
+		connViewer := auth.RequireConnectorRole(cfg.Store, "viewer", "id")
+
 		r.Route("/api/connectors", func(r chi.Router) {
+			// List/maintenance-windows are cross-connector and filter inside
+			// the handler; Get 404s inside the handler on a missing grant
+			// (not 403, to avoid confirming existence) rather than gated
+			// here. Every other GET takes a connector {id} and can use the
+			// viewer-role middleware directly.
 			r.Get("/", connH.List)
 			r.Get("/schema", connH.Schema)
 			r.Get("/{id}", connH.Get)
-			r.Get("/{id}/data", connH.Data)
-			r.Get("/{id}/syncs", connH.Syncs)
-			r.Get("/{id}/removal-impact", connH.RemovalImpact)
-			r.Get("/{id}/config-fields", connH.ConfigFields)
-			r.Get("/{id}/maintenance-window", connH.GetMaintenanceWindow)
 			r.Get("/maintenance-windows", connH.ListActiveMaintenance)
 
 			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
-				r.Post("/", connH.Create)
+				r.Use(connViewer)
+				r.Get("/{id}/data", connH.Data)
+				r.Get("/{id}/syncs", connH.Syncs)
+				r.Get("/{id}/removal-impact", connH.RemovalImpact)
+				r.Get("/{id}/config-fields", connH.ConfigFields)
+				r.Get("/{id}/maintenance-window", connH.GetMaintenanceWindow)
+			})
+
+			// Creating a connector has no existing grant to check against, so
+			// it's instance-admin only; the creator is auto-granted operator
+			// on the new connector (see connH.Create).
+			r.With(auth.RequireInstanceAdmin).Post("/", connH.Create)
+
+			// Instance-admin-only grant management for this connector — a
+			// deliberate exception to the per-connector-role pattern below,
+			// same reasoning as saved-views/dashboard-layout above: granting
+			// access is an instance-wide action, not something a connector's
+			// own operators can do to each other.
+			r.Route("/{id}/permissions", func(r chi.Router) {
+				r.Use(auth.RequireInstanceAdmin)
+				r.Get("/", connH.ListPermissions)
+				r.Put("/{userId}", connH.PutPermission)
+				r.Delete("/{userId}", connH.DeletePermission)
+			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(connOperator)
 				r.Post("/{id}/test", connH.Test)
 				r.Post("/{id}/health", connH.Health)
 				r.Post("/{id}/restart", connH.RestartPreview)
@@ -177,13 +204,19 @@ func NewRouter(cfg Config) chi.Router {
 				r.Post("/{id}/sync", connH.Sync)
 				r.Post("/{id}/maintenance-window", connH.OpenMaintenanceWindow) // no elevation: reversible and time-boxed
 				r.Delete("/{id}/maintenance-window", connH.CloseMaintenanceWindow)
-				r.Post("/bulk-sync", connH.BulkSync)
-				r.Post("/bulk-reauth", connH.BulkReauth)
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireElevation(cfg.JWT, cfg.Store, "connector.delete"))
 					r.Delete("/{id}", connH.Delete)
 				})
+			})
+
+			// Bulk routes take a body-supplied ID list, not a path {id}, so
+			// they can't use connOperator middleware — each handler checks
+			// per-ID via store.UserHasConnectorRole itself.
+			r.Group(func(r chi.Router) {
+				r.Post("/bulk-sync", connH.BulkSync)
+				r.Post("/bulk-reauth", connH.BulkReauth)
 
 				r.Group(func(r chi.Router) {
 					// One elevation token covers the whole bulk-restart batch,
@@ -195,6 +228,9 @@ func NewRouter(cfg Config) chi.Router {
 		})
 
 		r.Route("/api/docs", func(r chi.Router) {
+			// GET routes are default-deny inside the handlers (List/Tree
+			// filter, Get/ByService 404 on a missing grant); lab-wide docs
+			// (no connector) stay visible to any authenticated user.
 			r.Get("/", docH.List)
 			r.Get("/tree", docH.Tree)
 			r.Get("/template-schema", docH.TemplateSchema)
@@ -204,16 +240,21 @@ func NewRouter(cfg Config) chi.Router {
 			r.Get("/{id}/versions/{rev}", docH.Version)
 			r.Get("/{id}/lock", docH.GetLock)
 
-			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
-				r.Post("/generate", docH.Generate)
-				r.Post("/topology", docH.GenerateTopology)
-				r.Put("/{id}", docH.Save)
-				r.Post("/{id}/versions/{rev}/restore", docH.Restore)
-				r.Post("/{id}/ai-suggest", docH.AISuggest)
-				r.Post("/{id}/lock", docH.AcquireLock)
-				r.Post("/{id}/lock/release", docH.ReleaseLock)
-			})
+			// Mutations resolve their doc/connector ID in-handler (a doc ID in
+			// the path, or a connectorId in the body for Generate) and check
+			// store.UserHasConnectorRole themselves (docH.requireDocOperator) —
+			// they can't use connOperator middleware, which only reads a
+			// connector ID directly from the path.
+			r.Post("/generate", docH.Generate)
+			r.Put("/{id}", docH.Save)
+			r.Post("/{id}/versions/{rev}/restore", docH.Restore)
+			r.Post("/{id}/ai-suggest", docH.AISuggest)
+			r.Post("/{id}/lock", docH.AcquireLock)
+			r.Post("/{id}/lock/release", docH.ReleaseLock)
+
+			// Regenerates the single lab-wide Lab Topology doc — instance-admin,
+			// same as any other lab-wide (no connector) doc mutation.
+			r.With(auth.RequireInstanceAdmin).Post("/topology", docH.GenerateTopology)
 		})
 
 		r.Route("/api/chat/conversations", func(r chi.Router) {
@@ -231,7 +272,7 @@ func NewRouter(cfg Config) chi.Router {
 			r.Post("/{id}/preview", tmplH.Preview)
 
 			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
+				r.Use(auth.RequireInstanceAdmin)
 				r.Post("/", tmplH.Create)
 				r.Put("/{id}", tmplH.Update)
 				r.Post("/{id}/versions/{rev}/restore", tmplH.Restore)
@@ -243,31 +284,27 @@ func NewRouter(cfg Config) chi.Router {
 			})
 		})
 
+		// changes/alerts/findings ARE connector-scoped (each row carries a
+		// NOT NULL connector FK), unlike templates/runbooks above/below. Their
+		// mutations resolve the record's connector in-handler and check
+		// store.UserHasConnectorRole themselves, same reasoning as docs.
 		r.Route("/api/changes", func(r chi.Router) {
 			r.Get("/", changeH.List)
 			r.Get("/{id}", changeH.Get)
-
-			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
-				r.Post("/{id}/ack", changeH.Acknowledge)
-				r.Post("/{id}/dismiss", changeH.Dismiss)
-				r.Post("/{id}/ai-update", changeH.AIUpdate)
-				r.Post("/{id}/explain", changeH.Explain)
-				r.Post("/bulk-resolve", changeH.BulkResolve)
-			})
+			r.Post("/{id}/ack", changeH.Acknowledge)
+			r.Post("/{id}/dismiss", changeH.Dismiss)
+			r.Post("/{id}/ai-update", changeH.AIUpdate)
+			r.Post("/{id}/explain", changeH.Explain)
+			r.Post("/bulk-resolve", changeH.BulkResolve)
 		})
 
 		r.Route("/api/alerts", func(r chi.Router) {
 			r.Get("/", alertH.List)
 			r.Get("/{id}", alertH.Get)
-
-			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
-				r.Post("/{id}/resolve", alertH.Resolve)
-				r.Post("/{id}/dismiss", alertH.Dismiss)
-				r.Post("/{id}/snooze", alertH.Snooze)
-				r.Post("/bulk-snooze", alertH.BulkSnooze)
-			})
+			r.Post("/{id}/resolve", alertH.Resolve)
+			r.Post("/{id}/dismiss", alertH.Dismiss)
+			r.Post("/{id}/snooze", alertH.Snooze)
+			r.Post("/bulk-snooze", alertH.BulkSnooze)
 		})
 
 		r.Route("/api/attention", func(r chi.Router) {
@@ -279,7 +316,7 @@ func NewRouter(cfg Config) chi.Router {
 			r.Get("/{id}", runbookH.Get)
 
 			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
+				r.Use(auth.RequireInstanceAdmin)
 				r.Post("/", runbookH.Create)
 				r.Put("/{id}", runbookH.Update)
 				r.Delete("/{id}", runbookH.Delete)
@@ -289,11 +326,7 @@ func NewRouter(cfg Config) chi.Router {
 		r.Route("/api/findings", func(r chi.Router) {
 			r.Get("/", findingH.List)
 			r.Get("/{id}", findingH.Get)
-
-			r.Group(func(r chi.Router) {
-				r.Use(operatorOnly)
-				r.Post("/{id}/resolve", findingH.Resolve)
-			})
+			r.Post("/{id}/resolve", findingH.Resolve)
 		})
 
 		r.Route("/api/notifications", func(r chi.Router) {
@@ -327,9 +360,9 @@ func NewRouter(cfg Config) chi.Router {
 			})
 		})
 
-		// --- Operator-only routes ---
+		// --- Instance-admin-only routes ---
 		r.Group(func(r chi.Router) {
-			r.Use(operatorOnly)
+			r.Use(auth.RequireInstanceAdmin)
 
 			r.Route("/api/ai/config", func(r chi.Router) {
 				r.Get("/", settingH.GetAIConfig)
@@ -408,7 +441,7 @@ func NewRouter(cfg Config) chi.Router {
 			return
 		}
 		if cfg.WSHub != nil {
-			if err := cfg.WSHub.UpgradeHandler(w, r, claims.UserID, claims.Role); err != nil {
+			if err := cfg.WSHub.UpgradeHandler(w, r, claims.UserID, wsRoleLabel(claims.InstanceAdmin)); err != nil {
 				slog.Error("WebSocket upgrade failed", "error", err)
 			}
 		}
@@ -419,6 +452,15 @@ func NewRouter(cfg Config) chi.Router {
 	}
 
 	return r
+}
+
+// wsRoleLabel is a cosmetic presence/broadcast tag, not a security boundary
+// (per-connector access is never carried over the WS connection).
+func wsRoleLabel(instanceAdmin bool) string {
+	if instanceAdmin {
+		return "admin"
+	}
+	return "user"
 }
 
 // spaHandler serves the embedded SPA build, falling back to index.html for

@@ -30,7 +30,7 @@ func (a *testApp) operatorWithPermission(t *testing.T, canManage bool) (userID, 
 	u := &store.User{
 		Username:                   "operator-" + uuid.New().String(),
 		DisplayName:                "Test Operator",
-		Role:                       "operator",
+		InstanceAdminRole:          "admin",
 		AuthSource:                 "local",
 		PasswordHash:               hash,
 		CanManageDashboardDefaults: canManage,
@@ -39,7 +39,7 @@ func (a *testApp) operatorWithPermission(t *testing.T, canManage bool) (userID, 
 		t.Fatalf("create user: %v", err)
 	}
 
-	pair, err := a.JWT.IssuePair(u.ID, u.Role)
+	pair, err := a.JWT.IssuePair(u.ID, u.InstanceAdminRole == "admin")
 	if err != nil {
 		t.Fatalf("issue pair: %v", err)
 	}

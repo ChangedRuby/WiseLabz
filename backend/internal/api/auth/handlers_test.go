@@ -20,10 +20,10 @@ func TestOIDCRoleForGroups(t *testing.T) {
 		groups []string
 		want   string
 	}{
-		{name: "default", want: "viewer"},
-		{name: "viewer", groups: []string{"readers"}, want: "viewer"},
-		{name: "operator takes precedence", groups: []string{"readers", "admins"}, want: "operator"},
-		{name: "unknown ignored", groups: []string{"invalid"}, want: "viewer"},
+		{name: "default", want: "user"},
+		{name: "viewer", groups: []string{"readers"}, want: "user"},
+		{name: "operator takes precedence", groups: []string{"readers", "admins"}, want: "admin"},
+		{name: "unknown ignored", groups: []string{"invalid"}, want: "user"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := oidcRoleForGroups(tc.groups, mapping); got != tc.want {

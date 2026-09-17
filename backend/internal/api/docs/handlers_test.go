@@ -12,6 +12,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/api/settings"
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/doc"
@@ -23,6 +24,15 @@ func newTestHandler(t *testing.T) *Handler {
 	s := apitest.NewStore(t)
 	settingsH := settings.NewHandler(s, &config.Config{}, ai.NewRegistry())
 	return NewHandler(s, doc.NewEngine(s), settingsH, ai.NewRegistry(), nil, nil)
+}
+
+// withGrant seeds a user with the given per-connector role on connectorID
+// and returns req with that user in context, as auth.AuthMiddleware would.
+func withGrant(t *testing.T, s *store.Store, req *http.Request, connectorID, role string) *http.Request {
+	t.Helper()
+	userID := apitest.NewUser(t, s, "viewer")
+	apitest.GrantConnectorRole(t, s, userID, connectorID, role)
+	return req.WithContext(auth.ContextWithUser(req.Context(), userID, false))
 }
 
 func TestListEmpty(t *testing.T) {
@@ -53,6 +63,7 @@ func TestGetUnknownIDFallsBackToServicePlaceholder(t *testing.T) {
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/unknown-connector", nil)
 	req.SetPathValue("id", "unknown-connector")
+	req = withGrant(t, h.Store, req, "unknown-connector", "viewer")
 	rr := httptest.NewRecorder()
 	h.Get(rr, req)
 	if rr.Code != http.StatusOK {
@@ -67,6 +78,7 @@ func TestByServiceNoDocsYet(t *testing.T) {
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/service/conn-1", nil)
 	req.SetPathValue("id", "conn-1")
+	req = withGrant(t, h.Store, req, "conn-1", "viewer")
 	rr := httptest.NewRecorder()
 	h.ByService(rr, req)
 	if rr.Code != http.StatusOK {
@@ -147,6 +159,7 @@ func TestTree(t *testing.T) {
 
 	h := NewHandler(s, doc.NewEngine(s), nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/tree", nil)
+	req = withGrant(t, s, req, conn.ID, "viewer")
 	rr := httptest.NewRecorder()
 	h.Tree(rr, req)
 
@@ -289,6 +302,7 @@ func TestRestore(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/docs/"+docRecord.ID+"/versions/1/restore", nil)
 		req.SetPathValue("id", docRecord.ID)
 		req.SetPathValue("rev", "1")
+		req = withGrant(t, s, req, docRecord.ServiceID, "operator")
 		rr := httptest.NewRecorder()
 		h.Restore(rr, req)
 
@@ -384,6 +398,7 @@ func TestGenerate(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		payload := strings.NewReader(`{"templateId":"` + tmpl.ID + `","connectorId":"` + conn.ID + `"}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/docs/generate", payload)
+		req = withGrant(t, s, req, conn.ID, "operator")
 		rr := httptest.NewRecorder()
 		h.Generate(rr, req)
 

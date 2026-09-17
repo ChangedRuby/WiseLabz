@@ -20,7 +20,7 @@ type User struct {
 	Username                   string `json:"username"`
 	DisplayName                string `json:"displayName"`
 	Email                      string `json:"email"`
-	Role                       string `json:"role"`
+	InstanceAdminRole          string `json:"instanceAdminRole"`
 	AuthSource                 string `json:"authSource"`
 	PasswordHash               string `json:"-"`
 	Disabled                   bool   `json:"disabled"`
@@ -52,17 +52,17 @@ func (s *Store) CreateUser(ctx context.Context, user *User) error {
 	if user.CreatedAt == "" {
 		user.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if user.Role == "" {
-		user.Role = "viewer"
+	if user.InstanceAdminRole == "" {
+		user.InstanceAdminRole = "user"
 	}
 	if user.AuthSource == "" {
 		user.AuthSource = "local"
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at)
+		INSERT INTO users (id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, user.ID, user.Username, user.DisplayName, user.Email, user.Role, user.AuthSource,
+	`, user.ID, user.Username, user.DisplayName, user.Email, user.InstanceAdminRole, user.AuthSource,
 		user.PasswordHash, boolToInt(user.Disabled), boolToInt(user.CanManageDashboardDefaults), user.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -78,9 +78,9 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	var disabled, canManageDashboardDefaults int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
+		SELECT id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
 		FROM users WHERE id = ?
-	`, id).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
+	`, id).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
 		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -98,9 +98,9 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*User, 
 	u := &User{}
 	var disabled, canManageDashboardDefaults int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at, failed_login_attempts, locked_until
+		SELECT id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at, failed_login_attempts, locked_until
 		FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
+	`, username).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
 		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt, &u.FailedLoginAttempts, &u.LockedUntil)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -149,13 +149,14 @@ func (s *Store) ClearFailedLogins(ctx context.Context, userID string) error {
 	return nil
 }
 
-// GetUserRoleStatus returns the current role and disabled flag for a user.
-// Implements auth.UserStatusChecker so AuthMiddleware can detect a role
-// change or account disable that happened after an access token was issued.
+// GetUserRoleStatus returns the current instance-admin role and disabled flag
+// for a user. Implements auth.UserStatusChecker so AuthMiddleware can detect
+// a role change or account disable that happened after an access token was
+// issued.
 func (s *Store) GetUserRoleStatus(ctx context.Context, userID string) (string, bool, error) {
 	var role string
 	var disabled int
-	err := s.db.QueryRowContext(ctx, `SELECT role, disabled FROM users WHERE id = ?`, userID).Scan(&role, &disabled)
+	err := s.db.QueryRowContext(ctx, `SELECT instance_admin_role, disabled FROM users WHERE id = ?`, userID).Scan(&role, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, ErrNotFound
 	}
@@ -180,8 +181,8 @@ func (s *Store) UpdateUser(ctx context.Context, id string, updates map[string]an
 		case "email":
 			setClauses = append(setClauses, "email = ?")
 			args = append(args, v)
-		case "role":
-			setClauses = append(setClauses, "role = ?")
+		case "instance_admin_role":
+			setClauses = append(setClauses, "instance_admin_role = ?")
 			args = append(args, v)
 		case "password_hash":
 			setClauses = append(setClauses, "password_hash = ?")
@@ -239,12 +240,12 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 }
 
 // userColumns is the shared column list for the ListUsers SELECT.
-const userColumns = `id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at`
+const userColumns = `id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at`
 
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var disabled, canManageDashboardDefaults int
-	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
+	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
 		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
 	if err != nil {
 		return User{}, err
@@ -435,10 +436,10 @@ func (s *Store) GetUserByOIDCIdentity(ctx context.Context, issuer, subject strin
 	u := &User{}
 	var disabled, canManageDashboardDefaults int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
+		SELECT id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
 		FROM users JOIN oidc_identities ON oidc_identities.user_id = users.id
 		WHERE oidc_identities.issuer = ? AND oidc_identities.subject = ?
-	`, issuer, subject).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.Role,
+	`, issuer, subject).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
 		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -460,12 +461,12 @@ func (s *Store) CreateOIDCUser(ctx context.Context, user *User, issuer, subject 
 	if user.CreatedAt == "" {
 		user.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if user.Role == "" {
-		user.Role = "viewer"
+	if user.InstanceAdminRole == "" {
+		user.InstanceAdminRole = "user"
 	}
 	user.AuthSource = "oidc"
 	err := s.WithinTransaction(ctx, func(tx *Store) error {
-		_, err := tx.db.ExecContext(ctx, `INSERT INTO users (id, username, display_name, email, role, auth_source, password_hash, disabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, user.ID, user.Username, user.DisplayName, user.Email, user.Role, user.AuthSource, user.PasswordHash, boolToInt(user.Disabled), user.CreatedAt)
+		_, err := tx.db.ExecContext(ctx, `INSERT INTO users (id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, user.ID, user.Username, user.DisplayName, user.Email, user.InstanceAdminRole, user.AuthSource, user.PasswordHash, boolToInt(user.Disabled), user.CreatedAt)
 		if err == nil {
 			_, err = tx.db.ExecContext(ctx, `INSERT INTO oidc_identities (issuer, subject, user_id) VALUES (?, ?, ?)`, issuer, subject, user.ID)
 		}

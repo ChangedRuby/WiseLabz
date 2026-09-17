@@ -36,8 +36,9 @@ func TestOpenMaintenanceWindowRoleBoundary(t *testing.T) {
 // operator with no X-Elevation-Token at all — it's reversible and time-boxed.
 func TestOpenMaintenanceWindowNoElevationRequired(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedMaintenanceConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/maintenance-window",
 		map[string]any{"durationMinutes": 30}, opToken)
@@ -67,8 +68,9 @@ func TestOpenMaintenanceWindowNoElevationRequired(t *testing.T) {
 
 func TestOpenMaintenanceWindowInvalidDuration(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedMaintenanceConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/maintenance-window",
 		map[string]any{"durationMinutes": 0}, opToken)
@@ -79,7 +81,8 @@ func TestOpenMaintenanceWindowInvalidDuration(t *testing.T) {
 
 func TestOpenMaintenanceWindowConnectorNotFound(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
+	app.connectorGrant(t, opUserID, "does-not-exist", "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/does-not-exist/maintenance-window",
 		map[string]any{"durationMinutes": 30}, opToken)
@@ -88,11 +91,16 @@ func TestOpenMaintenanceWindowConnectorNotFound(t *testing.T) {
 	}
 }
 
+// TestGetMaintenanceWindowAnyAuthenticatedUser now requires a viewer grant
+// on the connector (default deny), not just any authenticated user — the
+// name predates #240's per-connector permissions.
 func TestGetMaintenanceWindowAnyAuthenticatedUser(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	opUserID, opToken := app.user(t, "operator")
+	viewerUserID, viewerToken := app.user(t, "viewer")
 	conn := seedMaintenanceConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
+	app.connectorGrant(t, viewerUserID, conn.ID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/connectors/"+conn.ID+"/maintenance-window", nil, viewerToken)
 	if rec.Code != http.StatusOK {
@@ -123,9 +131,11 @@ func TestGetMaintenanceWindowAnyAuthenticatedUser(t *testing.T) {
 
 func TestCloseMaintenanceWindowRoleBoundaryAndNoElevation(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	opUserID, opToken := app.user(t, "operator")
+	viewerUserID, viewerToken := app.user(t, "viewer")
 	conn := seedMaintenanceConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
+	app.connectorGrant(t, viewerUserID, conn.ID, "viewer")
 
 	openRec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/maintenance-window",
 		map[string]any{"durationMinutes": 60}, opToken)
@@ -173,9 +183,11 @@ func TestCloseMaintenanceWindowRoleBoundaryAndNoElevation(t *testing.T) {
 
 func TestListActiveMaintenanceWindowsEndpoint(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	opUserID, opToken := app.user(t, "operator")
+	viewerUserID, viewerToken := app.user(t, "viewer")
 	connA := seedMaintenanceConnector(t, app)
+	app.connectorGrant(t, opUserID, connA.ID, "operator")
+	app.connectorGrant(t, viewerUserID, connA.ID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/connectors/maintenance-windows", nil, viewerToken)
 	if rec.Code != http.StatusOK {

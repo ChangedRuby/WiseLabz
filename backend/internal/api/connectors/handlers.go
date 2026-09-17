@@ -39,7 +39,8 @@ func NewHandler(s *store.Store, e *sync.Engine, cfg *config.Config, jwtSvc *auth
 	return &Handler{Store: s, SyncEngine: e, Config: cfg, JWT: jwtSvc, WSHub: hub}
 }
 
-// List handles GET /api/connectors.
+// List handles GET /api/connectors. Default deny: only connectors the
+// caller holds at least a viewer grant on are returned.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	_, pageSize, offset := httputil.Paginate(r)
 	category := r.URL.Query().Get("category")
@@ -56,12 +57,47 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	if connectors == nil {
-		connectors = []store.ConnectorRecord{}
+
+	out, err := h.withMyRole(r.Context(), connectors)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
 	}
 
 	// Spec: GET /connectors returns a bare Connector[] (see openapi.yaml).
-	httputil.JSON(w, http.StatusOK, connectors)
+	httputil.JSON(w, http.StatusOK, out)
+}
+
+// withMyRole filters connectors down to the ones the caller has at least a
+// viewer grant on (default deny) and annotates each with the caller's role,
+// so the frontend doesn't need an N+1 permissions lookup per connector.
+func (h *Handler) withMyRole(ctx context.Context, connectors []store.ConnectorRecord) ([]connectorWithRole, error) {
+	userID := auth.UserIDFromContext(ctx)
+	grants, err := h.Store.ListUserConnectorGrants(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list user connector grants: %w", err)
+	}
+	roleByConnector := make(map[string]string, len(grants))
+	for _, g := range grants {
+		roleByConnector[g.ConnectorID] = g.Role
+	}
+
+	out := make([]connectorWithRole, 0, len(connectors))
+	for _, c := range connectors {
+		role := roleByConnector[c.ID]
+		if role == "" {
+			continue
+		}
+		out = append(out, connectorWithRole{ConnectorRecord: c, MyRole: role})
+	}
+	return out, nil
+}
+
+// connectorWithRole embeds a connector record with the requesting user's
+// role on it, flattened into the JSON response via embedding.
+type connectorWithRole struct {
+	store.ConnectorRecord
+	MyRole string `json:"myRole"`
 }
 
 // Create handles POST /api/connectors.
@@ -124,16 +160,25 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ponytail: auto-grant the creator operator access so an instance admin
+	// isn't locked out of the connector they just made (grants are the only
+	// source of connector access now — even for admins).
+	if _, err := h.Store.UpsertConnectorGrant(r.Context(), auth.UserIDFromContext(r.Context()), c.ID, "operator"); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
 	if err := h.Store.RecordAuditFromContext(r.Context(), "connector.create", "connector", c.ID, map[string]any{
 		"name": c.Name, "category": c.Category, "type": c.Type,
 	}); err != nil {
 		slog.Error("failed to record audit", "action", "connector.create", "error", err)
 	}
 
-	httputil.JSON(w, http.StatusCreated, c)
+	httputil.JSON(w, http.StatusCreated, connectorWithRole{ConnectorRecord: *c, MyRole: "operator"})
 }
 
-// Get handles GET /api/connectors/{id}.
+// Get handles GET /api/connectors/{id}. Default deny: 404s (not 403, to
+// avoid confirming the connector's existence) if the caller has no grant.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	c, err := h.Store.GetConnector(r.Context(), id)
@@ -145,7 +190,16 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	httputil.JSON(w, http.StatusOK, c)
+	role, err := h.Store.GetUserConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), id)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if role == "" {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, connectorWithRole{ConnectorRecord: *c, MyRole: role})
 }
 
 // Update handles PUT or PATCH /api/connectors/{id}.
@@ -1158,7 +1212,26 @@ func (h *Handler) ListActiveMaintenance(w http.ResponseWriter, r *http.Request) 
 		httputil.Errorf(w, err)
 		return
 	}
-	httputil.JSON(w, http.StatusOK, windows)
+	ids := make([]string, len(windows))
+	for i, m := range windows {
+		ids[i] = m.ConnectorID
+	}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(r.Context(), auth.UserIDFromContext(r.Context()), ids, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+	filtered := make([]store.MaintenanceWindowRecord, 0, len(windows))
+	for _, m := range windows {
+		if isAllowed[m.ConnectorID] {
+			filtered = append(filtered, m)
+		}
+	}
+	httputil.JSON(w, http.StatusOK, filtered)
 }
 
 // bulkRequest is the shared body shape for bulk-sync/bulk-reauth/bulk-restart:
@@ -1193,6 +1266,41 @@ func decodeBulkRequest(w http.ResponseWriter, r *http.Request) (bulkRequest, boo
 	return req, true
 }
 
+// splitByConnectorGrant looks up which of the requested ids exist, then
+// partitions the existing ones into ones the caller has at least operator on
+// and the rest. Nonexistent ids are surfaced as "not_found" and unauthorized
+// existing ids as "forbidden", both pre-rendered as bulkItemResults so
+// callers can append them straight into their results slice alongside the
+// outcomes for the ids they go on to process.
+func (h *Handler) splitByConnectorGrant(ctx context.Context, ids []string) (allowed []string, found map[string]store.ConnectorRecord, results []bulkItemResult, err error) {
+	found, err = h.Store.ListConnectorsByID(ctx, ids)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	existing := make([]string, 0, len(found))
+	for _, id := range ids {
+		if _, ok := found[id]; ok {
+			existing = append(existing, id)
+		} else {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
+		}
+	}
+	allowed, err = h.Store.FilterConnectorIDsByGrant(ctx, auth.UserIDFromContext(ctx), existing, "operator")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+	for _, id := range existing {
+		if !isAllowed[id] {
+			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "forbidden"})
+		}
+	}
+	return allowed, found, results, nil
+}
+
 // BulkSync handles POST /api/connectors/bulk-sync. Fans out an async
 // RunSyncFields per connector (same as the single-connector Sync handler),
 // auditing and reporting per-item results. One bad ID never aborts the
@@ -1203,19 +1311,14 @@ func (h *Handler) BulkSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	allowedIDs, _, results, err := h.splitByConnectorGrant(r.Context(), req.IDs)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	results := make([]bulkItemResult, 0, len(req.IDs))
-	auditRecords := make([]store.AuditRecord, 0, len(found))
-	for _, id := range req.IDs {
-		if _, ok := found[id]; !ok {
-			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
-			continue
-		}
+	auditRecords := make([]store.AuditRecord, 0, len(allowedIDs))
+	for _, id := range allowedIDs {
 		jobID := uuid.New().String()
 		go func(connectorID, jobID string) {
 			if _, err := h.SyncEngine.RunSyncFields(context.Background(), connectorID, jobID, nil); err != nil {
@@ -1243,19 +1346,14 @@ func (h *Handler) BulkReauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	allowedIDs, _, results, err := h.splitByConnectorGrant(r.Context(), req.IDs)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	results := make([]bulkItemResult, 0, len(req.IDs))
-	auditRecords := make([]store.AuditRecord, 0, len(found))
-	for _, id := range req.IDs {
-		if _, ok := found[id]; !ok {
-			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
-			continue
-		}
+	auditRecords := make([]store.AuditRecord, 0, len(allowedIDs))
+	for _, id := range allowedIDs {
 		if err := h.SyncEngine.RefreshCredentials(r.Context(), id); err != nil {
 			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: err.Error()})
 			continue
@@ -1283,20 +1381,15 @@ func (h *Handler) BulkRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found, err := h.Store.ListConnectorsByID(r.Context(), req.IDs)
+	allowedIDs, found, results, err := h.splitByConnectorGrant(r.Context(), req.IDs)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	results := make([]bulkItemResult, 0, len(req.IDs))
-	auditRecords := make([]store.AuditRecord, 0, len(found))
-	for _, id := range req.IDs {
-		rec, ok := found[id]
-		if !ok {
-			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: "not_found"})
-			continue
-		}
+	auditRecords := make([]store.AuditRecord, 0, len(allowedIDs))
+	for _, id := range allowedIDs {
+		rec := found[id]
 		if err := h.restartConnector(r.Context(), &rec); err != nil {
 			results = append(results, bulkItemResult{ID: id, Status: "error", Reason: err.Error()})
 			continue

@@ -20,8 +20,9 @@ func seedDoc(t *testing.T, app *testApp) *store.DocRecord {
 
 func TestDocsListAndGetSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
 	d := seedDoc(t, app)
+	app.connectorGrant(t, viewerID, d.ServiceID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/docs", nil, viewerToken)
 	if rec.Code != http.StatusOK {
@@ -47,8 +48,9 @@ func TestDocsSaveRoleBoundary(t *testing.T) {
 
 func TestDocsSaveValidation(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
+	app.connectorGrant(t, opID, d.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPut, "/api/docs/"+d.ID, "not-json", opToken)
 	if rec.Code != http.StatusBadRequest {
@@ -58,8 +60,9 @@ func TestDocsSaveValidation(t *testing.T) {
 
 func TestDocsSaveSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
+	app.connectorGrant(t, opID, d.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPut, "/api/docs/"+d.ID, map[string]any{"content": "updated content"}, opToken)
 	if rec.Code != http.StatusOK {
@@ -93,8 +96,9 @@ func TestDocLockRoleBoundary(t *testing.T) {
 
 func TestDocLockHappyPath(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
+	app.connectorGrant(t, opID, d.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodGet, "/api/docs/"+d.ID+"/lock", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -146,8 +150,10 @@ func TestDocLockHappyPath(t *testing.T) {
 func TestDocLockConflict(t *testing.T) {
 	app := newTestApp(t)
 	user1, op1Token := app.user(t, "operator")
-	_, op2Token := app.user(t, "operator")
+	user2, op2Token := app.user(t, "operator")
 	d := seedDoc(t, app)
+	app.connectorGrant(t, user1, d.ServiceID, "operator")
+	app.connectorGrant(t, user2, d.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/docs/"+d.ID+"/lock", nil, op1Token)
 	if rec.Code != http.StatusOK {

@@ -54,11 +54,22 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	// Role is a display-only snapshot of the creator's flat instance-admin
+	// role at creation time; auth actually derives a key's access from the
+	// owning user's current role at lookup time (store.LookupAPIKey), not
+	// from this column, so per-connector-scoped API keys are out of scope
+	// here (#240 PR1 keeps API keys flat admin/user). Stored as
+	// "operator"/"viewer" — the api_keys.role CHECK constraint predates this
+	// migration and wasn't touched, only users.role was renamed/reworked.
+	role := "viewer"
+	if auth.InstanceAdminFromContext(r.Context()) {
+		role = "operator"
+	}
 	key := &store.APIKey{
 		UserID:    auth.UserIDFromContext(r.Context()),
 		Name:      req.Name,
 		TokenHash: store.HashToken(rawToken),
-		Role:      auth.RoleFromContext(r.Context()),
+		Role:      role,
 		ExpiresAt: req.ExpiresAt,
 	}
 	if err := h.Store.CreateAPIKey(r.Context(), key); err != nil {

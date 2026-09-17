@@ -1,8 +1,9 @@
 /**
  * Maintenance window popover: preset (30/60/120m) + custom-minutes control to
- * open a time-boxed suppression on one connector. Operator-only, gated by
- * useCanMutate() alone — no ElevationConfirm, since a maintenance window is
- * reversible and time-boxed (see ADR context in issue #236 PR3).
+ * open a time-boxed suppression on one connector. Operator-only — the caller
+ * (ServicesPage) only renders this for a connector the user has operator on
+ * — no ElevationConfirm, since a maintenance window is reversible and
+ * time-boxed (see ADR context in issue #236 PR3).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
