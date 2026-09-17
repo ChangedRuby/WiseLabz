@@ -53,6 +53,32 @@ func init() {
 			client:    client,
 		}, nil
 	})
+	connector.RegisterAttributeCatalog(typeName, attributeCatalog)
+}
+
+// attributeCatalog declares the structured Attributes this connector fills
+// on "interface" and "rule" entities (see buildInterfaceTable/buildRuleTable),
+// exposed via GET /api/compliance/schema.
+var attributeCatalog = map[string][]connector.AttributeSpec{
+	"interface": {
+		{Name: "enabled", Type: "boolean", Description: "Whether the interface is enabled"},
+		{Name: "type", Type: "string", Description: "Interface addressing type (static, dhcp, ppoe, ...)"},
+		{Name: "ipv4", Type: "string", Description: "IPv4 address assigned to the interface"},
+		{Name: "ipv6", Type: "string", Description: "IPv6 address assigned to the interface"},
+		{Name: "gateway", Type: "string", Description: "Gateway configured for the interface"},
+	},
+	"rule": {
+		{Name: "enabled", Type: "boolean", Description: "Whether the firewall rule is enabled"},
+		{Name: "action", Type: "string", Description: "Rule action: pass, block, or reject"},
+		{Name: "interface", Type: "string", Description: "Interface the rule applies to"},
+		{Name: "direction", Type: "string", Description: "Traffic direction the rule matches (in/out)"},
+		{Name: "protocol", Type: "string", Description: "Protocol matched by the rule (tcp, udp, any, ...)"},
+		{Name: "source", Type: "string", Description: "Source address/network matched by the rule"},
+		{Name: "destination", Type: "string", Description: "Destination address/network matched by the rule"},
+		{Name: "destination_port", Type: "string", Description: "Destination port or port range matched by the rule"},
+		{Name: "log", Type: "boolean", Description: "Whether matching packets are logged"},
+		{Name: "disabled_reason", Type: "string", Description: "Reason the rule was auto-disabled, if any"},
+	},
 }
 
 // Connector fetches data from an OPNSense firewall API.
@@ -325,8 +351,12 @@ func buildInterfaceTable(raw []byte) (string, []connector.SnapshotEntity) {
 		Rows []struct {
 			Device    string `json:"device"`
 			IPAddress string `json:"ipaddr"`
+			IPv6      string `json:"ipv6"`
 			Status    string `json:"status"`
 			Media     string `json:"media"`
+			Enabled   bool   `json:"enabled"`
+			Type      string `json:"type"`
+			Gateway   string `json:"gateway"`
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil || len(resp.Rows) == 0 {
@@ -342,7 +372,18 @@ func buildInterfaceTable(raw []byte) (string, []connector.SnapshotEntity) {
 		if err != nil {
 			return "", nil
 		}
-		entities = append(entities, connector.SnapshotEntity{Kind: "interface", Name: iface.Device, IP: iface.IPAddress})
+		attrs := map[string]any{
+			"enabled": iface.Enabled,
+			"ipv4":    iface.IPAddress,
+			"ipv6":    iface.IPv6,
+		}
+		if iface.Type != "" {
+			attrs["type"] = iface.Type
+		}
+		if iface.Gateway != "" {
+			attrs["gateway"] = iface.Gateway
+		}
+		entities = append(entities, connector.SnapshotEntity{Kind: "interface", Name: iface.Device, IP: iface.IPAddress, Attributes: attrs})
 	}
 	return b.String(), entities
 }
@@ -393,12 +434,17 @@ func primaryGatewayName(raw []byte) string {
 func buildRuleTable(raw []byte) (string, []connector.SnapshotEntity) {
 	var resp struct {
 		Rows []struct {
-			Description string `json:"description"`
-			Action      string `json:"action"`
-			Protocol    string `json:"protocol"`
-			Source      string `json:"source_net"`
-			Destination string `json:"destination_net"`
-			Enabled     string `json:"enabled"`
+			Description     string `json:"description"`
+			Action          string `json:"action"`
+			Protocol        string `json:"protocol"`
+			Source          string `json:"source_net"`
+			Destination     string `json:"destination_net"`
+			DestinationPort string `json:"destination_port"`
+			Interface       string `json:"interface"`
+			Direction       string `json:"direction"`
+			Enabled         string `json:"enabled"`
+			Log             string `json:"log"`
+			DisabledReason  string `json:"disabled_reason"`
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil || len(resp.Rows) == 0 {
@@ -417,16 +463,36 @@ func buildRuleTable(raw []byte) (string, []connector.SnapshotEntity) {
 			}
 			break
 		}
-		enabled := r.Enabled
-		if enabled == "" {
-			enabled = "1"
+		enabledStr := r.Enabled
+		if enabledStr == "" {
+			enabledStr = "1"
 		}
 		_, err := fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
-			r.Description, r.Action, r.Protocol, r.Source, r.Destination, enabled)
+			r.Description, r.Action, r.Protocol, r.Source, r.Destination, enabledStr)
 		if err != nil {
 			return "", nil
 		}
-		entities = append(entities, connector.SnapshotEntity{Kind: "rule", Name: r.Description})
+		attrs := map[string]any{
+			"enabled":     enabledStr == "1",
+			"action":      r.Action,
+			"protocol":    r.Protocol,
+			"source":      r.Source,
+			"destination": r.Destination,
+			"log":         r.Log == "1",
+		}
+		if r.Interface != "" {
+			attrs["interface"] = r.Interface
+		}
+		if r.Direction != "" {
+			attrs["direction"] = r.Direction
+		}
+		if r.DestinationPort != "" {
+			attrs["destination_port"] = r.DestinationPort
+		}
+		if r.DisabledReason != "" {
+			attrs["disabled_reason"] = r.DisabledReason
+		}
+		entities = append(entities, connector.SnapshotEntity{Kind: "rule", Name: r.Description, Attributes: attrs})
 		count++
 	}
 	return b.String(), entities
