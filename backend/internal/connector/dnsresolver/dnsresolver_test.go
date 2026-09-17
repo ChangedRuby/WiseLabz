@@ -126,8 +126,8 @@ func TestBuildHostOverrideTableValidOverrides(t *testing.T) {
 	}
 
 	want := []connector.SnapshotEntity{
-		{Kind: "dns_record", Hostname: "nas.internal.example.com", IP: "10.0.0.5"},
-		{Kind: "dns_record", Hostname: "example.com", IP: "10.0.0.1"},
+		{Kind: "dns_record", Hostname: "nas.internal.example.com", IP: "10.0.0.5", Attributes: map[string]any{"description": "NAS", "is_ipv6": false}},
+		{Kind: "dns_record", Hostname: "example.com", IP: "10.0.0.1", Attributes: map[string]any{"description": "Root domain", "is_ipv6": false}},
 	}
 	for i, w := range want {
 		if !reflect.DeepEqual(entities[i], w) {

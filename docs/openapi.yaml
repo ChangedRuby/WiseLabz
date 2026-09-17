@@ -17,6 +17,7 @@ tags:
   - name: users
   - name: dashboard
   - name: connectors
+  - name: compliance
   - name: docs
   - name: chat
   - name: templates
@@ -423,6 +424,23 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ConnectorTypeSchema' }
+  /compliance/schema:
+    get:
+      tags: [compliance]
+      summary: Connector entity attribute catalog for compliance rules (admin only)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: { $ref: '#/components/schemas/ComplianceAttributeSpec' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /connectors/{connectorId}:
     parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
     get:
@@ -2744,6 +2762,13 @@ components:
             properties:
               value: { type: string }
               label: { type: string }
+    ComplianceAttributeSpec:
+      type: object
+      required: [name, type, description]
+      properties:
+        name: { type: string, description: 'Attribute name (e.g., enabled, ipAddress)' }
+        type: { type: string, enum: [string, number, boolean, string_array], description: 'Attribute value type' }
+        description: { type: string, description: 'Human-readable description of the attribute' }
     TestResult:
       type: object
       required: [ok]

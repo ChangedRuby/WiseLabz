@@ -53,6 +53,16 @@ func init() {
 			client:   client,
 		}, nil
 	})
+	connector.RegisterAttributeCatalog(typeName, attributeCatalog)
+}
+
+// attributeCatalog declares the structured Attributes this connector fills
+// on "dns_record" entities (see buildHostsTable), exposed via GET /api/compliance/schema.
+var attributeCatalog = map[string][]connector.AttributeSpec{
+	"dns_record": {
+		{Name: "source", Type: "string", Description: "Source of the DNS record (local_dns, dhcp_lease, etc.)"},
+		{Name: "is_ipv6", Type: "boolean", Description: "Whether the record resolves to an IPv6 address"},
+	},
 }
 
 // Connector fetches local DNS records from a Pi-hole v6 API.
@@ -385,10 +395,15 @@ func buildHostsTable(raw []byte) (content string, entities []connector.SnapshotE
 		if _, err := fmt.Fprintf(&b, "| %s | %s |\n", hostname, ip); err != nil {
 			return "", nil
 		}
+		attrs := map[string]any{
+			"source":  "local_dns",
+			"is_ipv6": net.ParseIP(ip).To4() == nil,
+		}
 		entities = append(entities, connector.SnapshotEntity{
-			Kind:     "dns_record",
-			Hostname: hostname,
-			IP:       ip,
+			Kind:       "dns_record",
+			Hostname:   hostname,
+			IP:         ip,
+			Attributes: attrs,
 		})
 	}
 	if len(entities) == 0 {
