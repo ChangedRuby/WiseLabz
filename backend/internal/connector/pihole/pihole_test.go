@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestBuildHostsTableValidRecords(t *testing.T) {
 		{Kind: "dns_record", Hostname: "printer.internal.example.com", IP: "10.0.0.6"},
 	}
 	for i, w := range want {
-		if entities[i] != w {
+		if !reflect.DeepEqual(entities[i], w) {
 			t.Errorf("entities[%d] = %+v, want %+v", i, entities[i], w)
 		}
 	}

@@ -116,11 +116,43 @@ func ValidateConfig(schema TypeSchema, config map[string]any) error {
 	return nil
 }
 
+// AttributeSpec describes one structured attribute an entity kind may carry
+// (see SnapshotEntity.Attributes): its key, JSON value shape, and what it
+// means. Connectors declare these next to their Register() call so the
+// catalog stays in sync with what Fetch actually emits.
+type AttributeSpec struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"` // "string", "number", "boolean", "string_array"
+	Description string `json:"description"`
+}
+
 var (
-	registry   = make(map[string]Factory)
-	typeSchema = make(map[string]TypeSchema)
-	mu         sync.RWMutex
+	registry         = make(map[string]Factory)
+	typeSchema       = make(map[string]TypeSchema)
+	attributeCatalog = make(map[string]map[string][]AttributeSpec) // connector type -> entity kind -> specs
+	mu               sync.RWMutex
 )
+
+// RegisterAttributeCatalog declares, for a connector type, which entity
+// kinds carry which Attributes keys. Exposed via GET /api/compliance/schema
+// for PR3's rule engine. Call it from the same init() that calls Register.
+func RegisterAttributeCatalog(typ string, catalog map[string][]AttributeSpec) {
+	mu.Lock()
+	defer mu.Unlock()
+	attributeCatalog[typ] = catalog
+}
+
+// AttributeCatalog returns the full connectorType -> entity kind -> attribute
+// spec catalog for every connector type that registered one.
+func AttributeCatalog() map[string]map[string][]AttributeSpec {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make(map[string]map[string][]AttributeSpec, len(attributeCatalog))
+	for typ, kinds := range attributeCatalog {
+		out[typ] = kinds
+	}
+	return out
+}
 
 // Register registers a connector factory and its type schema.
 func Register(schema TypeSchema, factory Factory) {
