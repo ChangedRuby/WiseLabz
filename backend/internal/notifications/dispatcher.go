@@ -53,17 +53,19 @@ func (d *Dispatcher) NotifyAlertCreated(ctx context.Context, alertID, title, mes
 	channels := d.loadChannels(ctx)
 	routes := d.loadRouting(ctx)
 	severity := ""
+	connectorID := ""
 	if alertID != "" {
 		if alert, err := d.store.GetAlert(ctx, alertID); err != nil {
 			slog.Error("failed to fetch alert for notification", "error", err, "alertID", alertID)
 		} else {
 			severity = alert.Severity
+			connectorID = alert.ServiceID
 		}
 	}
-	go d.notifyAlertCreated(users, channels, routes, alertID, severity, title, message)
+	go d.notifyAlertCreated(users, channels, routes, alertID, severity, connectorID, title, message)
 }
 
-func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCfg, routes []routeCfg, alertID, severity, title, message string) {
+func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCfg, routes []routeCfg, alertID, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
 			continue
@@ -71,7 +73,7 @@ func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCf
 		d.fanoutSem <- struct{}{}
 		go func(userID string) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, title, message)
+			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, connectorID, title, message)
 		}(u.ID)
 	}
 }
@@ -89,21 +91,23 @@ func (d *Dispatcher) NotifyFindingCreated(ctx context.Context, findingID, title,
 	channels := d.loadChannels(ctx)
 	routes := d.loadRouting(ctx)
 	severity := ""
+	connectorID := ""
 	if findingID != "" {
 		if finding, err := d.store.GetQualityFinding(ctx, findingID); err != nil {
 			slog.Error("failed to fetch finding for notification", "error", err, "findingID", findingID)
 		} else {
 			severity = finding.Severity
+			connectorID = finding.ConnectorID
 		}
 	}
-	go d.notifyFindingCreated(users, channels, routes, severity, title, message)
+	go d.notifyFindingCreated(users, channels, routes, severity, connectorID, title, message)
 }
 
 // notifyFindingCreated fans out like notifyAlertCreated. It reuses notifyAlert
 // with an empty alertID: a finding isn't an alert, and ponytail: the in-app
 // notification/WS payload has no finding deep-link yet — add one (a real
 // findingId column) if the UI needs to navigate straight to it.
-func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, routes []routeCfg, severity, title, message string) {
+func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, routes []routeCfg, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
 			continue
@@ -111,7 +115,7 @@ func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channel
 		d.fanoutSem <- struct{}{}
 		go func(userID string) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, title, message)
+			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message)
 		}(u.ID)
 	}
 }
@@ -125,10 +129,12 @@ type channelCfg struct {
 
 // routeCfg is one entry of the notification_config "routing" array.
 type routeCfg struct {
-	EventType   string `json:"eventType"`
-	Channel     string `json:"channel"`
-	Enabled     bool   `json:"enabled"`
-	MinSeverity string `json:"minSeverity"`
+	EventType         string `json:"eventType"`
+	Channel           string `json:"channel"`
+	Enabled           bool   `json:"enabled"`
+	MinSeverity       string `json:"minSeverity"`
+	ConnectorCategory string `json:"connectorCategory"`
+	ConnectorID       string `json:"connectorId"`
 }
 
 // loadChannels reads the configured notification channels. Returns nil (no channels) on any
@@ -177,10 +183,10 @@ func (d *Dispatcher) channel(ctx context.Context, typ string) (channelCfg, bool)
 // channel attempted (see store.DeliveryRecord).
 func (d *Dispatcher) NotifyAlert(alertID, userID, eventType, title, message string) {
 	ctx := context.Background()
-	d.notifyAlert(ctx, d.loadChannels(ctx), d.loadRouting(ctx), alertID, userID, eventType, "", title, message)
+	d.notifyAlert(ctx, d.loadChannels(ctx), d.loadRouting(ctx), alertID, userID, eventType, "", "", title, message)
 }
 
-func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, title, message string) {
+func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, connectorID, title, message string) {
 
 	notifID, err := d.createInApp(ctx, userID, alertID, eventType, title, message)
 	if err != nil {
@@ -195,6 +201,17 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, rou
 			"title":   title,
 			"message": message,
 		})
+	}
+
+	// Resolve connector once per notifyAlert call (not per channel) if needed for filters.
+	var connectorCategory string
+	if connectorID != "" {
+		if connector, err := d.store.GetConnector(ctx, connectorID); err != nil {
+			slog.Error("failed to fetch connector for notification", "error", err, "connectorID", connectorID)
+			// Treat as unknown category; routes with a category filter just won't match.
+		} else {
+			connectorCategory = connector.Category
+		}
 	}
 
 	// Helper to check if a channel should be gated by routing rules.
@@ -215,6 +232,16 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, rou
 		}
 		if severityRank(severity) > severityRank(route.MinSeverity) {
 			// Event severity below minimum; skip.
+			return true
+		}
+		// Check connector category filter (AND semantics with ID filter if both present).
+		if route.ConnectorCategory != "" && route.ConnectorCategory != connectorCategory {
+			// Route has category filter and connector's category doesn't match; skip.
+			return true
+		}
+		// Check connector ID filter (AND semantics with category filter if both present).
+		if route.ConnectorID != "" && route.ConnectorID != connectorID {
+			// Route has ID filter and connector ID doesn't match; skip.
 			return true
 		}
 		return false

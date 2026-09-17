@@ -582,3 +582,455 @@ func TestNotifyAlert_RoutingAboveSeverityDelivers(t *testing.T) {
 		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
 	}
 }
+
+// TestNotifyAlert_ConnectorCategoryFilterMatches verifies that a route with connectorCategory set delivers when the alert's connector matches.
+func TestNotifyAlert_ConnectorCategoryFilterMatches(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a connector with category "networking".
+	connector := &store.ConnectorRecord{
+		Name:     "Network Router",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by connectorCategory=networking.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorCategory":"networking"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to the networking connector.
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector.ID,
+		Severity:  "info",
+		Title:     "Network Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) == 0 {
+		t.Fatalf("expected at least 1 notification")
+	}
+
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	webhook, ok := findDelivery(deliveries, "webhook")
+	if !ok {
+		t.Fatalf("expected webhook delivery when connector category matches")
+	}
+	if webhook.Status != store.DeliveryStatusSent {
+		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
+	}
+}
+
+// TestNotifyAlert_ConnectorCategoryFilterMismatch verifies that a route with connectorCategory set skips when the alert's connector's category doesn't match.
+func TestNotifyAlert_ConnectorCategoryFilterMismatch(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a connector with category "dns".
+	connector := &store.ConnectorRecord{
+		Name:     "DNS Server",
+		Category: "dns",
+		Type:     "dns",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by connectorCategory=networking (won't match dns).
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorCategory":"networking"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to the dns connector.
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector.ID,
+		Severity:  "info",
+		Title:     "DNS Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) > 0 {
+		deliveries := deliveriesFor(t, s, notifs[0].ID)
+		if _, ok := findDelivery(deliveries, "webhook"); ok {
+			t.Errorf("expected no webhook delivery when connector category doesn't match")
+		}
+	}
+}
+
+// TestNotifyAlert_ConnectorIDFilterMatches verifies that a route with connectorId set delivers when the alert's connector ID matches.
+func TestNotifyAlert_ConnectorIDFilterMatches(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a connector.
+	connector := &store.ConnectorRecord{
+		Name:     "Specific Connector",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by the specific connector ID.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorId":"` + connector.ID + `"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to this connector.
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector.ID,
+		Severity:  "info",
+		Title:     "Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) == 0 {
+		t.Fatalf("expected at least 1 notification")
+	}
+
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	webhook, ok := findDelivery(deliveries, "webhook")
+	if !ok {
+		t.Fatalf("expected webhook delivery when connector ID matches")
+	}
+	if webhook.Status != store.DeliveryStatusSent {
+		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
+	}
+}
+
+// TestNotifyAlert_ConnectorIDFilterMismatch verifies that a route with connectorId set skips when the alert's connector ID doesn't match.
+func TestNotifyAlert_ConnectorIDFilterMismatch(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create two connectors.
+	connector1 := &store.ConnectorRecord{
+		Name:     "Connector 1",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector1); err != nil {
+		t.Fatalf("create connector1: %v", err)
+	}
+
+	connector2 := &store.ConnectorRecord{
+		Name:     "Connector 2",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector2); err != nil {
+		t.Fatalf("create connector2: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by connector1's ID.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorId":"` + connector1.ID + `"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to connector2 (different from the route's filter).
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector2.ID,
+		Severity:  "info",
+		Title:     "Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) > 0 {
+		deliveries := deliveriesFor(t, s, notifs[0].ID)
+		if _, ok := findDelivery(deliveries, "webhook"); ok {
+			t.Errorf("expected no webhook delivery when connector ID doesn't match")
+		}
+	}
+}
+
+// TestNotifyAlert_ConnectorCategoryAndIDFilterBothMatch verifies AND semantics: both category and ID must match when both are set.
+func TestNotifyAlert_ConnectorCategoryAndIDFilterBothMatch(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a connector with specific category and ID.
+	connector := &store.ConnectorRecord{
+		Name:     "Networking Connector",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by both category AND ID.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorCategory":"networking","connectorId":"` + connector.ID + `"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to this connector (both filters should match).
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector.ID,
+		Severity:  "info",
+		Title:     "Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) == 0 {
+		t.Fatalf("expected at least 1 notification")
+	}
+
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	webhook, ok := findDelivery(deliveries, "webhook")
+	if !ok {
+		t.Fatalf("expected webhook delivery when both category and ID match")
+	}
+	if webhook.Status != store.DeliveryStatusSent {
+		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
+	}
+}
+
+// TestNotifyAlert_ConnectorCategoryAndIDFilterPartialMismatch verifies AND semantics: if category matches but ID doesn't, delivery is skipped.
+func TestNotifyAlert_ConnectorCategoryAndIDFilterPartialMismatch(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create two connectors with the same category but different IDs.
+	connector1 := &store.ConnectorRecord{
+		Name:     "Networking Connector 1",
+		Category: "networking",
+		Type:     "router",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector1); err != nil {
+		t.Fatalf("create connector1: %v", err)
+	}
+
+	connector2 := &store.ConnectorRecord{
+		Name:     "Networking Connector 2",
+		Category: "networking",
+		Type:     "switch",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector2); err != nil {
+		t.Fatalf("create connector2: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that filters by category=networking AND ID=connector1.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info","connectorCategory":"networking","connectorId":"` + connector1.ID + `"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to connector2 (category matches but ID doesn't).
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector2.ID,
+		Severity:  "info",
+		Title:     "Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) > 0 {
+		deliveries := deliveriesFor(t, s, notifs[0].ID)
+		if _, ok := findDelivery(deliveries, "webhook"); ok {
+			t.Errorf("expected no webhook delivery when ID doesn't match (category matches but AND semantics requires both)")
+		}
+	}
+}
+
+// TestNotifyAlert_ConnectorFiltersWildcard verifies that empty/absent connector filters act as wildcards.
+func TestNotifyAlert_ConnectorFiltersWildcard(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a connector.
+	connector := &store.ConnectorRecord{
+		Name:     "Any Connector",
+		Category: "dns",
+		Type:     "dns",
+		Enabled:  true,
+		Status:   "online",
+	}
+	if err := s.CreateConnector(context.Background(), connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+
+	// Configure webhook channel with a routing rule that has NO connector filters (empty/absent = wildcard).
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"info"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications.
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert tied to any connector.
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: connector.ID,
+		Severity:  "info",
+		Title:     "Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) == 0 {
+		t.Fatalf("expected at least 1 notification")
+	}
+
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	webhook, ok := findDelivery(deliveries, "webhook")
+	if !ok {
+		t.Fatalf("expected webhook delivery when connector filters are empty (wildcard)")
+	}
+	if webhook.Status != store.DeliveryStatusSent {
+		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
+	}
+}

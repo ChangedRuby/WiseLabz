@@ -3763,6 +3763,8 @@ components:
         channel: { $ref: '#/components/schemas/NotificationChannelType' }
         enabled: { type: boolean }
         minSeverity: { $ref: '#/components/schemas/Severity' }
+        connectorCategory: { type: string, description: 'Optional connector category filter; empty/absent matches any category.' }
+        connectorId: { type: string, description: 'Optional connector ID filter; empty/absent matches any connector.' }
 
     # ── system ──
     SystemInfo:
