@@ -7,7 +7,8 @@
  */
 import { useTranslation } from 'react-i18next';
 import type { NotificationConfig, NotificationChannelType, Severity } from '../../api/model';
-import { Severity as SeverityEnum } from '../../api/model';
+import { Severity as SeverityEnum, ConnectorCategory } from '../../api/model';
+import { useGetConnectors } from '../../api/generated/connectors/connectors';
 import { Toggle, Select } from './parts';
 import { cn } from '../../lib/cn';
 
@@ -35,6 +36,7 @@ export function EventRoutingTable({
   const { t } = useTranslation();
   const channels = config.channels;
   const eventTypes = Array.from(new Set(config.routing.map((r) => r.eventType)));
+  const { data: connectors = [] } = useGetConnectors();
 
   const findRoute = (eventType: string, channel: NotificationChannelType) =>
     config.routing.find((r) => r.eventType === eventType && r.channel === channel);
@@ -57,6 +59,37 @@ export function EventRoutingTable({
 
   const rowSeverity = (eventType: string): Severity =>
     findRoute(eventType, channels[0]?.type)?.minSeverity ?? SeverityEnum.info;
+
+  const setRowConnectorCategory = (eventType: string, connectorCategory: string) => {
+    onChange({
+      ...config,
+      routing: config.routing.map((r) =>
+        r.eventType === eventType
+          ? {
+              ...r,
+              connectorCategory: connectorCategory === '' ? undefined : connectorCategory,
+            }
+          : r
+      ),
+    });
+  };
+
+  const rowConnectorCategory = (eventType: string): string =>
+    findRoute(eventType, channels[0]?.type)?.connectorCategory ?? '';
+
+  const setRowConnectorId = (eventType: string, connectorId: string) => {
+    onChange({
+      ...config,
+      routing: config.routing.map((r) =>
+        r.eventType === eventType
+          ? { ...r, connectorId: connectorId === '' ? undefined : connectorId }
+          : r
+      ),
+    });
+  };
+
+  const rowConnectorId = (eventType: string): string =>
+    findRoute(eventType, channels[0]?.type)?.connectorId ?? '';
 
   return (
     <div className="overflow-x-auto">
@@ -82,6 +115,12 @@ export function EventRoutingTable({
             ))}
             <th className="px-3 py-2 text-right font-mono text-2xs text-ink-faint">
               {t('settings.notifications.minSeverity')}
+            </th>
+            <th className="px-3 py-2 text-right font-mono text-2xs text-ink-faint">
+              {t('settings.notifications.connectorCategory')}
+            </th>
+            <th className="px-3 py-2 text-right font-mono text-2xs text-ink-faint">
+              {t('settings.notifications.connectorId')}
             </th>
           </tr>
         </thead>
@@ -121,6 +160,38 @@ export function EventRoutingTable({
                   <option value={SeverityEnum.info}>{t('status.severity.info')}</option>
                   <option value={SeverityEnum.warning}>{t('status.severity.warning')}</option>
                   <option value={SeverityEnum.critical}>{t('status.severity.critical')}</option>
+                </Select>
+              </td>
+              <td className="px-3 py-2.5 text-right">
+                <Select
+                  aria-label={`${t('settings.notifications.connectorCategory')} for ${eventLabel(eventType)}`}
+                  value={rowConnectorCategory(eventType)}
+                  disabled={disabled}
+                  onChange={(e) => setRowConnectorCategory(eventType, e.target.value)}
+                  className="w-28 py-1.5 text-xs"
+                >
+                  <option value="">{t('settings.notifications.anyConnectorCategory')}</option>
+                  {Object.values(ConnectorCategory).map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </Select>
+              </td>
+              <td className="px-3 py-2.5 text-right">
+                <Select
+                  aria-label={`${t('settings.notifications.connectorId')} for ${eventLabel(eventType)}`}
+                  value={rowConnectorId(eventType)}
+                  disabled={disabled}
+                  onChange={(e) => setRowConnectorId(eventType, e.target.value)}
+                  className="w-28 py-1.5 text-xs"
+                >
+                  <option value="">{t('settings.notifications.anyConnector')}</option>
+                  {connectors.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </Select>
               </td>
             </tr>

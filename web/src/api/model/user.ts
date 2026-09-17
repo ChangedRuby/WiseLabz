@@ -8,6 +8,7 @@
  */
 import type { Role } from './role';
 import type { UserAuthSource } from './userAuthSource';
+import type { UserDigestCadence } from './userDigestCadence';
 
 export interface User {
   id: string;
@@ -20,4 +21,7 @@ export interface User {
   /** When role is operator, grants permission to edit the admin-default dashboard layout */
   canManageDashboardDefaults?: boolean;
   createdAt: string;
+  digestCadence?: UserDigestCadence;
+  /** IANA timezone, e.g. America/New_York */
+  digestTimezone?: string;
 }

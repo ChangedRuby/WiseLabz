@@ -6,12 +6,11 @@
  *
  * OpenAPI spec version: 0.1.0
  */
-import type { ProfileUpdateDigestCadence } from './profileUpdateDigestCadence';
 
-export interface ProfileUpdate {
-  displayName?: string;
-  email?: string;
-  digestCadence?: ProfileUpdateDigestCadence;
-  /** IANA timezone, e.g. America/New_York */
-  digestTimezone?: string;
-}
+export type UserDigestCadence = (typeof UserDigestCadence)[keyof typeof UserDigestCadence];
+
+export const UserDigestCadence = {
+  off: 'off',
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;

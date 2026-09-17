@@ -28,6 +28,9 @@ type User struct {
 	CreatedAt                  string `json:"createdAt"`
 	FailedLoginAttempts        int    `json:"-"`
 	LockedUntil                string `json:"-"`
+	DigestCadence              string `json:"digestCadence"`
+	DigestLastSentAt           string `json:"-"`
+	DigestTimezone             string `json:"digestTimezone"`
 }
 
 // Session represents a row in the sessions table.
@@ -58,12 +61,18 @@ func (s *Store) CreateUser(ctx context.Context, user *User) error {
 	if user.AuthSource == "" {
 		user.AuthSource = "local"
 	}
+	if user.DigestCadence == "" {
+		user.DigestCadence = "off"
+	}
+	if user.DigestTimezone == "" {
+		user.DigestTimezone = "UTC"
+	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at, digest_cadence, digest_last_sent_at, digest_timezone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, user.ID, user.Username, user.DisplayName, user.Email, user.InstanceAdminRole, user.AuthSource,
-		user.PasswordHash, boolToInt(user.Disabled), boolToInt(user.CanManageDashboardDefaults), user.CreatedAt)
+		user.PasswordHash, boolToInt(user.Disabled), boolToInt(user.CanManageDashboardDefaults), user.CreatedAt, user.DigestCadence, user.DigestLastSentAt, user.DigestTimezone)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrConflict
@@ -78,10 +87,10 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	var disabled, canManageDashboardDefaults int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at
+		SELECT id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at, digest_cadence, digest_last_sent_at, digest_timezone
 		FROM users WHERE id = ?
 	`, id).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
-		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
+		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt, &u.DigestCadence, &u.DigestLastSentAt, &u.DigestTimezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -196,6 +205,15 @@ func (s *Store) UpdateUser(ctx context.Context, id string, updates map[string]an
 		case "can_manage_dashboard_defaults":
 			setClauses = append(setClauses, "can_manage_dashboard_defaults = ?")
 			args = append(args, boolToInt(v.(bool)))
+		case "digest_cadence":
+			setClauses = append(setClauses, "digest_cadence = ?")
+			args = append(args, v)
+		case "digest_last_sent_at":
+			setClauses = append(setClauses, "digest_last_sent_at = ?")
+			args = append(args, v)
+		case "digest_timezone":
+			setClauses = append(setClauses, "digest_timezone = ?")
+			args = append(args, v)
 		}
 	}
 
@@ -240,13 +258,13 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 }
 
 // userColumns is the shared column list for the ListUsers SELECT.
-const userColumns = `id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at`
+const userColumns = `id, username, display_name, email, instance_admin_role, auth_source, password_hash, disabled, can_manage_dashboard_defaults, created_at, digest_cadence, digest_last_sent_at, digest_timezone`
 
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var disabled, canManageDashboardDefaults int
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.InstanceAdminRole,
-		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt)
+		&u.AuthSource, &u.PasswordHash, &disabled, &canManageDashboardDefaults, &u.CreatedAt, &u.DigestCadence, &u.DigestLastSentAt, &u.DigestTimezone)
 	if err != nil {
 		return User{}, err
 	}

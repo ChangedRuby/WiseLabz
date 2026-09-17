@@ -213,6 +213,14 @@ export const getGetNotificationsConfigResponseMock = (
         faker.helpers.arrayElement(Object.values(Severity)),
         undefined,
       ]),
+      connectorCategory: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      connectorId: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
     })
   ),
   ...overrideResponse,
@@ -235,6 +243,14 @@ export const getPutNotificationsConfigResponseMock = (
       enabled: faker.datatype.boolean(),
       minSeverity: faker.helpers.arrayElement([
         faker.helpers.arrayElement(Object.values(Severity)),
+        undefined,
+      ]),
+      connectorCategory: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      connectorId: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
         undefined,
       ]),
     })

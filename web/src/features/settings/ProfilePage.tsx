@@ -21,6 +21,7 @@ import {
   getGetAuthApiKeysQueryKey,
 } from '../../api/generated/auth/auth';
 import type { Session, ApiKey } from '../../api/model';
+import { UserDigestCadence } from '../../api/model/userDigestCadence';
 import { Button } from '../../components/ui/Button';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -28,7 +29,7 @@ import { Dialog } from '../../components/ui/Dialog';
 import { TimeAgo } from '../../components/ui/TimeAgo';
 import { ToneTag } from '../../components/ui/ToneTag';
 import { toast } from '../../lib/toast';
-import { SubHeader, Section, Field, TextInput } from './parts';
+import { SubHeader, Section, Field, TextInput, Select } from './parts';
 import { UserIcon, KeyIcon, CopyIcon } from '../../components/icons';
 
 export function ProfilePage() {
@@ -38,6 +39,8 @@ export function ProfilePage() {
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [digestCadence, setDigestCadence] = useState<typeof UserDigestCadence[keyof typeof UserDigestCadence]>('off');
+  const [digestTimezone, setDigestTimezone] = useState('');
   // Adjust state during render (React-blessed alternative to a syncing effect):
   // re-seed whenever the query yields a fresh reference, e.g. after an invalidate.
   const [seeded, setSeeded] = useState<typeof me | null>(null);
@@ -45,10 +48,12 @@ export function ProfilePage() {
     setSeeded(me);
     setDisplayName(me.displayName ?? '');
     setEmail(me.email ?? '');
+    setDigestCadence(me.digestCadence ?? 'off');
+    setDigestTimezone(me.digestTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
   }
 
   const saveProfile = useMutation({
-    mutationFn: () => patchMe({ displayName, email }),
+    mutationFn: () => patchMe({ displayName, email, digestCadence, digestTimezone }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast.success(t('settings.profile.saved'));
@@ -57,7 +62,12 @@ export function ProfilePage() {
   });
 
   const isLocal = me?.authSource === 'local';
-  const dirty = me ? displayName !== (me.displayName ?? '') || email !== (me.email ?? '') : false;
+  const dirty = me
+    ? displayName !== (me.displayName ?? '') ||
+      email !== (me.email ?? '') ||
+      digestCadence !== (me.digestCadence ?? 'off') ||
+      digestTimezone !== (me.digestTimezone ?? '')
+    : false;
 
   return (
     <div>
@@ -89,6 +99,28 @@ export function ProfilePage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+          <Field label={t('settings.profile.digestCadence')} htmlFor="profile-digest-cadence">
+            <Select
+              id="profile-digest-cadence"
+              value={digestCadence}
+              onChange={(e) => setDigestCadence(e.target.value as typeof UserDigestCadence[keyof typeof UserDigestCadence])}
+            >
+              <option value={UserDigestCadence.off}>{t('settings.profile.digestCadenceOff')}</option>
+              <option value={UserDigestCadence.daily}>{t('settings.profile.digestCadenceDaily')}</option>
+              <option value={UserDigestCadence.weekly}>{t('settings.profile.digestCadenceWeekly')}</option>
+            </Select>
+          </Field>
+          <Field
+            label={t('settings.profile.digestTimezone')}
+            htmlFor="profile-digest-timezone"
+            hint={t('settings.profile.digestTimezoneHint')}
+          >
+            <TextInput
+              id="profile-digest-timezone"
+              value={digestTimezone}
+              onChange={(e) => setDigestTimezone(e.target.value)}
             />
           </Field>
         </div>

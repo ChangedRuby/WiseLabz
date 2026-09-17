@@ -698,6 +698,10 @@ export const en = {
       event: 'Event',
       minSeverity: 'Min severity',
       minSeverityFor: 'Minimum severity for {{event}}',
+      connectorCategory: 'Category filter',
+      connectorId: 'Connector filter',
+      anyConnectorCategory: 'Any category',
+      anyConnector: 'Any connector',
       deliveries: {
         title: 'Delivery history',
         statusFilter: 'Filter by status',
@@ -856,6 +860,12 @@ export const en = {
       revoke: 'Revoke',
       revokeTitle: 'Revoke session?',
       revokeConfirm: 'That device will be signed out and need to log in again.',
+      digestCadence: 'Digest cadence',
+      digestCadenceOff: 'Off',
+      digestCadenceDaily: 'Daily',
+      digestCadenceWeekly: 'Weekly',
+      digestTimezone: 'Digest timezone',
+      digestTimezoneHint: 'IANA timezone (e.g. America/New_York, Europe/London).',
       apiKeys: {
         title: 'API keys',
         subtitle: 'Create and manage personal API keys for scripts and integrations.',

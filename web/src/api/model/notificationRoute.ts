@@ -15,4 +15,8 @@ export interface NotificationRoute {
   channel: NotificationChannelType;
   enabled: boolean;
   minSeverity?: Severity;
+  /** Optional connector category filter; empty/absent matches any category. */
+  connectorCategory?: string;
+  /** Optional connector ID filter; empty/absent matches any connector. */
+  connectorId?: string;
 }

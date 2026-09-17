@@ -51,19 +51,30 @@ func (d *Dispatcher) NotifyAlertCreated(ctx context.Context, alertID, title, mes
 		return
 	}
 	channels := d.loadChannels(ctx)
-	go d.notifyAlertCreated(users, channels, alertID, title, message)
+	routes := d.loadRouting(ctx)
+	severity := ""
+	connectorID := ""
+	if alertID != "" {
+		if alert, err := d.store.GetAlert(ctx, alertID); err != nil {
+			slog.Error("failed to fetch alert for notification", "error", err, "alertID", alertID)
+		} else {
+			severity = alert.Severity
+			connectorID = alert.ServiceID
+		}
+	}
+	go d.notifyAlertCreated(users, channels, routes, alertID, severity, connectorID, title, message)
 }
 
-func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCfg, alertID, title, message string) {
+func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCfg, routes []routeCfg, alertID, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
 			continue
 		}
 		d.fanoutSem <- struct{}{}
-		go func(userID string) {
+		go func(userID string, skipExternal bool) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, alertID, userID, "alert.created", title, message)
-		}(u.ID)
+			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, connectorID, title, message, skipExternal)
+		}(u.ID, u.DigestCadence != "off")
 	}
 }
 
@@ -78,23 +89,34 @@ func (d *Dispatcher) NotifyFindingCreated(ctx context.Context, findingID, title,
 		return
 	}
 	channels := d.loadChannels(ctx)
-	go d.notifyFindingCreated(users, channels, title, message)
+	routes := d.loadRouting(ctx)
+	severity := ""
+	connectorID := ""
+	if findingID != "" {
+		if finding, err := d.store.GetQualityFinding(ctx, findingID); err != nil {
+			slog.Error("failed to fetch finding for notification", "error", err, "findingID", findingID)
+		} else {
+			severity = finding.Severity
+			connectorID = finding.ConnectorID
+		}
+	}
+	go d.notifyFindingCreated(users, channels, routes, severity, connectorID, title, message)
 }
 
 // notifyFindingCreated fans out like notifyAlertCreated. It reuses notifyAlert
 // with an empty alertID: a finding isn't an alert, and ponytail: the in-app
 // notification/WS payload has no finding deep-link yet — add one (a real
 // findingId column) if the UI needs to navigate straight to it.
-func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, title, message string) {
+func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, routes []routeCfg, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
 			continue
 		}
 		d.fanoutSem <- struct{}{}
-		go func(userID string) {
+		go func(userID string, skipExternal bool) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, "", userID, "finding.created", title, message)
-		}(u.ID)
+			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message, skipExternal)
+		}(u.ID, u.DigestCadence != "off")
 	}
 }
 
@@ -103,6 +125,16 @@ type channelCfg struct {
 	Type    string         `json:"type"`
 	Enabled bool           `json:"enabled"`
 	Config  map[string]any `json:"config"`
+}
+
+// routeCfg is one entry of the notification_config "routing" array.
+type routeCfg struct {
+	EventType         string `json:"eventType"`
+	Channel           string `json:"channel"`
+	Enabled           bool   `json:"enabled"`
+	MinSeverity       string `json:"minSeverity"`
+	ConnectorCategory string `json:"connectorCategory"`
+	ConnectorID       string `json:"connectorId"`
 }
 
 // loadChannels reads the configured notification channels. Returns nil (no channels) on any
@@ -121,6 +153,22 @@ func (d *Dispatcher) loadChannels(ctx context.Context) []channelCfg {
 	return doc.Channels
 }
 
+// loadRouting reads the configured notification routing rules. Returns nil on any
+// read/parse error so callers just skip optional routing gates — in-app delivery never depends on this.
+func (d *Dispatcher) loadRouting(ctx context.Context) []routeCfg {
+	var raw string
+	if err := d.store.DB().QueryRowContext(ctx, `SELECT config_json FROM notification_config WHERE id = 1`).Scan(&raw); err != nil || raw == "" {
+		return nil
+	}
+	var doc struct {
+		Routing []routeCfg `json:"routing"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+	return doc.Routing
+}
+
 // channel returns the config for the given channel type and whether it's enabled.
 func (d *Dispatcher) channel(ctx context.Context, typ string) (channelCfg, bool) {
 	for _, c := range d.loadChannels(ctx) {
@@ -134,10 +182,11 @@ func (d *Dispatcher) channel(ctx context.Context, typ string) (channelCfg, bool)
 // NotifyAlert dispatches an alert to all configured channels, recording a delivery row per
 // channel attempted (see store.DeliveryRecord).
 func (d *Dispatcher) NotifyAlert(alertID, userID, eventType, title, message string) {
-	d.notifyAlert(context.Background(), d.loadChannels(context.Background()), alertID, userID, eventType, title, message)
+	ctx := context.Background()
+	d.notifyAlert(ctx, d.loadChannels(ctx), d.loadRouting(ctx), alertID, userID, eventType, "", "", title, message, false)
 }
 
-func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, alertID, userID, eventType, title, message string) {
+func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, connectorID, title, message string, skipExternal bool) {
 
 	notifID, err := d.createInApp(ctx, userID, alertID, eventType, title, message)
 	if err != nil {
@@ -154,25 +203,81 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, ale
 		})
 	}
 
-	if _, enabled := findChannel(channels, "smtp"); enabled {
-		// ponytail: SMTP delivery is a stub — always "succeeds" and only logs. Real sending
-		// (user email lookup, SMTP auth/TLS, credential decryption) is out of scope for issue #18;
-		// still recorded as a real delivery row so retry/observability plumbing already covers it
-		// once real sending lands.
-		slog.Info("SMTP notification (stub)", "userID", userID, "title", title)
-		d.recordDelivery(ctx, notifID, "smtp", store.DeliveryStatusSent, "")
+	if skipExternal {
+		return
 	}
 
-	if cfg, enabled := findChannel(channels, "webhook"); enabled {
-		d.attemptChannel(ctx, notifID, "webhook", cfg, webhookPayload(title, message))
+	// Resolve connector once per notifyAlert call (not per channel) if needed for filters.
+	var connectorCategory string
+	if connectorID != "" {
+		if connector, err := d.store.GetConnector(ctx, connectorID); err != nil {
+			slog.Error("failed to fetch connector for notification", "error", err, "connectorID", connectorID)
+			// Treat as unknown category; routes with a category filter just won't match.
+		} else {
+			connectorCategory = connector.Category
+		}
 	}
 
-	if cfg, enabled := findChannel(channels, "discord"); enabled {
-		d.attemptChannel(ctx, notifID, "discord", cfg, discordPayload(title, message))
+	// Helper to check if a channel should be gated by routing rules.
+	// Returns true if delivery should be skipped, false if it should proceed (or if no routing applies).
+	shouldSkip := func(channel string) bool {
+		if len(routes) == 0 {
+			// No routing configured; proceed with normal channel-based delivery.
+			return false
+		}
+		route, foundRoute := findRoute(routes, eventType, channel)
+		if !foundRoute {
+			// Routing configured but no rule for this event/channel; skip.
+			return true
+		}
+		if !route.Enabled {
+			// Route exists but disabled; skip.
+			return true
+		}
+		if severityRank(severity) > severityRank(route.MinSeverity) {
+			// Event severity below minimum; skip.
+			return true
+		}
+		// Check connector category filter (AND semantics with ID filter if both present).
+		if route.ConnectorCategory != "" && route.ConnectorCategory != connectorCategory {
+			// Route has category filter and connector's category doesn't match; skip.
+			return true
+		}
+		// Check connector ID filter (AND semantics with category filter if both present).
+		if route.ConnectorID != "" && route.ConnectorID != connectorID {
+			// Route has ID filter and connector ID doesn't match; skip.
+			return true
+		}
+		return false
 	}
 
-	if cfg, enabled := findChannel(channels, "slack"); enabled {
-		d.attemptChannel(ctx, notifID, "slack", cfg, slackPayload(title, message))
+	if !shouldSkip("smtp") {
+		if _, enabled := findChannel(channels, "smtp"); enabled {
+			// ponytail: SMTP delivery is a stub — always "succeeds" and only logs. Real sending
+			// (user email lookup, SMTP auth/TLS, credential decryption) is out of scope for issue #18;
+			// still recorded as a real delivery row so retry/observability plumbing already covers it
+			// once real sending lands.
+			slog.Info("SMTP notification (stub)", "userID", userID, "title", title)
+			d.recordDelivery(ctx, notifID, "smtp", store.DeliveryStatusSent, "")
+		}
+	}
+
+	if !shouldSkip("webhook") {
+		if cfg, enabled := findChannel(channels, "webhook"); enabled {
+			d.attemptChannel(ctx, notifID, "webhook", cfg, webhookPayload(title, message))
+		}
+	}
+
+	if !shouldSkip("discord") {
+		if cfg, enabled := findChannel(channels, "discord"); enabled {
+			d.attemptChannel(ctx, notifID, "discord", cfg, discordPayload(title, message))
+		}
+	}
+
+	if !shouldSkip("slack") {
+		if cfg, enabled := findChannel(channels, "slack"); enabled {
+			d.attemptChannel(ctx, notifID, "slack", cfg, slackPayload(title, message))
+		}
 	}
 }
 
@@ -183,6 +288,31 @@ func findChannel(channels []channelCfg, typ string) (channelCfg, bool) {
 		}
 	}
 	return channelCfg{}, false
+}
+
+// findRoute returns the first routing rule matching both eventType and channel, and whether one was found.
+func findRoute(routes []routeCfg, eventType, channel string) (routeCfg, bool) {
+	for _, r := range routes {
+		if r.EventType == eventType && r.Channel == channel {
+			return r, true
+		}
+	}
+	return routeCfg{}, false
+}
+
+// severityRank returns a numeric rank for routing: critical=0, warning=1, info=2, unknown=3.
+// Lower rank = more severe. This must match the severity hierarchy elsewhere in the codebase.
+func severityRank(severity string) int {
+	switch severity {
+	case "critical":
+		return 0
+	case "warning":
+		return 1
+	case "info":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // createInApp creates the in-app notification row and returns its ID.

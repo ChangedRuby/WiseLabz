@@ -290,6 +290,8 @@ func sanitizeUser(u *store.User) map[string]any {
 		"disabled":                   u.Disabled,
 		"canManageDashboardDefaults": u.CanManageDashboardDefaults,
 		"createdAt":                  u.CreatedAt,
+		"digestCadence":              u.DigestCadence,
+		"digestTimezone":             u.DigestTimezone,
 	}
 }
 
