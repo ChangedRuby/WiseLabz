@@ -52,6 +52,11 @@ object, action-specific), and `createdAt`.
 | `alert.dismiss` | `POST /api/alerts/{id}/dismiss` | alert / id |
 | `alert.snooze` | `POST /api/alerts/{id}/snooze` | alert / id |
 | `finding.resolve` | `POST /api/findings/{id}/resolve` | finding / id |
+| `compliance_rule.create` | `POST /api/compliance/rules` | compliance_rule / new ID |
+| `compliance_rule.update` | `PUT /api/compliance/rules/{id}` | compliance_rule / id |
+| `compliance_rule.delete` | `DELETE /api/compliance/rules/{id}` | compliance_rule / id |
+| `compliance_rule.enable` | `PUT /api/compliance/rules/{id}` (enabled true) | compliance_rule / id |
+| `compliance_rule.disable` | `PUT /api/compliance/rules/{id}` (enabled false) | compliance_rule / id |
 
 `detail` never carries secret values. `connector.update` and
 `auth.config.update` record which *fields* changed (a name list), not

@@ -3,12 +3,14 @@ package quality
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/compliance"
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
@@ -22,6 +24,7 @@ const (
 	EmptyContentMinChars = 40
 	// ConsecutiveFailuresThreshold is the failed-sync streak that opens a finding.
 	ConsecutiveFailuresThreshold = 3
+	complianceEntityNameLimit    = 10
 )
 
 // severityRank orders finding severities so the notification hook can tell
@@ -92,8 +95,147 @@ func (c *Checker) RunForConnector(ctx context.Context, connectorID string) error
 			c.broadcastCreated(connectorID, finding)
 		}
 	}
+	complianceFindings, err := c.checkCompliance(ctx, connectorID)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("compliance check: %w", err))
+	}
+	for _, finding := range complianceFindings {
+		if finding != nil && c.hub != nil {
+			c.broadcastCreated(connectorID, finding)
+		}
+	}
 	c.broadcastChanged(connectorID)
 	return errors.Join(errs...)
+}
+
+// EvaluateRule evaluates an enabled rule against the latest snapshots for its
+// matching connectors. It is used after a rule is created, changed, or enabled.
+func (c *Checker) EvaluateRule(ctx context.Context, ruleID string) error {
+	record, err := c.store.GetComplianceRule(ctx, ruleID)
+	if err != nil {
+		return err
+	}
+	if !record.Enabled {
+		return c.ResolveRule(ctx, ruleID)
+	}
+	rule, err := complianceRule(record)
+	if err != nil {
+		return err
+	}
+	connectors, err := c.store.ListAllConnectors(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, conn := range connectors {
+		if conn.Type != rule.ConnectorType {
+			continue
+		}
+		finding, err := c.evaluateComplianceRule(ctx, conn.ID, rule)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("connector %s: %w", conn.ID, err))
+			continue
+		}
+		if finding != nil && c.hub != nil {
+			c.broadcastCreated(conn.ID, finding)
+		}
+		c.broadcastChanged(conn.ID)
+	}
+	return errors.Join(errs...)
+}
+
+// ResolveRule resolves all open findings for a disabled or deleted rule.
+func (c *Checker) ResolveRule(ctx context.Context, ruleID string) error {
+	return c.store.ResolveQualityFindingsForRule(ctx, ruleID)
+}
+
+func (c *Checker) checkCompliance(ctx context.Context, connectorID string) ([]*store.QualityFindingRecord, error) {
+	conn, err := c.store.GetConnector(ctx, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	records, err := c.store.ListComplianceRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	findings := make([]*store.QualityFindingRecord, 0)
+	var errs []error
+	for i := range records {
+		if !records[i].Enabled || records[i].ConnectorType != conn.Type {
+			continue
+		}
+		rule, err := complianceRule(&records[i])
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rule %s: %w", records[i].ID, err))
+			continue
+		}
+		finding, err := c.evaluateComplianceRule(ctx, connectorID, rule)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rule %s: %w", records[i].ID, err))
+			continue
+		}
+		if finding != nil {
+			findings = append(findings, finding)
+		}
+	}
+	return findings, errors.Join(errs...)
+}
+
+func complianceRule(record *store.ComplianceRuleRecord) (compliance.Rule, error) {
+	var conditions []compliance.Condition
+	if err := json.Unmarshal([]byte(record.Conditions), &conditions); err != nil {
+		return compliance.Rule{}, fmt.Errorf("decode conditions: %w", err)
+	}
+	return compliance.Rule{
+		ID: record.ID, Name: record.Name, ConnectorType: record.ConnectorType,
+		EntityKind: record.EntityKind, Conditions: conditions, Severity: record.Severity,
+		Title: record.Title, RemediationLink: record.RemediationLink, Enabled: record.Enabled,
+	}, nil
+}
+
+func (c *Checker) evaluateComplianceRule(ctx context.Context, connectorID string, rule compliance.Rule) (*store.QualityFindingRecord, error) {
+	record, err := c.store.GetLatestSnapshot(ctx, connectorID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var snapshot connector.ServiceSnapshot
+	if err := json.Unmarshal([]byte(record.Data), &snapshot); err != nil {
+		slog.Warn("skipping malformed snapshot for compliance rule", "error", err)
+		return nil, nil
+	}
+	entities := make([]compliance.Entity, len(snapshot.Entities))
+	for i, entity := range snapshot.Entities {
+		entities[i] = compliance.Entity{Kind: entity.Kind, Name: entity.Name, Attributes: entity.Attributes}
+	}
+	matches := compliance.Evaluate(rule, compliance.Snapshot{Entities: entities})
+	if len(matches) == 0 {
+		return nil, c.store.ResolveQualityFindingForRule(ctx, connectorID, rule.ID)
+	}
+	finding := &store.QualityFindingRecord{
+		ConnectorID: connectorID, RuleID: rule.ID, CheckType: "compliance",
+		Severity: rule.Severity, Title: rule.Title, Description: complianceDescription(matches),
+		RemediationLink: rule.RemediationLink,
+	}
+	return c.upsert(ctx, finding)
+}
+
+func complianceDescription(matches []compliance.Entity) string {
+	limit := len(matches)
+	if limit > complianceEntityNameLimit {
+		limit = complianceEntityNameLimit
+	}
+	names := make([]string, limit)
+	for i := range names {
+		names[i] = matches[i].Name
+	}
+	description := "Violating entities: " + strings.Join(names, ", ")
+	if remaining := len(matches) - limit; remaining > 0 {
+		description += fmt.Sprintf(", and %d more", remaining)
+	}
+	return description + "."
 }
 
 func (c *Checker) broadcastCreated(connectorID string, finding *store.QualityFindingRecord) {
@@ -307,7 +449,8 @@ func (c *Checker) checkCredentialRotation(ctx context.Context, connectorID strin
 	return c.upsert(ctx, finding)
 }
 
-// RunStaleSweepOnce performs one pass of stale documentation checks for all connectors.
+// RunStaleSweepOnce performs one pass of every quality check for all connectors.
+// Its legacy name is kept because the quality cron already calls it.
 func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifier FindingNotifier, logger *slog.Logger) {
 	checker := NewChecker(s, hub, notifier, RotationConfig{})
 	connectors, err := checker.store.ListAllConnectors(ctx)
@@ -316,19 +459,9 @@ func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifie
 		return
 	}
 	for _, connector := range connectors {
-		docs, err := checker.store.ListDocsByService(ctx, connector.ID)
-		if err != nil {
-			logger.Error("list docs for stale sweep", "connector", connector.ID, "error", err)
+		if err := checker.RunForConnector(ctx, connector.ID); err != nil {
+			logger.Error("quality sweep failed", "connector", connector.ID, "error", err)
 			continue
 		}
-		finding, err := checker.checkStale(ctx, connector.ID, docs)
-		if err != nil {
-			logger.Error("quality stale check failed", "connector", connector.ID, "error", err)
-			continue
-		}
-		if finding != nil && checker.hub != nil {
-			checker.broadcastCreated(connector.ID, finding)
-		}
-		checker.broadcastChanged(connector.ID)
 	}
 }

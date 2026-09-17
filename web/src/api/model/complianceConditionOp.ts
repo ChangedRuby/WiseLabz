@@ -7,13 +7,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type QualityCheckType = (typeof QualityCheckType)[keyof typeof QualityCheckType];
+export type ComplianceConditionOp =
+  (typeof ComplianceConditionOp)[keyof typeof ComplianceConditionOp];
 
-export const QualityCheckType = {
-  stale: 'stale',
-  empty: 'empty',
-  failing: 'failing',
-  ownership_incomplete: 'ownership_incomplete',
-  credential_rotation: 'credential_rotation',
-  compliance: 'compliance',
+export const ComplianceConditionOp = {
+  eq: 'eq',
+  neq: 'neq',
+  contains: 'contains',
+  regex: 'regex',
+  exists: 'exists',
+  gt: 'gt',
+  lt: 'lt',
 } as const;

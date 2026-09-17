@@ -17,6 +17,7 @@ import {
   HistoryIcon,
   FileTextIcon,
   ShareIcon,
+  AlertTriangleIcon,
 } from '../../components/icons';
 
 export interface SettingsSection {
@@ -28,6 +29,7 @@ export interface SettingsSection {
   labelDefault: string;
   Icon: ComponentType<{ size?: number }>;
   operatorOnly: boolean;
+  instanceAdminOnly?: boolean;
 }
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -100,6 +102,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelDefault: 'Share links',
     Icon: ShareIcon,
     operatorOnly: true,
+  },
+  {
+    segment: 'compliance',
+    labelKey: 'settings.nav.compliance',
+    labelDefault: 'Compliance rules',
+    Icon: AlertTriangleIcon,
+    operatorOnly: true,
+    instanceAdminOnly: true,
   },
   {
     segment: 'appearance',

@@ -6,14 +6,10 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ComplianceRuleTestMatchEntitiesItem } from './complianceRuleTestMatchEntitiesItem';
 
-export type QualityCheckType = (typeof QualityCheckType)[keyof typeof QualityCheckType];
-
-export const QualityCheckType = {
-  stale: 'stale',
-  empty: 'empty',
-  failing: 'failing',
-  ownership_incomplete: 'ownership_incomplete',
-  credential_rotation: 'credential_rotation',
-  compliance: 'compliance',
-} as const;
+export interface ComplianceRuleTestMatch {
+  connectorId: string;
+  connectorName: string;
+  entities: ComplianceRuleTestMatchEntitiesItem[];
+}

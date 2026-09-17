@@ -6,14 +6,17 @@
  */
 import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCanMutate } from '../../hooks/useRole';
+import { useCanMutate, useIsInstanceAdmin } from '../../hooks/useRole';
 import { cn } from '../../lib/cn';
 import { SETTINGS_SECTIONS } from './nav';
 
 export function SettingsLayout() {
   const { t } = useTranslation();
   const canMutate = useCanMutate();
-  const sections = SETTINGS_SECTIONS.filter((s) => !s.operatorOnly || canMutate);
+  const isInstanceAdmin = useIsInstanceAdmin();
+  const sections = SETTINGS_SECTIONS.filter((s) =>
+    (!s.operatorOnly || canMutate) && (!s.instanceAdminOnly || isInstanceAdmin)
+  );
 
   return (
     <div className="mx-auto max-w-250 px-6 py-6">

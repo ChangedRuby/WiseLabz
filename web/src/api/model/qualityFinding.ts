@@ -16,6 +16,8 @@ export interface QualityFinding {
   connectorName: string;
   /** @nullable */
   docId: string | null;
+  /** @nullable */
+  ruleId: string | null;
   checkType: QualityCheckType;
   severity: Severity;
   title: string;

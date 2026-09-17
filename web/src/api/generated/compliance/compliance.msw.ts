@@ -11,7 +11,13 @@ import { faker } from '@faker-js/faker';
 import { HttpResponse, http } from 'msw';
 import type { RequestHandlerOptions } from 'msw';
 
-import type { GetComplianceSchema200 } from '../../model';
+import { Severity } from '../../model';
+import type {
+  ComplianceRule,
+  ComplianceRulePage,
+  ComplianceRuleTestResult,
+  GetComplianceSchema200,
+} from '../../model';
 
 export const getGetComplianceSchemaResponseMock = (): GetComplianceSchema200 => ({
   [faker.string.alphanumeric(5)]: {
@@ -24,6 +30,164 @@ export const getGetComplianceSchemaResponseMock = (): GetComplianceSchema200 => 
       description: faker.string.alpha({ length: { min: 10, max: 20 } }),
     })),
   },
+});
+
+export const getGetComplianceRulesResponseMock = (
+  overrideResponse: Partial<Extract<ComplianceRulePage, object>> = {}
+): ComplianceRulePage => ({
+  items: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    ...{
+      name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      connectorType: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      entityKind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      conditions: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+        () => ({
+          attribute: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          op: faker.helpers.arrayElement([
+            'eq',
+            'neq',
+            'contains',
+            'regex',
+            'exists',
+            'gt',
+            'lt',
+          ] as const),
+          value: {},
+        })
+      ),
+      severity: faker.helpers.arrayElement(Object.values(Severity)),
+      title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      remediationLink: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      enabled: faker.datatype.boolean(),
+    },
+    ...{
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    },
+  })),
+  ...overrideResponse,
+});
+
+export const getPostComplianceRulesResponseMock = (): ComplianceRule => ({
+  ...{
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorType: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entityKind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    conditions: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => ({
+        attribute: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        op: faker.helpers.arrayElement([
+          'eq',
+          'neq',
+          'contains',
+          'regex',
+          'exists',
+          'gt',
+          'lt',
+        ] as const),
+        value: {},
+      })
+    ),
+    severity: faker.helpers.arrayElement(Object.values(Severity)),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    remediationLink: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    enabled: faker.datatype.boolean(),
+  },
+  ...{
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
+
+export const getGetComplianceRulesIdResponseMock = (): ComplianceRule => ({
+  ...{
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorType: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entityKind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    conditions: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => ({
+        attribute: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        op: faker.helpers.arrayElement([
+          'eq',
+          'neq',
+          'contains',
+          'regex',
+          'exists',
+          'gt',
+          'lt',
+        ] as const),
+        value: {},
+      })
+    ),
+    severity: faker.helpers.arrayElement(Object.values(Severity)),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    remediationLink: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    enabled: faker.datatype.boolean(),
+  },
+  ...{
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
+
+export const getPutComplianceRulesIdResponseMock = (): ComplianceRule => ({
+  ...{
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorType: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entityKind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    conditions: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => ({
+        attribute: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        op: faker.helpers.arrayElement([
+          'eq',
+          'neq',
+          'contains',
+          'regex',
+          'exists',
+          'gt',
+          'lt',
+        ] as const),
+        value: {},
+      })
+    ),
+    severity: faker.helpers.arrayElement(Object.values(Severity)),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    remediationLink: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    enabled: faker.datatype.boolean(),
+  },
+  ...{
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
+
+export const getPostComplianceRulesTestResponseMock = (
+  overrideResponse: Partial<Extract<ComplianceRuleTestResult, object>> = {}
+): ComplianceRuleTestResult => ({
+  items: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    entities: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => ({})
+    ),
+  })),
+  ...overrideResponse,
 });
 
 export const getGetComplianceSchemaMockHandler = (
@@ -49,4 +213,151 @@ export const getGetComplianceSchemaMockHandler = (
     options
   );
 };
-export const getComplianceMock = () => [getGetComplianceSchemaMockHandler()];
+
+export const getGetComplianceRulesMockHandler = (
+  overrideResponse?:
+    | ComplianceRulePage
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<ComplianceRulePage> | ComplianceRulePage),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/compliance/rules',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetComplianceRulesResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPostComplianceRulesMockHandler = (
+  overrideResponse?:
+    | ComplianceRule
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<ComplianceRule> | ComplianceRule),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/compliance/rules',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostComplianceRulesResponseMock(),
+        { status: 201 }
+      );
+    },
+    options
+  );
+};
+
+export const getGetComplianceRulesIdMockHandler = (
+  overrideResponse?:
+    | ComplianceRule
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<ComplianceRule> | ComplianceRule),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/compliance/rules/:id',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetComplianceRulesIdResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPutComplianceRulesIdMockHandler = (
+  overrideResponse?:
+    | ComplianceRule
+    | ((
+        info: Parameters<Parameters<typeof http.put>[1]>[0]
+      ) => Promise<ComplianceRule> | ComplianceRule),
+  options?: RequestHandlerOptions
+) => {
+  return http.put(
+    '*/compliance/rules/:id',
+    async (info: Parameters<Parameters<typeof http.put>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPutComplianceRulesIdResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getDeleteComplianceRulesIdMockHandler = (
+  overrideResponse?:
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+  options?: RequestHandlerOptions
+) => {
+  return http.delete(
+    '*/compliance/rules/:id',
+    async (info: Parameters<Parameters<typeof http.delete>[1]>[0]) => {
+      if (typeof overrideResponse === 'function') {
+        await overrideResponse(info);
+      }
+
+      return new HttpResponse(null, { status: 204 });
+    },
+    options
+  );
+};
+
+export const getPostComplianceRulesTestMockHandler = (
+  overrideResponse?:
+    | ComplianceRuleTestResult
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<ComplianceRuleTestResult> | ComplianceRuleTestResult),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/compliance/rules/test',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostComplianceRulesTestResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+export const getComplianceMock = () => [
+  getGetComplianceSchemaMockHandler(),
+  getGetComplianceRulesMockHandler(),
+  getPostComplianceRulesMockHandler(),
+  getGetComplianceRulesIdMockHandler(),
+  getPutComplianceRulesIdMockHandler(),
+  getDeleteComplianceRulesIdMockHandler(),
+  getPostComplianceRulesTestMockHandler(),
+];

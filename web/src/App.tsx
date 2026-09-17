@@ -134,6 +134,9 @@ const AuditPage = lazy(() =>
 const AppearancePage = lazy(() =>
   import('./features/settings').then(({ AppearancePage }) => ({ default: AppearancePage }))
 );
+const RulesPage = lazy(() =>
+  import('./features/settings').then(({ RulesPage }) => ({ default: RulesPage }))
+);
 
 function NotFound() {
   return (
@@ -289,6 +292,14 @@ const router = createBrowserRouter([
             element: (
               <RequireInstanceAdmin>
                 <AuditPage />
+              </RequireInstanceAdmin>
+            ),
+          },
+          {
+            path: 'compliance',
+            element: (
+              <RequireInstanceAdmin>
+                <RulesPage />
               </RequireInstanceAdmin>
             ),
           },

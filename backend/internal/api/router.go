@@ -33,6 +33,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
+	"github.com/WiseLabz/wiselabz/internal/quality"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
@@ -44,16 +45,17 @@ import (
 
 // Config holds all dependencies needed to construct the router.
 type Config struct {
-	Store         *store.Store
-	JWT           *auth.Service
-	Config        *config.Config
-	SyncEngine    *sync.Engine
-	DocEngine     *doc.Engine
-	WSHub         *ws.Hub
-	AIRegistry    *ai.Registry
-	EmbedRegistry *ai.EmbedRegistry
-	Scheduler     *scheduler.Runner // for backup job scheduling
-	BackupDir     string            // directory where backups are written
+	Store          *store.Store
+	JWT            *auth.Service
+	Config         *config.Config
+	SyncEngine     *sync.Engine
+	DocEngine      *doc.Engine
+	WSHub          *ws.Hub
+	AIRegistry     *ai.Registry
+	EmbedRegistry  *ai.EmbedRegistry
+	Scheduler      *scheduler.Runner // for backup job scheduling
+	QualityChecker *quality.Checker
+	BackupDir      string // directory where backups are written
 	// SPAFiles serves the embedded frontend build. Only used when Config.Server.Embed is true.
 	SPAFiles fs.FS
 }
@@ -90,7 +92,11 @@ func NewRouter(cfg Config) chi.Router {
 	docH := dochandler.NewHandler(cfg.Store, cfg.DocEngine, settingH, cfg.AIRegistry, cfg.EmbedRegistry, cfg.WSHub)
 	savedViewH := savedviewhandler.NewHandler(cfg.Store)
 	chatH := chathandler.NewHandler(cfg.Store, settingH, cfg.AIRegistry, cfg.EmbedRegistry)
-	complianceH := compliancehandler.NewHandler()
+	var ruleEvaluator compliancehandler.RuleEvaluator
+	if cfg.QualityChecker != nil {
+		ruleEvaluator = cfg.QualityChecker
+	}
+	complianceH := compliancehandler.NewHandler(cfg.Store, ruleEvaluator)
 
 	// --- System endpoints ---
 	r.Get("/api/health", sysH.Health)
@@ -419,7 +425,15 @@ func NewRouter(cfg Config) chi.Router {
 
 			r.Get("/api/system/diagnostics", sysH.Diagnostics)
 
-			r.Get("/api/compliance/schema", complianceH.Schema)
+			r.Route("/api/compliance", func(r chi.Router) {
+				r.Get("/schema", complianceH.Schema)
+				r.Get("/rules", complianceH.List)
+				r.Post("/rules", complianceH.Create)
+				r.Get("/rules/{id}", complianceH.Get)
+				r.Put("/rules/{id}", complianceH.Update)
+				r.Delete("/rules/{id}", complianceH.Delete)
+				r.Post("/rules/test", complianceH.Test)
+			})
 
 			r.Route("/api/users", func(r chi.Router) {
 				r.Get("/", authH.ListUsers)
