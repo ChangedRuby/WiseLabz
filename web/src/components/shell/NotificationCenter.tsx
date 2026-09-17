@@ -44,6 +44,9 @@ export function NotificationCenter() {
     if (n.alertId) {
       navigateTo('/alerts');
       setOpen(false);
+    } else if (n.eventType?.startsWith('finding.')) {
+      navigateTo('/findings');
+      setOpen(false);
     }
   };
 
@@ -107,12 +110,15 @@ export function NotificationCenter() {
                     {t('notifications.empty')}
                   </p>
                 )}
-                {items.map((n) => (
+                {items.map((n) => {
+                  const willNavigate = n.alertId || n.eventType?.startsWith('finding.');
+                  return (
                   <button
                     key={n.id}
                     onClick={() => void markRead(n)}
                     className={cn(
-                      'flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-raised',
+                      'flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                      willNavigate && 'hover:bg-surface-raised',
                       !n.read && 'bg-accent-primary-tint/40',
                     )}
                   >
@@ -132,7 +138,8 @@ export function NotificationCenter() {
                       <p className="line-clamp-2 text-xs text-ink-faint">{n.message}</p>
                     )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </motion.div>
           </>
