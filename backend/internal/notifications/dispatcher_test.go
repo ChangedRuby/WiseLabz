@@ -52,6 +52,16 @@ func setChannelConfig(t *testing.T, s *store.Store, channelType, url string) {
 	}
 }
 
+// setChannelAndRoutingConfig writes a notification_config row with both channels and routing.
+func setChannelAndRoutingConfig(t *testing.T, s *store.Store, channelType, url, routing string) {
+	t.Helper()
+	cfgJSON := `{"channels":[{"type":"` + channelType + `","enabled":true,"config":{"url":"` + url + `"}}],"routing":` + routing + `}`
+	if _, err := s.DB().ExecContext(context.Background(),
+		`INSERT INTO notification_config (id, config_json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json`, cfgJSON); err != nil {
+		t.Fatalf("set config: %v", err)
+	}
+}
+
 func deliveriesFor(t *testing.T, s *store.Store, notificationID string) []store.DeliveryRecord {
 	t.Helper()
 	// ponytail: ListDeliveries only filters by status, not notification_id; query directly
@@ -423,5 +433,152 @@ func TestNotifyAlertCreated_NoChannelsConfigured(t *testing.T) {
 	}
 	if inApp.Status != store.DeliveryStatusSent {
 		t.Errorf("expected in_app status sent, got %s", inApp.Status)
+	}
+}
+
+// TestNotifyAlert_RoutingMissingSkips verifies that a channel is skipped when no routing rule exists.
+func TestNotifyAlert_RoutingMissingSkips(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Configure webhook channel but no routing rule for it.
+	routing := `[{"eventType":"alert.created","channel":"discord","enabled":true,"minSeverity":"info"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+
+	// Should have in_app only, no webhook delivery.
+	if _, ok := findDelivery(deliveries, "webhook"); ok {
+		t.Errorf("expected no webhook delivery when no routing rule matches")
+	}
+}
+
+// TestNotifyAlert_RoutingDisabledSkips verifies that a channel is skipped when its routing rule is disabled.
+func TestNotifyAlert_RoutingDisabledSkips(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Configure webhook channel with a disabled routing rule.
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":false,"minSeverity":"info"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+
+	// Should have in_app only, no webhook delivery because route is disabled.
+	if _, ok := findDelivery(deliveries, "webhook"); ok {
+		t.Errorf("expected no webhook delivery when routing rule is disabled")
+	}
+}
+
+// TestNotifyAlert_RoutingBelowSeveritySkips verifies that a channel is skipped when event severity is below minSeverity.
+func TestNotifyAlert_RoutingBelowSeveritySkips(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Configure webhook channel with minSeverity=critical (only critical events should route).
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"critical"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create an alert with "warning" severity
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: "service-1",
+		Severity:  "warning",
+		Title:     "Warning Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		// No user might exist, that's OK
+		notifs = nil
+	}
+	if len(notifs) > 0 {
+		deliveries := deliveriesFor(t, s, notifs[0].ID)
+		if _, ok := findDelivery(deliveries, "webhook"); ok {
+			t.Errorf("expected no webhook delivery when severity below minSeverity")
+		}
+	}
+}
+
+// TestNotifyAlert_RoutingAboveSeverityDelivers verifies that a channel delivers when event severity meets minSeverity.
+func TestNotifyAlert_RoutingAboveSeverityDelivers(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Configure webhook channel with minSeverity=warning (warning and critical should route).
+	routing := `[{"eventType":"alert.created","channel":"webhook","enabled":true,"minSeverity":"warning"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	// Create a user to receive notifications
+	u := &store.User{Email: "test@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create an alert with "critical" severity
+	alert := &store.AlertRecord{
+		ChangeID:  "change-1",
+		ServiceID: "service-1",
+		Severity:  "critical",
+		Title:     "Critical Alert",
+		Status:    "pending",
+	}
+	if err := s.CreateAlert(context.Background(), alert); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
+	time.Sleep(100 * time.Millisecond)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) == 0 {
+		t.Fatalf("expected at least 1 notification")
+	}
+
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	webhook, ok := findDelivery(deliveries, "webhook")
+	if !ok {
+		t.Fatalf("expected webhook delivery when severity meets minSeverity")
+	}
+	if webhook.Status != store.DeliveryStatusSent {
+		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
 	}
 }
