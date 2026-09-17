@@ -27,6 +27,12 @@ import { useConnectorRole } from '../../hooks/useRole';
 
 type FormValues = Record<string, string | boolean>;
 
+/** Whole days between an RFC3339 timestamp and now, floored at 0. */
+function daysAgo(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
+}
+
 export function ConnectorEditPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
@@ -45,9 +51,14 @@ export function ConnectorEditPage() {
   const [name, setName] = useState<string | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
   const [values, setValues] = useState<FormValues>({});
+  const [userExpiresAt, setUserExpiresAt] = useState<string | null>(null);
+  const [rotationMaxAgeDays, setRotationMaxAgeDays] = useState<string | null>(null);
   // Prefilled values fall back to the connector read until the user edits a field.
   const nameValue = name ?? connector.data?.name ?? '';
   const ownerValue = owner ?? connector.data?.owner ?? '';
+  const userExpiresAtValue = userExpiresAt ?? connector.data?.userExpiresAt?.slice(0, 10) ?? '';
+  const rotationMaxAgeDaysValue =
+    rotationMaxAgeDays ?? (connector.data?.rotationMaxAgeDays != null ? String(connector.data.rotationMaxAgeDays) : '');
 
   const test = useMutation({
     mutationFn: () => postConnectorsConnectorIdTest(id),
@@ -69,6 +80,12 @@ export function ConnectorEditPage() {
         url: values.url !== undefined ? String(values.url) : connector.data?.url,
         verifyTls: values.verifyTls !== undefined ? Boolean(values.verifyTls) : connector.data?.verifyTls,
         config,
+        ...(userExpiresAt !== null && {
+          userExpiresAt: userExpiresAt ? `${userExpiresAt}T00:00:00Z` : null,
+        }),
+        ...(rotationMaxAgeDays !== null && {
+          rotationMaxAgeDays: rotationMaxAgeDays ? Number(rotationMaxAgeDays) : null,
+        }),
       });
     },
     onSuccess: () => {
@@ -157,6 +174,37 @@ export function ConnectorEditPage() {
               onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))}
             />
           ))}
+          {!schema?.isCredentialRefresher && (
+            <>
+              {c.secretRotatedAt && (
+                <p className="text-xs text-ink-muted">
+                  {t('connectors.edit.rotationLastRotated', {
+                    count: daysAgo(c.secretRotatedAt),
+                    days: daysAgo(c.secretRotatedAt),
+                  })}
+                </p>
+              )}
+              <label className="block text-xs text-ink-muted">
+                {t('connectors.edit.rotationExpiryLabel')}
+                <input
+                  type="date"
+                  value={userExpiresAtValue}
+                  onChange={(e) => setUserExpiresAt(e.target.value)}
+                  className="mt-1 block h-9 w-full rounded-sm border border-line bg-surface px-2.5 text-sm text-ink outline-none focus-visible:border-accent-primary-soft"
+                />
+              </label>
+              <label className="block text-xs text-ink-muted">
+                {t('connectors.edit.rotationMaxAgeLabel')}
+                <input
+                  type="number"
+                  min={1}
+                  value={rotationMaxAgeDaysValue}
+                  onChange={(e) => setRotationMaxAgeDays(e.target.value)}
+                  className="mt-1 block h-9 w-full rounded-sm border border-line bg-surface px-2.5 text-sm text-ink outline-none focus-visible:border-accent-primary-soft"
+                />
+              </label>
+            </>
+          )}
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-2">

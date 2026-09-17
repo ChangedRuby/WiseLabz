@@ -404,6 +404,10 @@ export const en = {
       saveError: "Couldn't save changes.",
       noAccessTitle: 'No access',
       noAccessDesc: "You don't have operator access to this connector.",
+      rotationExpiryLabel: 'Credential expires on',
+      rotationMaxAgeLabel: 'Rotation reminder (days, overrides default)',
+      rotationLastRotated: 'Secret last rotated {{days}} day ago',
+      rotationLastRotated_other: 'Secret last rotated {{days}} days ago',
     },
     permissions: {
       title: 'Permissions',
@@ -484,6 +488,7 @@ export const en = {
     empty: 'Empty documentation',
     failing: 'Failing syncs',
     ownershipIncomplete: 'Missing owner',
+    credentialRotation: 'Credential rotation due',
     detected: 'detected {{count}} time',
     detected_other: 'detected {{count}} times',
     remediate: 'Open remediation',

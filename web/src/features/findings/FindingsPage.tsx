@@ -24,6 +24,7 @@ const CHECK_TYPES: Array<{ value: QualityCheckType | 'all'; label: string }> = [
   { value: 'empty', label: 'findings.empty' },
   { value: 'failing', label: 'findings.failing' },
   { value: 'ownership_incomplete', label: 'findings.ownershipIncomplete' },
+  { value: 'credential_rotation', label: 'findings.credentialRotation' },
 ];
 
 export function FindingsPage() {
