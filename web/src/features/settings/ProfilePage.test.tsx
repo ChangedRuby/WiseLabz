@@ -25,7 +25,7 @@ let me = {
   email: 'test@example.com',
   role: 'operator' as const,
   authSource: 'local' as const,
-  digestCadence: 'off' as const,
+  digestCadence: 'off' as 'off' | 'daily' | 'weekly',
   digestTimezone: '',
   createdAt: '2025-01-01T00:00:00Z',
   updatedAt: '2025-01-01T00:00:00Z',
