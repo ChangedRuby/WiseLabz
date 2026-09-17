@@ -42,4 +42,16 @@ export interface Connector {
    * @nullable
    */
   credentialExpiresAt?: string | null;
+  /** Read-only. When a secret-typed config field was last actually changed; set on create too */
+  secretRotatedAt?: string;
+  /**
+   * Optional operator-set expiry the credential_rotation check treats as an upper bound on the due date
+   * @nullable
+   */
+  userExpiresAt?: string | null;
+  /**
+   * Overrides the global rotation.max_age_days for this connector; null uses the global default
+   * @nullable
+   */
+  rotationMaxAgeDays?: number | null;
 }

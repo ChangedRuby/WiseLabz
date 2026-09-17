@@ -42,8 +42,20 @@ type ConnectorRecord struct {
 	// no known expiry. When set (RFC3339) and in the past, the sync engine
 	// refuses to Fetch until refreshed (via CredentialRefresher) or updated.
 	CredentialExpiresAt string `json:"credentialExpiresAt"`
-	CreatedAt           string `json:"createdAt"`
-	UpdatedAt           string `json:"updatedAt"`
+	// SecretRotatedAt is when a secret-typed config field's value was last
+	// actually changed (not just resubmitted or renamed). Set on create and
+	// bumped by UpdateConnector's caller when SecretFieldsChanged reports a
+	// real change. Read-only over the API.
+	SecretRotatedAt string `json:"secretRotatedAt"`
+	// UserExpiresAt is an optional operator-set expiry (RFC3339) the
+	// credential_rotation quality check treats as an upper bound on the
+	// rotation due date, independent of RotationMaxAgeDays.
+	UserExpiresAt string `json:"userExpiresAt"`
+	// RotationMaxAgeDays overrides the global rotation.max_age_days config
+	// for this connector. nil means "use the global default".
+	RotationMaxAgeDays *int   `json:"rotationMaxAgeDays"`
+	CreatedAt          string `json:"createdAt"`
+	UpdatedAt          string `json:"updatedAt"`
 }
 
 // IsCredentialExpired reports whether the connector's credentials have a
@@ -61,7 +73,8 @@ func (c *ConnectorRecord) IsCredentialExpired(now time.Time) bool {
 
 // connectorColumns is the shared column list for every connector SELECT.
 const connectorColumns = `id, name, category, type, url, owner, verify_tls, config_data, enabled, status, status_message,
-	last_sync_at, schedule_seconds, next_run_at, last_sync_duration_ms, last_sync_error, retry_count, credential_expires_at, created_at, updated_at`
+	last_sync_at, schedule_seconds, next_run_at, last_sync_duration_ms, last_sync_error, retry_count, credential_expires_at,
+	secret_rotated_at, user_expires_at, rotation_max_age_days, created_at, updated_at`
 
 // SnapshotRecord represents a row in the service_snapshots table.
 type SnapshotRecord struct {
@@ -91,16 +104,21 @@ func (s *Store) CreateConnector(ctx context.Context, c *ConnectorRecord) error {
 	if c.ConfigData == "" {
 		c.ConfigData = "{}"
 	}
+	if c.SecretRotatedAt == "" {
+		c.SecretRotatedAt = c.CreatedAt
+	}
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO connectors (id, name, category, type, url, owner, verify_tls, config_data, enabled, status, status_message, last_sync_at,
-			schedule_seconds, next_run_at, last_sync_duration_ms, last_sync_error, retry_count, credential_expires_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			schedule_seconds, next_run_at, last_sync_duration_ms, last_sync_error, retry_count, credential_expires_at,
+			secret_rotated_at, user_expires_at, rotation_max_age_days, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.Name, c.Category, c.Type, c.URL, nilToStr(c.Owner), boolToInt(c.VerifyTLS), c.ConfigData,
 		boolToInt(c.Enabled), c.Status, c.StatusMessage, nilToStr(c.LastSyncAt),
 		// database/sql converts a nil *int argument to SQL NULL automatically.
 		c.ScheduleSeconds, nilToStr(c.NextRunAt), c.LastSyncDurationMs, c.LastSyncError, c.RetryCount,
-		nilToStr(c.CredentialExpiresAt), c.CreatedAt, c.UpdatedAt)
+		nilToStr(c.CredentialExpiresAt), c.SecretRotatedAt, nilToStr(c.UserExpiresAt), c.RotationMaxAgeDays,
+		c.CreatedAt, c.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrConflict
@@ -123,10 +141,13 @@ func (s *Store) GetConnector(ctx context.Context, id string) (*ConnectorRecord, 
 	var verifyTLS, enabled int
 	var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
 	var scheduleSeconds, lastSyncDurationMs sql.NullInt64
+	var secretRotatedAt, userExpiresAt sql.NullString
+	var rotationMaxAgeDays sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `SELECT `+connectorColumns+` FROM connectors WHERE id = ?
 	`, id).Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
 		&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
 		&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
+		&secretRotatedAt, &userExpiresAt, &rotationMaxAgeDays,
 		&c.CreatedAt, &c.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -143,6 +164,9 @@ func (s *Store) GetConnector(ctx context.Context, id string) (*ConnectorRecord, 
 	c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
 	c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
 	c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
+	c.SecretRotatedAt = nullStrToStr(secretRotatedAt)
+	c.UserExpiresAt = nullStrToStr(userExpiresAt)
+	c.RotationMaxAgeDays = nullInt64ToIntPtr(rotationMaxAgeDays)
 	return c, nil
 }
 
@@ -170,9 +194,12 @@ func (s *Store) ListConnectorsByID(ctx context.Context, ids []string) (map[strin
 		var verifyTLS, enabled int
 		var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
 		var scheduleSeconds, lastSyncDurationMs sql.NullInt64
+		var secretRotatedAt, userExpiresAt sql.NullString
+		var rotationMaxAgeDays sql.NullInt64
 		if err := rows.Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
 			&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
 			&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
+			&secretRotatedAt, &userExpiresAt, &rotationMaxAgeDays,
 			&c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
@@ -185,6 +212,9 @@ func (s *Store) ListConnectorsByID(ctx context.Context, ids []string) (map[strin
 		c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
 		c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
 		c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
+		c.SecretRotatedAt = nullStrToStr(secretRotatedAt)
+		c.UserExpiresAt = nullStrToStr(userExpiresAt)
+		c.RotationMaxAgeDays = nullInt64ToIntPtr(rotationMaxAgeDays)
 		connectors[c.ID] = c
 	}
 	if err := rows.Err(); err != nil {
@@ -251,6 +281,15 @@ func (s *Store) UpdateConnector(ctx context.Context, id string, updates map[stri
 			args = append(args, v)
 		case "credential_expires_at":
 			parts = append(parts, "credential_expires_at = ?")
+			args = append(args, v)
+		case "secret_rotated_at":
+			parts = append(parts, "secret_rotated_at = ?")
+			args = append(args, v)
+		case "user_expires_at":
+			parts = append(parts, "user_expires_at = ?")
+			args = append(args, v)
+		case "rotation_max_age_days":
+			parts = append(parts, "rotation_max_age_days = ?")
 			args = append(args, v)
 		}
 	}
@@ -435,9 +474,12 @@ func scanConnector(row rowScanner) (ConnectorRecord, error) {
 	var verifyTLS, enabled int
 	var owner, lastSyncAt, nextRunAt, lastSyncError, credentialExpiresAt sql.NullString
 	var scheduleSeconds, lastSyncDurationMs sql.NullInt64
+	var secretRotatedAt, userExpiresAt sql.NullString
+	var rotationMaxAgeDays sql.NullInt64
 	if err := row.Scan(&c.ID, &c.Name, &c.Category, &c.Type, &c.URL, &owner, &verifyTLS, &c.ConfigData,
 		&enabled, &c.Status, &c.StatusMessage, &lastSyncAt,
 		&scheduleSeconds, &nextRunAt, &lastSyncDurationMs, &lastSyncError, &c.RetryCount, &credentialExpiresAt,
+		&secretRotatedAt, &userExpiresAt, &rotationMaxAgeDays,
 		&c.CreatedAt, &c.UpdatedAt); err != nil {
 		return ConnectorRecord{}, err
 	}
@@ -450,6 +492,9 @@ func scanConnector(row rowScanner) (ConnectorRecord, error) {
 	c.ScheduleSeconds = nullInt64ToIntPtr(scheduleSeconds)
 	c.LastSyncDurationMs = nullInt64ToIntPtr(lastSyncDurationMs)
 	c.CredentialExpiresAt = nullStrToStr(credentialExpiresAt)
+	c.SecretRotatedAt = nullStrToStr(secretRotatedAt)
+	c.UserExpiresAt = nullStrToStr(userExpiresAt)
+	c.RotationMaxAgeDays = nullInt64ToIntPtr(rotationMaxAgeDays)
 	return c, nil
 }
 
@@ -544,6 +589,36 @@ func ParseConnectorConfig(connType, data, encKeyB64 string) (map[string]any, err
 		// else: not valid ciphertext, treat as legacy plaintext and leave as-is.
 	}
 	return cfg, nil
+}
+
+// SecretFieldsChanged reports whether any secret-typed config field's
+// plaintext value differs between the connector's currently stored config
+// (oldConfigData, as read from connectors.config_data) and newConfig (the
+// plaintext config a request is about to save). A rename-only edit or a
+// resubmitted-but-unchanged secret must report false; a newly set, changed,
+// or cleared secret field reports true.
+func SecretFieldsChanged(connType, oldConfigData string, newConfig map[string]any, encKeyB64 string) (bool, error) {
+	oldConfig, err := ParseConnectorConfig(connType, oldConfigData, encKeyB64)
+	if err != nil {
+		return false, fmt.Errorf("parse existing connector config: %w", err)
+	}
+	schema, err := connector.GetTypeSchema(connType)
+	if err != nil {
+		// Unknown/unregistered connector type: no secret fields are known,
+		// so nothing can have changed.
+		return false, nil //nolint:nilerr
+	}
+	for _, f := range schema.Fields {
+		if !IsSecretFieldType(f.Type) {
+			continue
+		}
+		oldVal, _ := oldConfig[f.Key].(string)
+		newVal, _ := newConfig[f.Key].(string)
+		if oldVal != newVal {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // MarshalConnectorConfig marshals a config map to a JSON string, encrypting

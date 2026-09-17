@@ -25,10 +25,16 @@ type QualityFindingRecord struct {
 	FirstDetectedAt string `json:"firstDetectedAt"`
 	LastSeenAt      string `json:"lastSeenAt"`
 	ResolvedAt      string `json:"resolvedAt,omitempty"`
+	// NotifiedSeverity is the severity ("info"/"warning"/"critical") this
+	// finding was last notified at, or "" if it has never been notified (or
+	// was reset by a resolve). The notification hook compares this against
+	// the current Severity to decide whether an escalation deserves a new
+	// notification, then calls SetQualityFindingNotifiedSeverity.
+	NotifiedSeverity string `json:"-"`
 }
 
 const qualityFindingColumns = `id, connector_id, doc_id, check_type, severity, title, description,
-	remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at`
+	remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at, notified_severity`
 
 // UpsertQualityFinding atomically inserts a new open finding or records another
 // detection of the existing open finding for the same connector and check.
@@ -44,30 +50,46 @@ func (s *Store) UpsertQualityFinding(ctx context.Context, f *QualityFindingRecor
 		f.LastSeenAt = now
 	}
 
+	var notifiedSeverity sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO quality_findings (id, connector_id, doc_id, check_type, severity, title, description,
-			remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, NULL)
+			remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at, notified_severity)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, NULL, NULL)
 		ON CONFLICT(connector_id, check_type) WHERE status = 'open'
 		DO UPDATE SET last_seen_at = excluded.last_seen_at,
 			detected_count = quality_findings.detected_count + 1,
 			doc_id = excluded.doc_id,
 			severity = excluded.severity, title = excluded.title,
 			description = excluded.description, remediation_link = excluded.remediation_link
-		RETURNING id
+		RETURNING id, notified_severity
 	`, f.ID, f.ConnectorID, nilToStr(f.DocID), f.CheckType, f.Severity, f.Title,
-		f.Description, f.RemediationLink, f.FirstDetectedAt, f.LastSeenAt).Scan(&f.ID)
+		f.Description, f.RemediationLink, f.FirstDetectedAt, f.LastSeenAt).Scan(&f.ID, &notifiedSeverity)
 	if err != nil {
 		return fmt.Errorf("upsert quality finding: %w", err)
+	}
+	f.NotifiedSeverity = notifiedSeverity.String
+	return nil
+}
+
+// SetQualityFindingNotifiedSeverity records the severity a finding was just
+// notified at, so a later re-detection at the same severity is deduplicated
+// while an escalation (or a resolve-then-reopen, which resets this to "")
+// still notifies.
+func (s *Store) SetQualityFindingNotifiedSeverity(ctx context.Context, id, severity string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE quality_findings SET notified_severity = ? WHERE id = ?`, severity, id)
+	if err != nil {
+		return fmt.Errorf("set quality finding notified severity: %w", err)
 	}
 	return nil
 }
 
-// ResolveQualityFinding resolves the currently open finding, if any.
+// ResolveQualityFinding resolves the currently open finding, if any, and
+// clears notified_severity so a later re-open is treated as a new finding
+// for notification purposes.
 func (s *Store) ResolveQualityFinding(ctx context.Context, connectorID, checkType string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE quality_findings SET status = 'resolved', resolved_at = ?
+		UPDATE quality_findings SET status = 'resolved', resolved_at = ?, notified_severity = NULL
 		WHERE connector_id = ? AND check_type = ? AND status = 'open'
 	`, now, connectorID, checkType)
 	if err != nil {
@@ -144,10 +166,10 @@ func (s *Store) CountQualityFindingsOpen(ctx context.Context) (int, error) {
 
 func scanQualityFinding(row rowScanner) (QualityFindingRecord, error) {
 	var f QualityFindingRecord
-	var docID, resolvedAt sql.NullString
+	var docID, resolvedAt, notifiedSeverity sql.NullString
 	err := row.Scan(&f.ID, &f.ConnectorID, &docID, &f.CheckType, &f.Severity, &f.Title,
 		&f.Description, &f.RemediationLink, &f.Status, &f.DetectedCount,
-		&f.FirstDetectedAt, &f.LastSeenAt, &resolvedAt)
+		&f.FirstDetectedAt, &f.LastSeenAt, &resolvedAt, &notifiedSeverity)
 	if errors.Is(err, sql.ErrNoRows) {
 		return QualityFindingRecord{}, ErrNotFound
 	}
@@ -156,5 +178,6 @@ func scanQualityFinding(row rowScanner) (QualityFindingRecord, error) {
 	}
 	f.DocID = docID.String
 	f.ResolvedAt = resolvedAt.String
+	f.NotifiedSeverity = notifiedSeverity.String
 	return f, nil
 }

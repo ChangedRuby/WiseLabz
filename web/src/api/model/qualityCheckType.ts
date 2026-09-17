@@ -14,4 +14,5 @@ export const QualityCheckType = {
   empty: 'empty',
   failing: 'failing',
   ownership_incomplete: 'ownership_incomplete',
+  credential_rotation: 'credential_rotation',
 } as const;

@@ -115,7 +115,8 @@ func main() {
 	notifDispatcher := notifications.NewDispatcher(s, wsHub)
 
 	// Initialize engines
-	qualityChecker := quality.NewChecker(s, wsHub)
+	qualityChecker := quality.NewChecker(s, wsHub, notifDispatcher,
+		quality.RotationConfig{MaxAgeDays: cfg.Rotation.MaxAgeDays, WarnDays: cfg.Rotation.WarnDays})
 	syncEngine := sync.NewEngine(s, wsHub, notifDispatcher, qualityChecker, cfg.Encryption.Key)
 	docEngine := doc.NewEngine(s)
 	syncEngine.SetDocRegenerator(docEngine)
@@ -182,7 +183,7 @@ func main() {
 	// InitRetentionJob), same reasoning as the backup job below.
 	jobRunner := scheduler.New(logger)
 	if _, err := jobRunner.AddJob("quality", cfg.Quality.CronExpr, func(jobCtx context.Context) {
-		quality.RunStaleSweepOnce(jobCtx, s, wsHub, logger)
+		quality.RunStaleSweepOnce(jobCtx, s, wsHub, notifDispatcher, logger)
 	}); err != nil {
 		logger.Error("Failed to add quality job", "error", err)
 		os.Exit(1)

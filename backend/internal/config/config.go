@@ -21,6 +21,7 @@ type Config struct {
 	AI         AISettings         `mapstructure:"ai"`
 	Sync       SyncSettings       `mapstructure:"sync"`
 	Quality    QualitySettings    `mapstructure:"quality"`
+	Rotation   RotationSettings   `mapstructure:"rotation"`
 	Log        LogSettings        `mapstructure:"log"`
 	Retention  RetentionSettings  `mapstructure:"retention"`
 	Backup     BackupSettings     `mapstructure:"backup"`
@@ -148,6 +149,13 @@ type QualitySettings struct {
 	CronExpr string `mapstructure:"cron_expr"` // cron expression for quality checks
 }
 
+// RotationSettings holds the default credential rotation policy applied to
+// connectors that don't set their own rotation_max_age_days override.
+type RotationSettings struct {
+	MaxAgeDays int `mapstructure:"max_age_days"` // a secret older than this is due for rotation
+	WarnDays   int `mapstructure:"warn_days"`    // warn this many days before the due date
+}
+
 // LogSettings holds logging settings.
 type LogSettings struct {
 	Level  string `mapstructure:"level"`  // "debug", "info", "warn", "error"
@@ -204,6 +212,8 @@ func Load() (*Config, error) {
 	v.SetDefault("sync.schedule", "0 */6 * * *")          // every 6 hours
 	v.SetDefault("sync.poll_cron_expr", "*/30 * * * * *") // every 30 seconds
 	v.SetDefault("quality.cron_expr", "0 0 * * *")        // daily quality checks at midnight
+	v.SetDefault("rotation.max_age_days", 90)             // secrets older than this are due for rotation
+	v.SetDefault("rotation.warn_days", 14)                // warn this many days before the due date
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
 	v.SetDefault("retention.snapshot_days", 90)
@@ -236,6 +246,7 @@ func Load() (*Config, error) {
 		"ai.embed_provider", "ai.embed_model", "ai.embed_api_key", "ai.embed_base_url",
 		"sync.schedule", "sync.poll_cron_expr",
 		"quality.cron_expr",
+		"rotation.max_age_days", "rotation.warn_days",
 		"log.level", "log.format",
 		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.cron_expr",
 		"backup.dir", "backup.cron_expr", "backup.max_backups", "backup.max_age_hours", "backup.enabled",

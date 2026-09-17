@@ -77,7 +77,7 @@ func TestCheckStaleDetectsAndAutoResolves(t *testing.T) {
 		}
 	}
 
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("RunForConnector() detect error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCheckEmptyDetectsAndAutoResolves(t *testing.T) {
 		}
 	}
 
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("RunForConnector() detect error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCheckFailingDetectsAndAutoResolves(t *testing.T) {
 		}
 	}
 
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("RunForConnector() detect error: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestCheckOwnershipDetectsAndAutoResolves(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	connector := createConnector(t, s, " \t")
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("RunForConnector() detect error: %v", err)
@@ -228,7 +228,7 @@ func TestRunForConnectorSkipsDocWithMalformedTimestamp(t *testing.T) {
 		t.Fatalf("CreateDoc() error: %v", err)
 	}
 
-	if err := NewChecker(s, nil).RunForConnector(ctx, connector.ID); err != nil {
+	if err := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14}).RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("RunForConnector() error = %v, want nil", err)
 	}
 	if got := findings(t, s, connector.ID, "stale", "open"); len(got) != 1 {
@@ -253,7 +253,7 @@ func TestRunStaleSweepOnceCoversConnectorsWithNoRecentSync(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	RunStaleSweepOnce(ctx, s, nil, logger)
+	RunStaleSweepOnce(ctx, s, nil, nil, logger)
 
 	if got := findings(t, s, connector.ID, "stale", "open"); len(got) != 1 {
 		t.Fatalf("open stale findings = %d, want 1", len(got))
@@ -264,7 +264,7 @@ func TestQualityThresholdBoundaries(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	fixedNow := time.Date(2026, time.September, 5, 12, 0, 0, 0, time.UTC)
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	checker.now = func() time.Time { return fixedNow }
 
 	tests := []struct {
@@ -309,7 +309,7 @@ func TestStaleFindingMovesToRemainingStaleDoc(t *testing.T) {
 			t.Fatalf("CreateDoc(%s) error: %v", doc.ID, err)
 		}
 	}
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("first RunForConnector() error: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestFailingThresholdAndInterruptedStreak(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	connector := createConnector(t, s, "platform-team")
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	base := time.Now().UTC().Truncate(time.Second)
 	addRun := func(index int, status store.SyncRunStatus) {
 		t.Helper()
@@ -372,7 +372,7 @@ func TestManualResolveReopensWhileConditionPersists(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	connector := createConnector(t, s, "")
-	checker := NewChecker(s, nil)
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
 	if err := checker.RunForConnector(ctx, connector.ID); err != nil {
 		t.Fatalf("first RunForConnector() error: %v", err)
 	}

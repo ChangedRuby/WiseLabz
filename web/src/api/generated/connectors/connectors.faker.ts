@@ -73,6 +73,18 @@ export const getGetConnectorsResponseMock = (): Connector[] =>
       faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
       undefined,
     ]),
+    secretRotatedAt: faker.helpers.arrayElement([
+      faker.date.past().toISOString().slice(0, 19) + 'Z',
+      undefined,
+    ]),
+    userExpiresAt: faker.helpers.arrayElement([
+      faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+      undefined,
+    ]),
+    rotationMaxAgeDays: faker.helpers.arrayElement([
+      faker.helpers.arrayElement([faker.number.int(), null]),
+      undefined,
+    ]),
   }));
 
 export const getPostConnectorsResponseMock = (
@@ -120,6 +132,18 @@ export const getPostConnectorsResponseMock = (
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
     faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  secretRotatedAt: faker.helpers.arrayElement([
+    faker.date.past().toISOString().slice(0, 19) + 'Z',
+    undefined,
+  ]),
+  userExpiresAt: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  rotationMaxAgeDays: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.number.int(), null]),
     undefined,
   ]),
   ...overrideResponse,
@@ -175,6 +199,7 @@ export const getGetConnectorsSchemaResponseMock = (): ConnectorTypeSchema[] =>
     ),
     stub: faker.datatype.boolean(),
     degradedLatencyThresholdMs: faker.helpers.arrayElement([faker.number.int(), undefined]),
+    isCredentialRefresher: faker.datatype.boolean(),
   }));
 
 export const getGetConnectorsConnectorIdResponseMock = (
@@ -222,6 +247,18 @@ export const getGetConnectorsConnectorIdResponseMock = (
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
     faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  secretRotatedAt: faker.helpers.arrayElement([
+    faker.date.past().toISOString().slice(0, 19) + 'Z',
+    undefined,
+  ]),
+  userExpiresAt: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  rotationMaxAgeDays: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.number.int(), null]),
     undefined,
   ]),
   ...overrideResponse,
@@ -272,6 +309,18 @@ export const getPutConnectorsConnectorIdResponseMock = (
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
     faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  secretRotatedAt: faker.helpers.arrayElement([
+    faker.date.past().toISOString().slice(0, 19) + 'Z',
+    undefined,
+  ]),
+  userExpiresAt: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  rotationMaxAgeDays: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.number.int(), null]),
     undefined,
   ]),
   ...overrideResponse,
@@ -554,6 +603,18 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
     faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  secretRotatedAt: faker.helpers.arrayElement([
+    faker.date.past().toISOString().slice(0, 19) + 'Z',
+    undefined,
+  ]),
+  userExpiresAt: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    undefined,
+  ]),
+  rotationMaxAgeDays: faker.helpers.arrayElement([
+    faker.helpers.arrayElement([faker.number.int(), null]),
     undefined,
   ]),
   ...overrideResponse,

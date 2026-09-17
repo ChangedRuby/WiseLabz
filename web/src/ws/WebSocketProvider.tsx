@@ -184,6 +184,13 @@ function handle(frame: WsEvent, qc: ReturnType<typeof useQueryClient>) {
       qc.invalidateQueries({ queryKey: getGetFindingsQueryKey() });
       break;
     }
+    case 'finding.created': {
+      // Per-user notification dispatch (Dispatcher.NotifyFindingCreated), not
+      // the broadcast-to-everyone 'quality.finding.created' above — refresh
+      // the notification bell the same way 'alert.resolved' does.
+      qc.invalidateQueries({ queryKey: getGetNotificationsQueryKey() });
+      break;
+    }
     case 'doc.generated': {
       s.pushActivity({
         id: frame.id ?? crypto.randomUUID(),

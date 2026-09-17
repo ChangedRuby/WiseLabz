@@ -17,6 +17,7 @@ export type WsEventType =
   | 'alert.resolved'
   | 'quality.finding.created'
   | 'quality.findings.changed'
+  | 'finding.created'
   | 'doc.generated'
   | 'doc.ai_suggestion'
   | 'doc.lock.acquired'
@@ -89,6 +90,15 @@ export interface AlertResolvedPayload {
   resolution: 'resolved' | 'dismissed' | 'snoozed';
 }
 
+/** Per-user finding notification dispatch (Dispatcher.NotifyFindingCreated),
+ * not the broadcast-to-everyone quality.finding.created above. alertId is
+ * always "" — findings have no deep-link target yet. */
+export interface FindingNotificationPayload {
+  alertId: string;
+  title: string;
+  message: string;
+}
+
 export interface QualityFindingCreatedPayload {
   findingId: string;
   connectorId: string;
@@ -158,6 +168,7 @@ export interface WsEventMap {
   'alert.resolved': AlertResolvedPayload;
   'quality.finding.created': QualityFindingCreatedPayload;
   'quality.findings.changed': QualityFindingsChangedPayload;
+  'finding.created': FindingNotificationPayload;
   'doc.generated': DocGeneratedPayload;
   'doc.ai_suggestion': DocAiSuggestionPayload;
   'doc.lock.acquired': DocLockAcquiredPayload;

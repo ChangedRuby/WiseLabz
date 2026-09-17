@@ -20,4 +20,15 @@ export interface ConnectorUpdate {
    * @nullable
    */
   scheduleSeconds?: number | null;
+  /**
+   * Optional operator-set credential expiry (RFC3339); null clears it
+   * @nullable
+   */
+  userExpiresAt?: string | null;
+  /**
+   * Overrides the global rotation.max_age_days for this connector; null clears the override
+   * @minimum 1
+   * @nullable
+   */
+  rotationMaxAgeDays?: number | null;
 }

@@ -2442,7 +2442,7 @@ components:
       enum: [pending, resolved, dismissed, snoozed]
     QualityCheckType:
       type: string
-      enum: [stale, empty, failing, ownership_incomplete]
+      enum: [stale, empty, failing, ownership_incomplete, credential_rotation]
     QualityFindingStatus:
       type: string
       enum: [open, resolved]
@@ -2638,6 +2638,12 @@ components:
           { type: integer, description: Consecutive sync failures since the last success; resets to 0 on success }
         credentialExpiresAt:
           { type: string, format: date-time, nullable: true, description: 'Null when credentials have no known expiry' }
+        secretRotatedAt:
+          { type: string, format: date-time, description: 'Read-only. When a secret-typed config field was last actually changed; set on create too' }
+        userExpiresAt:
+          { type: string, format: date-time, nullable: true, description: 'Optional operator-set expiry the credential_rotation check treats as an upper bound on the due date' }
+        rotationMaxAgeDays:
+          { type: integer, nullable: true, description: 'Overrides the global rotation.max_age_days for this connector; null uses the global default' }
     ConnectorCreate:
       type: object
       required: [name, category, type, url, config]
@@ -2652,6 +2658,10 @@ components:
           type: object
           additionalProperties: true
           description: Schema-driven fields incl. secrets; stored encrypted, never in plaintext config (ARCHITECTURE.md)
+        userExpiresAt:
+          { type: string, format: date-time, nullable: true, description: 'Optional operator-set credential expiry (RFC3339)' }
+        rotationMaxAgeDays:
+          { type: integer, nullable: true, minimum: 1, description: 'Overrides the global rotation.max_age_days for this connector' }
     ConnectorUpdate:
       type: object
       properties:
@@ -2664,6 +2674,10 @@ components:
           additionalProperties: true
         scheduleSeconds:
           { type: integer, nullable: true, description: 'Auto-sync cadence in seconds; null disables scheduled sync (manual only)' }
+        userExpiresAt:
+          { type: string, format: date-time, nullable: true, description: 'Optional operator-set credential expiry (RFC3339); null clears it' }
+        rotationMaxAgeDays:
+          { type: integer, nullable: true, minimum: 1, description: 'Overrides the global rotation.max_age_days for this connector; null clears the override' }
     MaintenanceWindow:
       type: object
       required: [id, connectorId, startsAt, endsAt, createdBy, createdAt]
@@ -2702,6 +2716,13 @@ components:
             Health-check latency (ms) above which this connector type reports
             "degraded" instead of "online". Omitted/zero means use the server's
             global default.
+        isCredentialRefresher:
+          type: boolean
+          default: false
+          description: >-
+            True if this type's credentials refresh automatically (e.g. OAuth2).
+            The credential_rotation quality check always skips it, and the UI
+            should hide the rotation reminder fields on its connector form.
     SchemaField:
       type: object
       required: [name, label, kind, required]

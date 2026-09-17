@@ -25,6 +25,10 @@ type TypeSchema struct {
 	// (e.g. a WiFi-backed host needs a looser SLA than an on-LAN one). Zero
 	// means "use the global default".
 	DegradedLatencyThresholdMs int `json:"degradedLatencyThresholdMs,omitempty"`
+	// IsCredentialRefresher is computed by ListSchemas, not set at
+	// registration: true if this type's Connector implementation satisfies
+	// CredentialRefresher (see IsCredentialRefresherType).
+	IsCredentialRefresher bool `json:"isCredentialRefresher,omitempty"`
 }
 
 // DegradedLatencyThreshold returns this type's configured health-check
@@ -148,12 +152,35 @@ func GetTypeSchema(typ string) (*TypeSchema, error) {
 	return &schema, nil
 }
 
-// ListSchemas returns all registered connector type schemas.
+// IsCredentialRefresherType reports whether typ's connector implementation
+// satisfies CredentialRefresher (its credentials can be refreshed without
+// user interaction, e.g. an OAuth2 refresh token) — such connectors are
+// skipped by the credential_rotation quality check since there's nothing
+// for a human to rotate. Constructing a connector via its factory is
+// expected to be cheap and side-effect-free; only Fetch/Validate/
+// RefreshCredentials touch the network, matching how the sync engine
+// already probes this interface at runtime.
+func IsCredentialRefresherType(typ string) bool {
+	inst, err := Get(typ, map[string]any{})
+	if err != nil {
+		return false
+	}
+	_, ok := inst.(CredentialRefresher)
+	return ok
+}
+
+// ListSchemas returns all registered connector type schemas, with
+// IsCredentialRefresher computed for each.
 func ListSchemas() []TypeSchema {
 	mu.RLock()
 	defer mu.RUnlock()
 	var out []TypeSchema
 	for _, s := range typeSchema {
+		if factory, ok := registry[s.Type]; ok {
+			if inst, err := factory(map[string]any{}); err == nil {
+				_, s.IsCredentialRefresher = inst.(CredentialRefresher)
+			}
+		}
 		out = append(out, s)
 	}
 	return out

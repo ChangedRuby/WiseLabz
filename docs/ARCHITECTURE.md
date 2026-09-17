@@ -359,13 +359,29 @@ no owner. Only one open finding exists per connector and check type: repeated
 detections atomically update its last-seen time and count, while fixing the
 condition auto-resolves it. A later recurrence creates a new finding.
 
-All four checks run after each non-skipped sync. A daily sweep checks staleness
+All five checks run after each non-skipped sync. A daily sweep checks staleness
 for every connector as well, including connectors that have stopped syncing.
 Findings appear on their own authenticated API and navigation page; operators can
 resolve them, remediation links point to the affected document or connector, and
-WebSocket events refresh the badge. This v1 path is intentionally separate from
-Alerts and the notification dispatcher, so it does not fan out to webhook or
-email channels. Retention pruning and configurable thresholds remain follow-ups.
+WebSocket events refresh the badge. Retention pruning remains a follow-up.
+
+**Credential rotation (#239 PR1)** is the fifth check: a connector's
+secret-typed config fields have a `secret_rotated_at` timestamp, bumped only
+when their decrypted value actually changes (not on a rename or a resubmitted
+identical secret). The check flags a connector whose secret is older than
+`rotation.max_age_days` (`config.yaml` / `WISELABZ_ROTATION_MAX_AGE_DAYS`,
+default 90), or past an optional per-connector `userExpiresAt` if that's
+sooner — `warning` inside `rotation.warn_days` (default 14) of the due date,
+`critical` past it. A connector can override the global max age
+(`rotationMaxAgeDays`). Connectors whose implementation satisfies
+`CredentialRefresher` (self-refreshing credentials, e.g. OAuth2) are always
+skipped. Unlike the other four checks, this one also **notifies**: opening a
+finding, or its severity escalating, dispatches through the same
+`notifications.Dispatcher` alerts use (in-app, webhook, Discord, Slack) via
+`Dispatcher.NotifyFindingCreated` — deduplicated by `notified_severity` so a
+repeat detection at the same severity doesn't re-notify, while a
+resolve-then-reopen does. This notify hook is generic across every check
+type, not just `credential_rotation`.
 
 ---
 

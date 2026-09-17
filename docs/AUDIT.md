@@ -6,7 +6,7 @@ auth settings changes, and document restores.
 
 ## Endpoint
 
-`GET /api/system/audit` — operator-only (403 for `viewer`), paginated
+`GET /api/system/audit` — instance-admin only (403 otherwise, `auth.RequireInstanceAdmin`; #240 replaced the flat operator/viewer role with per-connector grants), paginated
 newest-first like other list endpoints (`page`, `pageSize`; see
 `docs/openapi.yaml`'s `Page`/`PageSize` parameters). Optional filters:
 
@@ -56,7 +56,7 @@ object, action-specific), and `createdAt`.
 `detail` never carries secret values. `connector.update` and
 `auth.config.update` record which *fields* changed (a name list), not
 their values — connector config can hold credentials, and this keeps the
-audit log safe to expose to any operator without redaction logic.
+audit log safe to expose to any instance admin without redaction logic.
 `connector.configPush` follows the same discipline: `detail` records the
 pushed `fieldKey` (name) and `entityRef`, never the pushed `value`.
 

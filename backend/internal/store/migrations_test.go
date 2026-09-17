@@ -128,23 +128,41 @@ func TestRunMigrationsDown(t *testing.T) {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (share_links) should drop
-	// share_links, without touching connector_permissions or anything earlier.
+	// Rolling back only the latest migration (credential_rotation) should
+	// drop the rotation columns, without touching share_links or anything
+	// earlier.
 	var name string
+	var connectorsSchemaAfterFirst string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchemaAfterFirst); err != nil {
+		t.Fatalf("query sqlite_master for connectors: %v", err)
+	}
+	if strings.Contains(connectorsSchemaAfterFirst, "secret_rotated_at") {
+		t.Error("connectors.secret_rotated_at should not exist after rolling back credential_rotation")
+	}
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='share_links'").Scan(&name)
+	if err != nil {
+		t.Errorf("share_links should still exist after rolling back only the latest migration (err=%v)", err)
+	}
+
+	// Rolling back a second time (share_links) should drop share_links,
+	// without touching connector_permissions or anything earlier.
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() second call error: %v", err)
+	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='share_links'").Scan(&name)
 	if !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("share_links should not exist after rolling back its migration (err=%v)", err)
 	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_connector_roles'").Scan(&name)
 	if err != nil {
-		t.Errorf("user_connector_roles should still exist after rolling back only the latest migration (err=%v)", err)
+		t.Errorf("user_connector_roles should still exist after rolling back share_links (err=%v)", err)
 	}
 
-	// Rolling back a second time (connector_permissions) should drop
+	// Rolling back a third time (connector_permissions) should drop
 	// user_connector_roles and restore users.role, without touching earlier
 	// migrations' tables/columns.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrationsDown() second call error: %v", err)
+		t.Fatalf("RunMigrationsDown() third call error: %v", err)
 	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_connector_roles'").Scan(&name)
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -159,10 +177,10 @@ func TestRunMigrationsDown(t *testing.T) {
 	}
 
 	// maintenance_windows is from the migration before connector_permissions,
-	// so rolling back the last two migrations must leave it in place.
+	// so rolling back the last three migrations must leave it in place.
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_windows'").Scan(&name)
 	if err != nil {
-		t.Errorf("maintenance_windows should still exist after rolling back the last two migrations (err=%v)", err)
+		t.Errorf("maintenance_windows should still exist after rolling back the last three migrations (err=%v)", err)
 	}
 
 	// dns connector category is from an earlier migration, so rolling back
