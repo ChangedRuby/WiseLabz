@@ -126,6 +126,19 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrationsDown() error: %v", err)
 	}
 
+	// Rolling back only the latest migration (user_digest_prefs) should drop
+	// the digest columns without touching compliance_rules.
+	if hasColumn(t, db, "sqlite", "users", "digest_cadence") {
+		t.Error("users.digest_cadence should not exist after rolling back user_digest_prefs")
+	}
+	var complianceCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM compliance_rules").Scan(&complianceCount); err != nil {
+		t.Errorf("compliance_rules should still exist after rolling back only user_digest_prefs: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() second call (compliance_rules) error: %v", err)
+	}
+
 	var count int
 	for _, table := range tablesCreatedByMigrations {
 		if table == "compliance_rules" {
@@ -142,15 +155,26 @@ func TestRunMigrationsDown(t *testing.T) {
 	if !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("compliance_rules should not exist after rolling back its migration (err=%v)", err)
 	}
-	// Verify the latest migration can be reapplied cleanly after its down path.
+	// Verify the latest migrations can be reapplied cleanly after their down
+	// path. RunMigrations reapplies every pending migration, so this brings
+	// back both compliance_rules and user_digest_prefs.
 	if err := RunMigrations(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrations() after compliance down error: %v", err)
 	}
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='compliance_rules'").Scan(&name); err != nil {
 		t.Fatalf("compliance_rules missing after reapply: %v", err)
 	}
+	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
+		t.Fatal("users.digest_cadence missing after reapply")
+	}
+	// Two down calls to strip both reapplied migrations back off, returning
+	// to the same "compliance_rules and user_digest_prefs absent" state as
+	// before the reapply.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrationsDown() after compliance reapply error: %v", err)
+		t.Fatalf("RunMigrationsDown() after reapply, first call error: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, second call error: %v", err)
 	}
 	var connectorsSchemaAfterFirst string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchemaAfterFirst); err != nil {
