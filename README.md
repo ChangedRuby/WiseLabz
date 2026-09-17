@@ -92,6 +92,8 @@ For a full list of configuration keys, see `config.example.yaml`.
 | Proxmox VE         | Built-in             |
 | Docker / Portainer | Built-in             |
 | pfSense / OPNsense | Built-in             |
+| Netbird            | Built-in             |
+| Cloudflare         | Built-in             |
 | Everything else    | Community connectors |
 
 New service connectors are community-driven. If the service you run isn't here yet,
