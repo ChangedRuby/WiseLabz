@@ -28,6 +28,14 @@ export const getGetUsersResponseMock = (): User[] =>
     disabled: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
     canManageDashboardDefaults: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
     createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    digestCadence: faker.helpers.arrayElement([
+      faker.helpers.arrayElement(['off', 'daily', 'weekly'] as const),
+      undefined,
+    ]),
+    digestTimezone: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
   }));
 
 export const getPostUsersResponseMock = (
@@ -45,6 +53,14 @@ export const getPostUsersResponseMock = (
   disabled: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   canManageDashboardDefaults: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  digestCadence: faker.helpers.arrayElement([
+    faker.helpers.arrayElement(['off', 'daily', 'weekly'] as const),
+    undefined,
+  ]),
+  digestTimezone: faker.helpers.arrayElement([
+    faker.string.alpha({ length: { min: 10, max: 20 } }),
+    undefined,
+  ]),
   ...overrideResponse,
 });
 
@@ -63,6 +79,14 @@ export const getPatchUsersUserIdResponseMock = (
   disabled: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   canManageDashboardDefaults: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  digestCadence: faker.helpers.arrayElement([
+    faker.helpers.arrayElement(['off', 'daily', 'weekly'] as const),
+    undefined,
+  ]),
+  digestTimezone: faker.helpers.arrayElement([
+    faker.string.alpha({ length: { min: 10, max: 20 } }),
+    undefined,
+  ]),
   ...overrideResponse,
 });
 

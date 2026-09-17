@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -1032,5 +1033,113 @@ func TestNotifyAlert_ConnectorFiltersWildcard(t *testing.T) {
 	}
 	if webhook.Status != store.DeliveryStatusSent {
 		t.Errorf("expected webhook delivery to be sent, got %s (err=%s)", webhook.Status, webhook.LastError)
+	}
+}
+
+func TestRunDigestSweep_DailyDigest(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a user with daily digest cadence, UTC timezone, no last send
+	u := &store.User{
+		Username:         "digest-user",
+		DisplayName:      "Digest User",
+		Email:            "digest@test.local",
+		PasswordHash:     "hash",
+		DigestCadence:    "daily",
+		DigestTimezone:   "UTC",
+		DigestLastSentAt: "",
+	}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Create two alert-type notifications for this user, created recently
+	now := time.Date(2025, 1, 15, 8, 30, 0, 0, time.UTC)
+	for i := 1; i <= 2; i++ {
+		notif := &store.NotificationRecord{
+			UserID:    u.ID,
+			EventType: "alert.created",
+			Title:     fmt.Sprintf("Alert %d", i),
+			Message:   fmt.Sprintf("Alert message %d", i),
+			Read:      false,
+		}
+		notif.CreatedAt = now.Add(-time.Duration(3-i) * time.Hour).Format(time.RFC3339)
+		if err := s.CreateNotification(ctx, notif); err != nil {
+			t.Fatalf("create notification %d: %v", i, err)
+		}
+	}
+
+	// Run digest sweep with now at UTC hour 8 (eligible hour)
+	d := NewDispatcher(s, nil)
+	d.RunDigestSweep(ctx, now, logger)
+	time.Sleep(100 * time.Millisecond)
+
+	// Check: exactly one digest.summary notification was created
+	notifs, _, err := s.ListNotifications(ctx, u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+
+	var digestNotif *store.NotificationRecord
+	for i := range notifs {
+		if notifs[i].EventType == "digest.summary" {
+			digestNotif = &notifs[i]
+			break
+		}
+	}
+
+	if digestNotif == nil {
+		t.Fatalf("expected digest.summary notification, got %d notifications with types: %v",
+			len(notifs), func() []string {
+				var types []string
+				for _, n := range notifs {
+					types = append(types, n.EventType)
+				}
+				return types
+			}())
+	}
+
+	// Verify digest.summary title and message
+	if !strings.Contains(digestNotif.Title, "Digest") {
+		t.Errorf("expected digest title to contain 'Digest', got %q", digestNotif.Title)
+	}
+	if !strings.Contains(digestNotif.Message, "Alert 1") || !strings.Contains(digestNotif.Message, "Alert 2") {
+		t.Errorf("expected digest message to mention both alerts, got %q", digestNotif.Message)
+	}
+
+	// Check: user's digest_last_sent_at was advanced to now
+	updated, err := s.GetUserByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+
+	if updated.DigestLastSentAt == "" {
+		t.Errorf("expected digest_last_sent_at to be set, got empty string")
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, updated.DigestLastSentAt)
+	if err != nil {
+		t.Errorf("failed to parse digest_last_sent_at: %v", err)
+	}
+
+	// Should be close to now (within a second)
+	diff := now.Sub(parsedTime)
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > time.Second {
+		t.Errorf("expected digest_last_sent_at to be close to now, got %v (diff %v)", parsedTime, diff)
+	}
+
+	// Verify in-app delivery was recorded for digest.summary
+	deliveries := deliveriesFor(t, s, digestNotif.ID)
+	inApp, ok := findDelivery(deliveries, "in_app")
+	if !ok {
+		t.Fatalf("expected in_app delivery for digest, got %+v", deliveries)
+	}
+	if inApp.Status != store.DeliveryStatusSent {
+		t.Errorf("expected in_app status sent, got %s", inApp.Status)
 	}
 }

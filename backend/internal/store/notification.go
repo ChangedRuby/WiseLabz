@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -80,6 +81,55 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, unreadOnly
 		notifications = []NotificationRecord{}
 	}
 	return notifications, total, nil
+}
+
+// ListNotificationsSince returns a user's notifications with the given event
+// types created at or after `since` (RFC3339), most recent first. Used by the
+// digest sweep to pull everything accumulated since the user's last digest.
+// If since is empty, returns all notifications of the given event types.
+func (s *Store) ListNotificationsSince(ctx context.Context, userID, since string, eventTypes []string) ([]NotificationRecord, error) {
+	if len(eventTypes) == 0 {
+		return []NotificationRecord{}, nil
+	}
+	placeholders := make([]string, len(eventTypes))
+	args := []any{userID}
+	for i, et := range eventTypes {
+		placeholders[i] = "?"
+		args = append(args, et)
+	}
+
+	query := `SELECT id, user_id, alert_id, event_type, title, message, read, created_at
+		FROM in_app_notifications
+		WHERE user_id = ? AND event_type IN (` + strings.Join(placeholders, ",") + `)`
+
+	if since != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, since)
+	}
+
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list notifications since: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var notifications []NotificationRecord
+	for rows.Next() {
+		n, err := scanNotification(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		notifications = append(notifications, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate notifications: %w", err)
+	}
+	if notifications == nil {
+		notifications = []NotificationRecord{}
+	}
+	return notifications, nil
 }
 
 // MarkNotificationRead marks one of a user's notifications as read and returns

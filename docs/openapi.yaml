@@ -2609,6 +2609,8 @@ components:
         disabled: { type: boolean }
         canManageDashboardDefaults: { type: boolean, description: 'When role is operator, grants permission to edit the admin-default dashboard layout' }
         createdAt: { type: string, format: date-time }
+        digestCadence: { type: string, enum: [off, daily, weekly] }
+        digestTimezone: { type: string, description: 'IANA timezone, e.g. America/New_York' }
     UserCreate:
       type: object
       required: [username, role]
@@ -2630,6 +2632,8 @@ components:
       properties:
         displayName: { type: string }
         email: { type: string, format: email }
+        digestCadence: { type: string, enum: [off, daily, weekly] }
+        digestTimezone: { type: string, description: 'IANA timezone, e.g. America/New_York' }
     PasswordChange:
       type: object
       required: [currentPassword, newPassword]

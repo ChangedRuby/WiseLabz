@@ -194,6 +194,12 @@ func main() {
 		logger.Error("Failed to add sync job", "error", err)
 		os.Exit(1)
 	}
+	if _, err := jobRunner.AddJob("digest", "0 * * * *", func(jobCtx context.Context) {
+		notifDispatcher.RunDigestSweep(jobCtx, time.Now().UTC(), logger)
+	}); err != nil {
+		logger.Error("Failed to add digest job", "error", err)
+		os.Exit(1)
+	}
 
 	// The backup job itself is registered by api.NewRouter (via the system
 	// handler's InitBackupJob), not here — that keeps the handler's

@@ -131,8 +131,10 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 
 	req, ok := httputil.DecodeJSON[struct {
-		DisplayName *string `json:"displayName"`
-		Email       *string `json:"email"`
+		DisplayName    *string `json:"displayName"`
+		Email          *string `json:"email"`
+		DigestCadence  *string `json:"digestCadence"`
+		DigestTimezone *string `json:"digestTimezone"`
 	}](w, r)
 	if !ok {
 		return
@@ -144,6 +146,20 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Email != nil {
 		updates["email"] = *req.Email
+	}
+	if req.DigestCadence != nil {
+		if *req.DigestCadence != "off" && *req.DigestCadence != "daily" && *req.DigestCadence != "weekly" {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "digestCadence must be one of: off, daily, weekly")
+			return
+		}
+		updates["digest_cadence"] = *req.DigestCadence
+	}
+	if req.DigestTimezone != nil {
+		if _, err := time.LoadLocation(*req.DigestTimezone); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "digestTimezone is not a valid IANA timezone")
+			return
+		}
+		updates["digest_timezone"] = *req.DigestTimezone
 	}
 
 	if len(updates) == 0 {

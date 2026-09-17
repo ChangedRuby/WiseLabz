@@ -71,10 +71,10 @@ func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCf
 			continue
 		}
 		d.fanoutSem <- struct{}{}
-		go func(userID string) {
+		go func(userID string, skipExternal bool) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, connectorID, title, message)
-		}(u.ID)
+			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, connectorID, title, message, skipExternal)
+		}(u.ID, u.DigestCadence != "off")
 	}
 }
 
@@ -113,10 +113,10 @@ func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channel
 			continue
 		}
 		d.fanoutSem <- struct{}{}
-		go func(userID string) {
+		go func(userID string, skipExternal bool) {
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message)
-		}(u.ID)
+			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message, skipExternal)
+		}(u.ID, u.DigestCadence != "off")
 	}
 }
 
@@ -183,10 +183,10 @@ func (d *Dispatcher) channel(ctx context.Context, typ string) (channelCfg, bool)
 // channel attempted (see store.DeliveryRecord).
 func (d *Dispatcher) NotifyAlert(alertID, userID, eventType, title, message string) {
 	ctx := context.Background()
-	d.notifyAlert(ctx, d.loadChannels(ctx), d.loadRouting(ctx), alertID, userID, eventType, "", "", title, message)
+	d.notifyAlert(ctx, d.loadChannels(ctx), d.loadRouting(ctx), alertID, userID, eventType, "", "", title, message, false)
 }
 
-func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, connectorID, title, message string) {
+func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, connectorID, title, message string, skipExternal bool) {
 
 	notifID, err := d.createInApp(ctx, userID, alertID, eventType, title, message)
 	if err != nil {
@@ -201,6 +201,10 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, rou
 			"title":   title,
 			"message": message,
 		})
+	}
+
+	if skipExternal {
+		return
 	}
 
 	// Resolve connector once per notifyAlert call (not per channel) if needed for filters.
