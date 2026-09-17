@@ -50,6 +50,22 @@ func init() {
 		// missing config as a runtime rather than a registration error.
 		return &Connector{host: host, baseURL: baseURL, client: client, configErr: err}, nil
 	})
+	connector.RegisterAttributeCatalog(typeName, attributeCatalog)
+}
+
+// attributeCatalog declares the structured Attributes this connector fills
+// on "container" entities (see buildContainerTable/enrichContainerAttributes),
+// exposed via GET /api/compliance/schema.
+var attributeCatalog = map[string][]connector.AttributeSpec{
+	"container": {
+		{Name: "privileged", Type: "boolean", Description: "Whether the container runs in privileged mode"},
+		{Name: "network_mode", Type: "string", Description: "Docker network mode (bridge, host, none, container:<id>, ...)"},
+		{Name: "restart_policy", Type: "string", Description: "Restart policy name (no, always, unless-stopped, on-failure)"},
+		{Name: "published_ports", Type: "string_array", Description: "Published host:container/protocol port mappings"},
+		{Name: "user", Type: "string", Description: "User the container's main process runs as"},
+		{Name: "read_only_rootfs", Type: "boolean", Description: "Whether the container's root filesystem is read-only"},
+		{Name: "image", Type: "string", Description: "Image reference the container was created from"},
+	},
 }
 
 // Connector fetches data from the Docker Engine API.
@@ -118,6 +134,7 @@ func (d *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 			sections = append(sections, connector.SnapshotSection{Title: "Containers", Content: "_Containers unavailable: " + err.Error() + "_"})
 		} else {
 			content, ents := buildContainerTable(raw)
+			d.enrichContainerAttributes(ctx, ents)
 			sections = append(sections, connector.SnapshotSection{Title: "Containers", Content: content})
 			entities = append(entities, ents...)
 		}
@@ -545,11 +562,19 @@ func (dockerSSHAddr) String() string  { return "docker-ssh-dial-stdio" }
 
 func buildContainerTable(raw []byte) (string, []connector.SnapshotEntity) {
 	var containers []struct {
-		ID              string   `json:"Id"`
-		Names           []string `json:"Names"`
-		Image           string   `json:"Image"`
-		State           string   `json:"State"`
-		Status          string   `json:"Status"`
+		ID     string   `json:"Id"`
+		Names  []string `json:"Names"`
+		Image  string   `json:"Image"`
+		State  string   `json:"State"`
+		Status string   `json:"Status"`
+		Ports  []struct {
+			PrivatePort int    `json:"PrivatePort"`
+			PublicPort  int    `json:"PublicPort"`
+			Type        string `json:"Type"`
+		} `json:"Ports"`
+		HostConfig struct {
+			NetworkMode string `json:"NetworkMode"`
+		} `json:"HostConfig"`
 		NetworkSettings struct {
 			Networks map[string]struct {
 				IPAddress string `json:"IPAddress"`
@@ -571,7 +596,21 @@ func buildContainerTable(raw []byte) (string, []connector.SnapshotEntity) {
 		if _, err := fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", name, c.Image, c.State, c.Status); err != nil {
 			return "", nil
 		}
-		ent := connector.SnapshotEntity{Kind: "container", Name: name, ExternalID: c.ID}
+		attrs := map[string]any{"image": c.Image}
+		if c.HostConfig.NetworkMode != "" {
+			attrs["network_mode"] = c.HostConfig.NetworkMode
+		}
+		var ports []string
+		for _, p := range c.Ports {
+			if p.PublicPort == 0 {
+				continue
+			}
+			ports = append(ports, fmt.Sprintf("%d:%d/%s", p.PublicPort, p.PrivatePort, p.Type))
+		}
+		if len(ports) > 0 {
+			attrs["published_ports"] = ports
+		}
+		ent := connector.SnapshotEntity{Kind: "container", Name: name, ExternalID: c.ID, Attributes: attrs}
 		for _, net := range c.NetworkSettings.Networks {
 			if net.IPAddress != "" {
 				ent.IP = net.IPAddress
@@ -581,6 +620,51 @@ func buildContainerTable(raw []byte) (string, []connector.SnapshotEntity) {
 		entities = append(entities, ent)
 	}
 	return b.String(), entities
+}
+
+// enrichContainerAttributes fetches the detailed GET /containers/{id}/json
+// (inspect) response for each container and merges the privileged,
+// restart_policy, user, and read_only_rootfs attributes into it — fields the
+// list endpoint (/containers/json) doesn't return. It mutates ents in place.
+// A container with no ID (e.g. an unrealistic/malformed list entry) or a
+// failed/malformed inspect call is skipped so the rest of Fetch still
+// succeeds; those specific attributes are simply omitted.
+func (d *Connector) enrichContainerAttributes(ctx context.Context, ents []connector.SnapshotEntity) {
+	for i := range ents {
+		if ents[i].ExternalID == "" {
+			continue
+		}
+		raw, err := d.doRequest(ctx, "/containers/"+ents[i].ExternalID+"/json")
+		if err != nil {
+			continue
+		}
+		var inspect struct {
+			Config struct {
+				User string `json:"User"`
+			} `json:"Config"`
+			HostConfig struct {
+				Privileged     bool `json:"Privileged"`
+				ReadonlyRootfs bool `json:"ReadonlyRootfs"`
+				RestartPolicy  struct {
+					Name string `json:"Name"`
+				} `json:"RestartPolicy"`
+			} `json:"HostConfig"`
+		}
+		if err := json.Unmarshal(raw, &inspect); err != nil {
+			continue
+		}
+		if ents[i].Attributes == nil {
+			ents[i].Attributes = map[string]any{}
+		}
+		ents[i].Attributes["privileged"] = inspect.HostConfig.Privileged
+		ents[i].Attributes["read_only_rootfs"] = inspect.HostConfig.ReadonlyRootfs
+		if inspect.HostConfig.RestartPolicy.Name != "" {
+			ents[i].Attributes["restart_policy"] = inspect.HostConfig.RestartPolicy.Name
+		}
+		if inspect.Config.User != "" {
+			ents[i].Attributes["user"] = inspect.Config.User
+		}
+	}
 }
 
 func buildImageTable(raw []byte) string {
