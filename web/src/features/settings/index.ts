@@ -11,4 +11,5 @@ export { RunbooksPage } from './RunbooksPage';
 export { ShareLinksPage } from './ShareLinksPage';
 export { AuditPage } from './AuditPage';
 export { AppearancePage } from './AppearancePage';
+export { RulesPage } from '../compliance/RulesPage';
 export { SETTINGS_SECTIONS } from './nav';

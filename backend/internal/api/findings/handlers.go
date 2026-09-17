@@ -28,12 +28,15 @@ func (h *Handler) response(ctx context.Context, finding store.QualityFindingReco
 		return nil, err
 	}
 
-	var docID, resolvedAt any
+	var docID, resolvedAt, ruleID any
 	if finding.DocID != "" {
 		docID = finding.DocID
 	}
 	if finding.ResolvedAt != "" {
 		resolvedAt = finding.ResolvedAt
+	}
+	if finding.RuleID != "" {
+		ruleID = finding.RuleID
 	}
 
 	return map[string]any{
@@ -41,6 +44,7 @@ func (h *Handler) response(ctx context.Context, finding store.QualityFindingReco
 		"connectorId":     finding.ConnectorID,
 		"connectorName":   connector.Name,
 		"docId":           docID,
+		"ruleId":          ruleID,
 		"checkType":       finding.CheckType,
 		"severity":        finding.Severity,
 		"title":           finding.Title,

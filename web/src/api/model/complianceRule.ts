@@ -6,14 +6,10 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ComplianceRuleInput } from './complianceRuleInput';
 
-export type QualityCheckType = (typeof QualityCheckType)[keyof typeof QualityCheckType];
-
-export const QualityCheckType = {
-  stale: 'stale',
-  empty: 'empty',
-  failing: 'failing',
-  ownership_incomplete: 'ownership_incomplete',
-  credential_rotation: 'credential_rotation',
-  compliance: 'compliance',
-} as const;
+export type ComplianceRule = ComplianceRuleInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};

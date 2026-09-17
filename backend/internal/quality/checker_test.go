@@ -3,16 +3,48 @@ package quality
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
 
 	_ "modernc.org/sqlite"
 )
+
+func createComplianceRule(t *testing.T, s *store.Store, connectorType, title string) *store.ComplianceRuleRecord {
+	t.Helper()
+	rule := &store.ComplianceRuleRecord{
+		Name: title, ConnectorType: connectorType, EntityKind: "vm",
+		Conditions: `[{"attribute":"firewall_enabled","op":"eq","value":false}]`,
+		Severity:   "critical", Title: title, RemediationLink: "https://example.test/remediate", Enabled: true,
+	}
+	if err := s.CreateComplianceRule(context.Background(), rule); err != nil {
+		t.Fatalf("CreateComplianceRule() error: %v", err)
+	}
+	return rule
+}
+
+func createComplianceSnapshot(t *testing.T, s *store.Store, connectorID string, firewallEnabled bool) {
+	t.Helper()
+	data, err := json.Marshal(connector.ServiceSnapshot{Entities: []connector.SnapshotEntity{{
+		Kind: "vm", Name: "vm-01", Attributes: map[string]any{"firewall_enabled": firewallEnabled},
+	}}})
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	fetchedAt := "2020-01-01T00:00:00Z"
+	if firewallEnabled {
+		fetchedAt = "2030-01-01T00:00:00Z"
+	}
+	if err := s.CreateSnapshot(context.Background(), &store.SnapshotRecord{ConnectorID: connectorID, Data: string(data), FetchedAt: fetchedAt}); err != nil {
+		t.Fatalf("CreateSnapshot() error: %v", err)
+	}
+}
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -257,6 +289,63 @@ func TestRunStaleSweepOnceCoversConnectorsWithNoRecentSync(t *testing.T) {
 
 	if got := findings(t, s, connector.ID, "stale", "open"); len(got) != 1 {
 		t.Fatalf("open stale findings = %d, want 1", len(got))
+	}
+}
+
+func TestComplianceRulesDetectResolveAndEvaluateOnSave(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	matched := createConnector(t, s, "owner")
+	other := createConnector(t, s, "owner")
+	other.Type = "docker"
+	if err := s.UpdateConnector(ctx, other.ID, map[string]any{"type": other.Type}); err != nil {
+		t.Fatalf("UpdateConnector(type) error: %v", err)
+	}
+	createComplianceSnapshot(t, s, matched.ID, false)
+	createComplianceSnapshot(t, s, other.ID, false)
+	rule := createComplianceRule(t, s, "proxmox", "Firewall disabled")
+	checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
+
+	if err := checker.EvaluateRule(ctx, rule.ID); err != nil {
+		t.Fatalf("EvaluateRule() error: %v", err)
+	}
+	open := findings(t, s, matched.ID, "compliance", "open")
+	if len(open) != 1 || open[0].RuleID != rule.ID || open[0].DetectedCount != 1 || open[0].Description != "Violating entities: vm-01." {
+		t.Fatalf("open compliance finding = %#v", open)
+	}
+	if got := findings(t, s, other.ID, "compliance", "open"); len(got) != 0 {
+		t.Fatalf("wrong connector type findings = %#v, want none", got)
+	}
+
+	if err := checker.RunForConnector(ctx, matched.ID); err != nil {
+		t.Fatalf("RunForConnector() repeat error: %v", err)
+	}
+	open = findings(t, s, matched.ID, "compliance", "open")
+	if len(open) != 1 || open[0].DetectedCount != 2 {
+		t.Fatalf("re-detected finding = %#v, want one with count 2", open)
+	}
+
+	second := createComplianceRule(t, s, "proxmox", "Second firewall rule")
+	if err := checker.RunForConnector(ctx, matched.ID); err != nil {
+		t.Fatalf("RunForConnector() second rule error: %v", err)
+	}
+	open = findings(t, s, matched.ID, "compliance", "open")
+	if len(open) != 2 {
+		t.Fatalf("open compliance findings = %#v, want two rules", open)
+	}
+	if err := checker.ResolveRule(ctx, second.ID); err != nil {
+		t.Fatalf("ResolveRule() error: %v", err)
+	}
+	if got := findings(t, s, matched.ID, "compliance", "open"); len(got) != 1 {
+		t.Fatalf("open findings after ResolveRule = %#v, want one", got)
+	}
+
+	createComplianceSnapshot(t, s, matched.ID, true)
+	if err := checker.RunForConnector(ctx, matched.ID); err != nil {
+		t.Fatalf("RunForConnector() resolve error: %v", err)
+	}
+	if got := findings(t, s, matched.ID, "compliance", "open"); len(got) != 0 {
+		t.Fatalf("open compliance findings after fix = %#v, want none", got)
 	}
 }
 

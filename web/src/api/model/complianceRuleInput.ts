@@ -6,14 +6,17 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ComplianceCondition } from './complianceCondition';
+import type { Severity } from './severity';
 
-export type QualityCheckType = (typeof QualityCheckType)[keyof typeof QualityCheckType];
-
-export const QualityCheckType = {
-  stale: 'stale',
-  empty: 'empty',
-  failing: 'failing',
-  ownership_incomplete: 'ownership_incomplete',
-  credential_rotation: 'credential_rotation',
-  compliance: 'compliance',
-} as const;
+export interface ComplianceRuleInput {
+  name: string;
+  connectorType: string;
+  entityKind: string;
+  /** @minItems 1 */
+  conditions: ComplianceCondition[];
+  severity: Severity;
+  title: string;
+  remediationLink?: string;
+  enabled?: boolean;
+}

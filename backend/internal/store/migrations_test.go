@@ -19,7 +19,7 @@ var tablesCreatedByMigrations = []string{
 	"template_sections", "changes", "alerts", "dashboard_layouts",
 	"auth_config", "ai_config", "notification_config", "in_app_notifications",
 	"quality_findings", "runbooks", "oidc_identities", "doc_locks",
-	"api_keys",
+	"api_keys", "compliance_rules",
 }
 
 func TestRunMigrations(t *testing.T) {
@@ -48,6 +48,10 @@ func TestRunMigrations(t *testing.T) {
 		if err != nil {
 			t.Errorf("table %s does not exist or is not queryable: %v", table, err)
 		}
+	}
+	var disabledRules int
+	if err := db.QueryRow("SELECT COUNT(*) FROM compliance_rules WHERE enabled = 0").Scan(&disabledRules); err != nil || disabledRules != 5 {
+		t.Errorf("disabled seeded compliance rules = %d, %v; want 5, nil", disabledRules, err)
 	}
 
 	// Verify idempotent — running again should be no-op
@@ -124,30 +128,62 @@ func TestRunMigrationsDown(t *testing.T) {
 
 	var count int
 	for _, table := range tablesCreatedByMigrations {
+		if table == "compliance_rules" {
+			continue
+		}
 		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
 			t.Errorf("table %s should still exist after rolling back only the last migration: %v", table, err)
 		}
 	}
-	// Rolling back only the latest migration (credential_rotation) should
-	// drop the rotation columns, without touching share_links or anything
-	// earlier.
+	// Rolling back only the latest migration (compliance_rules) should leave
+	// the earlier rotation migration intact.
 	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='compliance_rules'").Scan(&name)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("compliance_rules should not exist after rolling back its migration (err=%v)", err)
+	}
+	// Verify the latest migration can be reapplied cleanly after its down path.
+	if err := RunMigrations(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrations() after compliance down error: %v", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='compliance_rules'").Scan(&name); err != nil {
+		t.Fatalf("compliance_rules missing after reapply: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after compliance reapply error: %v", err)
+	}
 	var connectorsSchemaAfterFirst string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchemaAfterFirst); err != nil {
 		t.Fatalf("query sqlite_master for connectors: %v", err)
 	}
-	if strings.Contains(connectorsSchemaAfterFirst, "secret_rotated_at") {
-		t.Error("connectors.secret_rotated_at should not exist after rolling back credential_rotation")
+	if !strings.Contains(connectorsSchemaAfterFirst, "secret_rotated_at") {
+		t.Error("connectors.secret_rotated_at should remain after rolling back compliance_rules")
 	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='share_links'").Scan(&name)
 	if err != nil {
 		t.Errorf("share_links should still exist after rolling back only the latest migration (err=%v)", err)
 	}
 
-	// Rolling back a second time (share_links) should drop share_links,
-	// without touching connector_permissions or anything earlier.
+	// Rolling back a second time (credential_rotation) should drop rotation
+	// columns without touching share_links.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() second call error: %v", err)
+	}
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='connectors'").Scan(&connectorsSchemaAfterFirst); err != nil {
+		t.Fatalf("query sqlite_master for connectors: %v", err)
+	}
+	if strings.Contains(connectorsSchemaAfterFirst, "secret_rotated_at") {
+		t.Error("connectors.secret_rotated_at should not exist after rolling back credential_rotation")
+	}
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_connector_roles'").Scan(&name)
+	if err != nil {
+		t.Errorf("user_connector_roles should still exist after rolling back share_links (err=%v)", err)
+	}
+
+	// Rolling back a third time (share_links) should drop share_links without
+	// touching connector permissions.
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() third call error: %v", err)
 	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='share_links'").Scan(&name)
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -158,15 +194,14 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Errorf("user_connector_roles should still exist after rolling back share_links (err=%v)", err)
 	}
 
-	// Rolling back a third time (connector_permissions) should drop
-	// user_connector_roles and restore users.role, without touching earlier
-	// migrations' tables/columns.
+	// Rolling back a fourth time (connector_permissions) should drop roles and
+	// restore users.role, without touching earlier migrations.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrationsDown() third call error: %v", err)
+		t.Fatalf("RunMigrationsDown() fourth call error: %v", err)
 	}
 	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_connector_roles'").Scan(&name)
 	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("user_connector_roles should not exist after rolling back its migration (err=%v)", err)
+		t.Errorf("user_connector_roles should not exist after rolling back connector_permissions (err=%v)", err)
 	}
 	var usersSchema string
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").Scan(&usersSchema); err != nil {

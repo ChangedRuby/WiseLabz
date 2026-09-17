@@ -19,10 +19,19 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { ForbiddenResponse, GetComplianceSchema200 } from '../../model';
+import type {
+  BadRequestResponse,
+  ComplianceRule,
+  ComplianceRuleInput,
+  ComplianceRulePage,
+  ComplianceRuleTestResult,
+  ForbiddenResponse,
+  GetComplianceSchema200,
+  NotFoundResponse,
+} from '../../model';
 
 import { customInstance } from '../../axios-instance';
-import type { ErrorType } from '../../axios-instance';
+import type { ErrorType, BodyType } from '../../axios-instance';
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
@@ -153,6 +162,814 @@ export function useGetComplianceSchema<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetComplianceSchemaQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary List compliance rules (admin only)
+ */
+export const getComplianceRules = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ComplianceRulePage>(
+    { url: `/compliance/rules`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetComplianceRulesQueryKey = () => {
+  return [`/compliance/rules`] as const;
+};
+
+export const getGetComplianceRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getComplianceRules>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getComplianceRules>>, TError, TData>>;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetComplianceRulesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getComplianceRules>>> = ({ signal }) =>
+    getComplianceRules(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getComplianceRules>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetComplianceRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getComplianceRules>>
+>;
+export type GetComplianceRulesQueryError = ErrorType<ForbiddenResponse>;
+
+export function useGetComplianceRules<
+  TData = Awaited<ReturnType<typeof getComplianceRules>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getComplianceRules>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getComplianceRules>>,
+          TError,
+          Awaited<ReturnType<typeof getComplianceRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetComplianceRules<
+  TData = Awaited<ReturnType<typeof getComplianceRules>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRules>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getComplianceRules>>,
+          TError,
+          Awaited<ReturnType<typeof getComplianceRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetComplianceRules<
+  TData = Awaited<ReturnType<typeof getComplianceRules>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getComplianceRules>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List compliance rules (admin only)
+ */
+
+export function useGetComplianceRules<
+  TData = Awaited<ReturnType<typeof getComplianceRules>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getComplianceRules>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetComplianceRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create a compliance rule (admin only)
+ */
+export const postComplianceRules = (
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ComplianceRule>(
+    {
+      url: `/compliance/rules`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: complianceRuleInput,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostComplianceRulesQueryKey = (
+  complianceRuleInput?: BodyType<ComplianceRuleInput>
+) => {
+  return ['POST', `/compliance/rules`, complianceRuleInput] as const;
+};
+
+export const getPostComplianceRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof postComplianceRules>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRules>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPostComplianceRulesQueryKey(complianceRuleInput);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postComplianceRules>>> = ({ signal }) =>
+    postComplianceRules(complianceRuleInput, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postComplianceRules>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostComplianceRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postComplianceRules>>
+>;
+export type PostComplianceRulesQueryError = ErrorType<BadRequestResponse | ForbiddenResponse>;
+
+export function usePostComplianceRules<
+  TData = Awaited<ReturnType<typeof postComplianceRules>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRules>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postComplianceRules>>,
+          TError,
+          Awaited<ReturnType<typeof postComplianceRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostComplianceRules<
+  TData = Awaited<ReturnType<typeof postComplianceRules>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRules>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postComplianceRules>>,
+          TError,
+          Awaited<ReturnType<typeof postComplianceRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostComplianceRules<
+  TData = Awaited<ReturnType<typeof postComplianceRules>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRules>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Create a compliance rule (admin only)
+ */
+
+export function usePostComplianceRules<
+  TData = Awaited<ReturnType<typeof postComplianceRules>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRules>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostComplianceRulesQueryOptions(complianceRuleInput, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Get a compliance rule (admin only)
+ */
+export const getComplianceRulesId = (
+  id: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ComplianceRule>(
+    { url: `/compliance/rules/${id}`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetComplianceRulesIdQueryKey = (id: string) => {
+  return [`/compliance/rules/${id}`] as const;
+};
+
+export const getGetComplianceRulesIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof getComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetComplianceRulesIdQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getComplianceRulesId>>> = ({ signal }) =>
+    getComplianceRulesId(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetComplianceRulesIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getComplianceRulesId>>
+>;
+export type GetComplianceRulesIdQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetComplianceRulesId<
+  TData = Awaited<ReturnType<typeof getComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof getComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetComplianceRulesId<
+  TData = Awaited<ReturnType<typeof getComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof getComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetComplianceRulesId<
+  TData = Awaited<ReturnType<typeof getComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get a compliance rule (admin only)
+ */
+
+export function useGetComplianceRulesId<
+  TData = Awaited<ReturnType<typeof getComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetComplianceRulesIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Replace a compliance rule (admin only)
+ */
+export const putComplianceRulesId = (
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ComplianceRule>(
+    {
+      url: `/compliance/rules/${id}`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: complianceRuleInput,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPutComplianceRulesIdQueryKey = (
+  id: string,
+  complianceRuleInput?: BodyType<ComplianceRuleInput>
+) => {
+  return ['PUT', `/compliance/rules/${id}`, complianceRuleInput] as const;
+};
+
+export const getPutComplianceRulesIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof putComplianceRulesId>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPutComplianceRulesIdQueryKey(id, complianceRuleInput);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof putComplianceRulesId>>> = ({ signal }) =>
+    putComplianceRulesId(id, complianceRuleInput, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PutComplianceRulesIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof putComplianceRulesId>>
+>;
+export type PutComplianceRulesIdQueryError = ErrorType<BadRequestResponse | NotFoundResponse>;
+
+export function usePutComplianceRulesId<
+  TData = Awaited<ReturnType<typeof putComplianceRulesId>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof putComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutComplianceRulesId<
+  TData = Awaited<ReturnType<typeof putComplianceRulesId>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof putComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutComplianceRulesId<
+  TData = Awaited<ReturnType<typeof putComplianceRulesId>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Replace a compliance rule (admin only)
+ */
+
+export function usePutComplianceRulesId<
+  TData = Awaited<ReturnType<typeof putComplianceRulesId>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  id: string,
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof putComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPutComplianceRulesIdQueryOptions(id, complianceRuleInput, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Delete a compliance rule (admin only)
+ */
+export const deleteComplianceRulesId = (
+  id: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<void>(
+    { url: `/compliance/rules/${id}`, method: 'DELETE', signal },
+    options
+  );
+};
+
+export const getDeleteComplianceRulesIdQueryKey = (id: string) => {
+  return ['DELETE', `/compliance/rules/${id}`] as const;
+};
+
+export const getDeleteComplianceRulesIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getDeleteComplianceRulesIdQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof deleteComplianceRulesId>>> = ({
+    signal,
+  }) => deleteComplianceRulesId(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type DeleteComplianceRulesIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof deleteComplianceRulesId>>
+>;
+export type DeleteComplianceRulesIdQueryError = ErrorType<NotFoundResponse>;
+
+export function useDeleteComplianceRulesId<
+  TData = Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteComplianceRulesId<
+  TData = Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteComplianceRulesId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteComplianceRulesId<
+  TData = Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Delete a compliance rule (admin only)
+ */
+
+export function useDeleteComplianceRulesId<
+  TData = Awaited<ReturnType<typeof deleteComplianceRulesId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteComplianceRulesId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getDeleteComplianceRulesIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Test an unsaved compliance rule without writing findings (admin only)
+ */
+export const postComplianceRulesTest = (
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<ComplianceRuleTestResult>(
+    {
+      url: `/compliance/rules/test`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: complianceRuleInput,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostComplianceRulesTestQueryKey = (
+  complianceRuleInput?: BodyType<ComplianceRuleInput>
+) => {
+  return ['POST', `/compliance/rules/test`, complianceRuleInput] as const;
+};
+
+export const getPostComplianceRulesTestQueryOptions = <
+  TData = Awaited<ReturnType<typeof postComplianceRulesTest>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRulesTest>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPostComplianceRulesTestQueryKey(complianceRuleInput);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postComplianceRulesTest>>> = ({
+    signal,
+  }) => postComplianceRulesTest(complianceRuleInput, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postComplianceRulesTest>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostComplianceRulesTestQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postComplianceRulesTest>>
+>;
+export type PostComplianceRulesTestQueryError = ErrorType<BadRequestResponse>;
+
+export function usePostComplianceRulesTest<
+  TData = Awaited<ReturnType<typeof postComplianceRulesTest>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRulesTest>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postComplianceRulesTest>>,
+          TError,
+          Awaited<ReturnType<typeof postComplianceRulesTest>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostComplianceRulesTest<
+  TData = Awaited<ReturnType<typeof postComplianceRulesTest>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRulesTest>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postComplianceRulesTest>>,
+          TError,
+          Awaited<ReturnType<typeof postComplianceRulesTest>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostComplianceRulesTest<
+  TData = Awaited<ReturnType<typeof postComplianceRulesTest>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRulesTest>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Test an unsaved compliance rule without writing findings (admin only)
+ */
+
+export function usePostComplianceRulesTest<
+  TData = Awaited<ReturnType<typeof postComplianceRulesTest>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  complianceRuleInput: BodyType<ComplianceRuleInput>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postComplianceRulesTest>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostComplianceRulesTestQueryOptions(complianceRuleInput, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

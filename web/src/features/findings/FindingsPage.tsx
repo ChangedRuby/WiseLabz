@@ -16,6 +16,7 @@ import { Pagination } from '../../components/ui/Pagination';
 import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui/states';
 import { ArrowRightIcon, CheckIcon } from '../../components/icons';
 import { useOperatorConnectorIds } from '../../hooks/useRole';
+import { useIsInstanceAdmin } from '../../hooks/useRole';
 import { relativeTime } from '../../lib/time';
 
 const CHECK_TYPES: Array<{ value: QualityCheckType | 'all'; label: string }> = [
@@ -25,11 +26,13 @@ const CHECK_TYPES: Array<{ value: QualityCheckType | 'all'; label: string }> = [
   { value: 'failing', label: 'findings.failing' },
   { value: 'ownership_incomplete', label: 'findings.ownershipIncomplete' },
   { value: 'credential_rotation', label: 'findings.credentialRotation' },
+  { value: 'compliance', label: 'findings.compliance' },
 ];
 
 export function FindingsPage() {
   const { t } = useTranslation();
   const operatorIds = useOperatorConnectorIds();
+  const isInstanceAdmin = useIsInstanceAdmin();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [checkType, setCheckType] = useState<QualityCheckType | 'all'>('all');
@@ -117,12 +120,18 @@ export function FindingsPage() {
                     <p className="mt-1 text-sm leading-relaxed text-ink-muted">{finding.description}</p>
                     <p className="mt-1.5 font-mono text-2xs text-ink-faint">
                       <span className="text-accent-secondary-bright">{finding.connectorName}</span> ·{' '}
+                      {finding.checkType === 'compliance' && <>{t('findings.compliance')} · </>}
                       {t('findings.detected', { count: finding.detectedCount })} ·{' '}
                       {t('common.ago', { time: relativeTime(finding.lastSeenAt) })}
                     </p>
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-line-soft pt-3">
+                  {isInstanceAdmin && finding.ruleId && (
+                    <Link to="/settings/compliance" className="font-mono text-xs text-accent-secondary hover:text-accent-secondary-bright">
+                      {t('findings.viewRule')}
+                    </Link>
+                  )}
                   <Link
                     to={finding.remediationLink}
                     className="inline-flex h-7 items-center justify-center gap-2 rounded-sm px-2.5 font-mono text-xs font-medium text-accent-secondary transition-colors hover:bg-surface hover:text-accent-secondary-bright"

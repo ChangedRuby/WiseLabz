@@ -15,6 +15,7 @@ type QualityFindingRecord struct {
 	ID              string `json:"id"`
 	ConnectorID     string `json:"connectorId"`
 	DocID           string `json:"docId,omitempty"`
+	RuleID          string `json:"ruleId,omitempty"`
 	CheckType       string `json:"checkType"`
 	Severity        string `json:"severity"`
 	Title           string `json:"title"`
@@ -33,7 +34,7 @@ type QualityFindingRecord struct {
 	NotifiedSeverity string `json:"-"`
 }
 
-const qualityFindingColumns = `id, connector_id, doc_id, check_type, severity, title, description,
+const qualityFindingColumns = `id, connector_id, doc_id, rule_id, check_type, severity, title, description,
 	remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at, notified_severity`
 
 // UpsertQualityFinding atomically inserts a new open finding or records another
@@ -52,17 +53,17 @@ func (s *Store) UpsertQualityFinding(ctx context.Context, f *QualityFindingRecor
 
 	var notifiedSeverity sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO quality_findings (id, connector_id, doc_id, check_type, severity, title, description,
+		INSERT INTO quality_findings (id, connector_id, doc_id, rule_id, check_type, severity, title, description,
 			remediation_link, status, detected_count, first_detected_at, last_seen_at, resolved_at, notified_severity)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, NULL, NULL)
-		ON CONFLICT(connector_id, check_type) WHERE status = 'open'
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, NULL, NULL)
+		ON CONFLICT(connector_id, check_type, COALESCE(rule_id, '')) WHERE status = 'open'
 		DO UPDATE SET last_seen_at = excluded.last_seen_at,
 			detected_count = quality_findings.detected_count + 1,
 			doc_id = excluded.doc_id,
 			severity = excluded.severity, title = excluded.title,
 			description = excluded.description, remediation_link = excluded.remediation_link
 		RETURNING id, notified_severity
-	`, f.ID, f.ConnectorID, nilToStr(f.DocID), f.CheckType, f.Severity, f.Title,
+	`, f.ID, f.ConnectorID, nilToStr(f.DocID), nilToStr(f.RuleID), f.CheckType, f.Severity, f.Title,
 		f.Description, f.RemediationLink, f.FirstDetectedAt, f.LastSeenAt).Scan(&f.ID, &notifiedSeverity)
 	if err != nil {
 		return fmt.Errorf("upsert quality finding: %w", err)
@@ -94,6 +95,35 @@ func (s *Store) ResolveQualityFinding(ctx context.Context, connectorID, checkTyp
 	`, now, connectorID, checkType)
 	if err != nil {
 		return fmt.Errorf("resolve quality finding: %w", err)
+	}
+	return nil
+}
+
+// ResolveQualityFindingForRule resolves an open compliance finding for one
+// connector and rule. Unlike ResolveQualityFinding it cannot affect a
+// non-compliance finding with the same check type.
+func (s *Store) ResolveQualityFindingForRule(ctx context.Context, connectorID, ruleID string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE quality_findings SET status = 'resolved', resolved_at = ?, notified_severity = NULL
+		WHERE connector_id = ? AND rule_id = ? AND status = 'open'
+	`, now, connectorID, ruleID)
+	if err != nil {
+		return fmt.Errorf("resolve quality finding for rule: %w", err)
+	}
+	return nil
+}
+
+// ResolveQualityFindingsForRule resolves every open finding created by a
+// rule. Call this before disabling or deleting a rule.
+func (s *Store) ResolveQualityFindingsForRule(ctx context.Context, ruleID string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE quality_findings SET status = 'resolved', resolved_at = ?, notified_severity = NULL
+		WHERE rule_id = ? AND status = 'open'
+	`, now, ruleID)
+	if err != nil {
+		return fmt.Errorf("resolve quality findings for rule: %w", err)
 	}
 	return nil
 }
@@ -166,8 +196,8 @@ func (s *Store) CountQualityFindingsOpen(ctx context.Context) (int, error) {
 
 func scanQualityFinding(row rowScanner) (QualityFindingRecord, error) {
 	var f QualityFindingRecord
-	var docID, resolvedAt, notifiedSeverity sql.NullString
-	err := row.Scan(&f.ID, &f.ConnectorID, &docID, &f.CheckType, &f.Severity, &f.Title,
+	var docID, ruleID, resolvedAt, notifiedSeverity sql.NullString
+	err := row.Scan(&f.ID, &f.ConnectorID, &docID, &ruleID, &f.CheckType, &f.Severity, &f.Title,
 		&f.Description, &f.RemediationLink, &f.Status, &f.DetectedCount,
 		&f.FirstDetectedAt, &f.LastSeenAt, &resolvedAt, &notifiedSeverity)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -177,6 +207,7 @@ func scanQualityFinding(row rowScanner) (QualityFindingRecord, error) {
 		return QualityFindingRecord{}, err
 	}
 	f.DocID = docID.String
+	f.RuleID = ruleID.String
 	f.ResolvedAt = resolvedAt.String
 	f.NotifiedSeverity = notifiedSeverity.String
 	return f, nil

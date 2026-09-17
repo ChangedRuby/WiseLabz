@@ -204,16 +204,17 @@ func main() {
 
 	// Build HTTP router
 	routerCfg := api.Config{
-		Store:         s,
-		JWT:           jwtSvc,
-		Config:        cfg,
-		SyncEngine:    syncEngine,
-		DocEngine:     docEngine,
-		WSHub:         wsHub,
-		Scheduler:     jobRunner,
-		BackupDir:     backupDir,
-		AIRegistry:    aiRegistry,
-		EmbedRegistry: embedRegistry,
+		Store:          s,
+		JWT:            jwtSvc,
+		Config:         cfg,
+		SyncEngine:     syncEngine,
+		DocEngine:      docEngine,
+		WSHub:          wsHub,
+		Scheduler:      jobRunner,
+		BackupDir:      backupDir,
+		AIRegistry:     aiRegistry,
+		EmbedRegistry:  embedRegistry,
+		QualityChecker: qualityChecker,
 	}
 	if cfg.Server.Embed {
 		spaFiles, err := fs.Sub(web.DistFS, "dist")
