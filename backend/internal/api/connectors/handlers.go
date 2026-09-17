@@ -103,20 +103,26 @@ type connectorWithRole struct {
 // Create handles POST /api/connectors.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	req, ok := httputil.DecodeJSON[struct {
-		Name      string         `json:"name"`
-		Category  string         `json:"category"`
-		Type      string         `json:"type"`
-		URL       string         `json:"url"`
-		Owner     string         `json:"owner"`
-		VerifyTLS *bool          `json:"verifyTls"`
-		Config    map[string]any `json:"config"`
-		Enabled   *bool          `json:"enabled"`
+		Name               string         `json:"name"`
+		Category           string         `json:"category"`
+		Type               string         `json:"type"`
+		URL                string         `json:"url"`
+		Owner              string         `json:"owner"`
+		VerifyTLS          *bool          `json:"verifyTls"`
+		Config             map[string]any `json:"config"`
+		Enabled            *bool          `json:"enabled"`
+		UserExpiresAt      string         `json:"userExpiresAt"`
+		RotationMaxAgeDays *int           `json:"rotationMaxAgeDays"`
 	}](w, r)
 	if !ok {
 		return
 	}
 	if req.Name == "" || req.Category == "" || req.Type == "" || req.URL == "" {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "name, category, type, and url are required")
+		return
+	}
+	if err := validateRotationFields(req.UserExpiresAt, req.RotationMaxAgeDays); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
@@ -145,14 +151,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := &store.ConnectorRecord{
-		Name:       req.Name,
-		Category:   req.Category,
-		Type:       req.Type,
-		URL:        req.URL,
-		Owner:      req.Owner,
-		VerifyTLS:  verifyTLS,
-		ConfigData: configData,
-		Enabled:    enabled,
+		Name:               req.Name,
+		Category:           req.Category,
+		Type:               req.Type,
+		URL:                req.URL,
+		Owner:              req.Owner,
+		VerifyTLS:          verifyTLS,
+		ConfigData:         configData,
+		Enabled:            enabled,
+		UserExpiresAt:      req.UserExpiresAt,
+		RotationMaxAgeDays: req.RotationMaxAgeDays,
 	}
 
 	if err := h.Store.CreateConnector(r.Context(), c); err != nil {
@@ -215,10 +223,13 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Enabled   *bool          `json:"enabled"`
 		Category  *string        `json:"category"`
 		Type      *string        `json:"type"`
-		// ScheduleSeconds is raw JSON so absence (leave unchanged) can be told
-		// apart from an explicit `null` (clear to manual-only): a **int decodes
-		// both to a nil outer pointer, losing that distinction.
-		ScheduleSeconds json.RawMessage `json:"scheduleSeconds"`
+		// ScheduleSeconds, UserExpiresAt and RotationMaxAgeDays are raw JSON so
+		// absence (leave unchanged) can be told apart from an explicit `null`
+		// (clear): a plain *T/**T decodes both to a nil pointer, losing that
+		// distinction.
+		ScheduleSeconds    json.RawMessage `json:"scheduleSeconds"`
+		UserExpiresAt      json.RawMessage `json:"userExpiresAt"`
+		RotationMaxAgeDays json.RawMessage `json:"rotationMaxAgeDays"`
 	}](w, r)
 	if !ok {
 		return
@@ -232,6 +243,34 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updates["schedule_seconds"] = scheduleSeconds
+	}
+	var userExpiresAt string
+	if req.UserExpiresAt != nil {
+		var v *string
+		if err := json.Unmarshal(req.UserExpiresAt, &v); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid userExpiresAt")
+			return
+		}
+		if v != nil {
+			userExpiresAt = *v
+		}
+		if userExpiresAt == "" {
+			updates["user_expires_at"] = nil
+		} else {
+			updates["user_expires_at"] = userExpiresAt
+		}
+	}
+	var rotationMaxAgeDays *int
+	if req.RotationMaxAgeDays != nil {
+		if err := json.Unmarshal(req.RotationMaxAgeDays, &rotationMaxAgeDays); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid rotationMaxAgeDays")
+			return
+		}
+		updates["rotation_max_age_days"] = rotationMaxAgeDays
+	}
+	if err := validateRotationFields(userExpiresAt, rotationMaxAgeDays); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
 	}
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -281,12 +320,20 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 			httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
+		changed, err := store.SecretFieldsChanged(typ, rec.ConfigData, req.Config, h.Config.Encryption.Key)
+		if err != nil {
+			httputil.Errorf(w, err)
+			return
+		}
 		data, err := store.MarshalConnectorConfig(typ, req.Config, h.Config.Encryption.Key)
 		if err != nil {
 			httputil.Errorf(w, err)
 			return
 		}
 		updates["config_data"] = data
+		if changed {
+			updates["secret_rotated_at"] = time.Now().UTC().Format(time.RFC3339)
+		}
 	}
 
 	if len(updates) == 0 {
@@ -993,6 +1040,21 @@ func (h *Handler) revertConfigPush(w http.ResponseWriter, r *http.Request, pushe
 // schema (SchemaField pattern/length/enum rules), catching malformed values
 // at save time rather than on first fetch. Unknown types are left for
 // connector.Get to reject.
+// validateRotationFields checks the optional user-set credential rotation
+// overrides: userExpiresAt (if non-empty) must be an RFC3339 timestamp,
+// rotationMaxAgeDays (if set) must be a positive number of days.
+func validateRotationFields(userExpiresAt string, rotationMaxAgeDays *int) error {
+	if userExpiresAt != "" {
+		if _, err := time.Parse(time.RFC3339, userExpiresAt); err != nil {
+			return fmt.Errorf("userExpiresAt must be an RFC3339 timestamp")
+		}
+	}
+	if rotationMaxAgeDays != nil && *rotationMaxAgeDays <= 0 {
+		return fmt.Errorf("rotationMaxAgeDays must be a positive number of days")
+	}
+	return nil
+}
+
 func validateConnectorConfig(typ, url string, verifyTLS bool, config map[string]any) error {
 	schema, err := connector.GetTypeSchema(typ)
 	if err != nil {
