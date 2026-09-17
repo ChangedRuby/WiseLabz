@@ -698,6 +698,10 @@ export const en = {
       event: 'Event',
       minSeverity: 'Min severity',
       minSeverityFor: 'Minimum severity for {{event}}',
+      connectorCategory: 'Category filter',
+      connectorId: 'Connector filter',
+      anyConnectorCategory: 'Any category',
+      anyConnector: 'Any connector',
       deliveries: {
         title: 'Delivery history',
         statusFilter: 'Filter by status',
