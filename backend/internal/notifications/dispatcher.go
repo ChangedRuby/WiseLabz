@@ -67,6 +67,37 @@ func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCf
 	}
 }
 
+// NotifyFindingCreated dispatches a quality finding notification (a newly
+// opened finding, or one whose severity just escalated — the caller, quality
+// Checker, decides when that's the case) to every active user, generic
+// across every finding check_type.
+func (d *Dispatcher) NotifyFindingCreated(ctx context.Context, findingID, title, message string) {
+	users, _, err := d.store.ListUsers(ctx, 0, maxNotifyUsers)
+	if err != nil {
+		slog.Error("failed to list users for finding notification", "error", err, "findingID", findingID)
+		return
+	}
+	channels := d.loadChannels(ctx)
+	go d.notifyFindingCreated(users, channels, title, message)
+}
+
+// notifyFindingCreated fans out like notifyAlertCreated. It reuses notifyAlert
+// with an empty alertID: a finding isn't an alert, and ponytail: the in-app
+// notification/WS payload has no finding deep-link yet — add one (a real
+// findingId column) if the UI needs to navigate straight to it.
+func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, title, message string) {
+	for _, u := range users {
+		if u.Disabled {
+			continue
+		}
+		d.fanoutSem <- struct{}{}
+		go func(userID string) {
+			defer func() { <-d.fanoutSem }()
+			d.notifyAlert(context.Background(), channels, "", userID, "finding.created", title, message)
+		}(u.ID)
+	}
+}
+
 // channelCfg is one entry of the notification_config "channels" array.
 type channelCfg struct {
 	Type    string         `json:"type"`

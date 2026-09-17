@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 	"github.com/google/uuid"
@@ -23,16 +24,37 @@ const (
 	ConsecutiveFailuresThreshold = 3
 )
 
-// Checker runs documentation quality checks and broadcasts detected findings.
-type Checker struct {
-	store *store.Store
-	hub   *ws.Hub
-	now   func() time.Time
+// severityRank orders finding severities so the notification hook can tell
+// an escalation (rank increases) from a de-escalation or repeat (it doesn't).
+var severityRank = map[string]int{"info": 0, "warning": 1, "critical": 2}
+
+// FindingNotifier is implemented by notifications.Dispatcher. A narrow
+// interface keeps quality decoupled from the notifications package.
+type FindingNotifier interface {
+	NotifyFindingCreated(ctx context.Context, findingID, title, message string)
 }
 
-// NewChecker creates a documentation quality checker.
-func NewChecker(s *store.Store, hub *ws.Hub) *Checker {
-	return &Checker{store: s, hub: hub, now: time.Now}
+// RotationConfig is the credential_rotation check's default policy —
+// backend/internal/config's rotation.max_age_days / rotation.warn_days,
+// overridable per connector via ConnectorRecord.RotationMaxAgeDays.
+type RotationConfig struct {
+	MaxAgeDays int
+	WarnDays   int
+}
+
+// Checker runs documentation quality checks and broadcasts detected findings.
+type Checker struct {
+	store    *store.Store
+	hub      *ws.Hub
+	notifier FindingNotifier
+	rotation RotationConfig
+	now      func() time.Time
+}
+
+// NewChecker creates a documentation quality checker. notifier may be nil
+// (no finding notifications dispatched, e.g. in tests that don't need them).
+func NewChecker(s *store.Store, hub *ws.Hub, notifier FindingNotifier, rotation RotationConfig) *Checker {
+	return &Checker{store: s, hub: hub, notifier: notifier, rotation: rotation, now: time.Now}
 }
 
 // RunForConnector runs every quality check for one connector.
@@ -53,6 +75,9 @@ func (c *Checker) RunForConnector(ctx context.Context, connectorID string) error
 		}},
 		{name: "ownership", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
 			return c.checkOwnership(ctx, connectorID)
+		}},
+		{name: "credential_rotation", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
+			return c.checkCredentialRotation(ctx, connectorID)
 		}},
 	}
 
@@ -200,15 +225,91 @@ func (c *Checker) upsert(ctx context.Context, finding *store.QualityFindingRecor
 	if err := c.store.UpsertQualityFinding(ctx, finding); err != nil {
 		return nil, err
 	}
-	if finding.ID != candidateID {
+	isNew := finding.ID == candidateID
+	c.maybeNotify(ctx, finding)
+	if !isNew {
 		return nil, nil
 	}
 	return finding, nil
 }
 
+// maybeNotify dispatches a finding notification the first time a finding is
+// opened, and again whenever its severity escalates past what was last
+// notified — never on a repeat detection at the same (or lower) severity.
+// ResolveQualityFinding clears NotifiedSeverity, so a resolve-then-reopen is
+// treated as new. Generic across every check type: it only looks at
+// Severity/NotifiedSeverity, never CheckType.
+func (c *Checker) maybeNotify(ctx context.Context, finding *store.QualityFindingRecord) {
+	if c.notifier == nil {
+		return
+	}
+	if finding.NotifiedSeverity != "" && severityRank[finding.Severity] <= severityRank[finding.NotifiedSeverity] {
+		return
+	}
+	c.notifier.NotifyFindingCreated(ctx, finding.ID, finding.Title, finding.Description)
+	if err := c.store.SetQualityFindingNotifiedSeverity(ctx, finding.ID, finding.Severity); err != nil {
+		slog.Error("failed to record finding notification", "finding", finding.ID, "error", err)
+	}
+}
+
+// checkCredentialRotation flags a connector whose secret hasn't been rotated
+// within its rotation window. Connectors whose implementation refreshes its
+// own credentials (CredentialRefresher) are never flagged — nothing for a
+// human to rotate. due = min(UserExpiresAt, SecretRotatedAt + maxAgeDays),
+// using the connector's RotationMaxAgeDays override when set, else the
+// configured global default.
+func (c *Checker) checkCredentialRotation(ctx context.Context, connectorID string) (*store.QualityFindingRecord, error) {
+	conn, err := c.store.GetConnector(ctx, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	if connector.IsCredentialRefresherType(conn.Type) {
+		return nil, c.store.ResolveQualityFinding(ctx, connectorID, "credential_rotation")
+	}
+
+	rotatedAt, err := time.Parse(time.RFC3339, conn.SecretRotatedAt)
+	if err != nil {
+		// No usable rotation timestamp: nothing to flag rather than a false positive.
+		return nil, c.store.ResolveQualityFinding(ctx, connectorID, "credential_rotation")
+	}
+
+	maxAgeDays := c.rotation.MaxAgeDays
+	if conn.RotationMaxAgeDays != nil {
+		maxAgeDays = *conn.RotationMaxAgeDays
+	}
+	due := rotatedAt.AddDate(0, 0, maxAgeDays)
+	if conn.UserExpiresAt != "" {
+		if userDue, err := time.Parse(time.RFC3339, conn.UserExpiresAt); err == nil && userDue.Before(due) {
+			due = userDue
+		}
+	}
+
+	now := c.now().UTC()
+	var severity string
+	switch {
+	case !now.Before(due):
+		severity = "critical"
+	case !now.Before(due.AddDate(0, 0, -c.rotation.WarnDays)):
+		severity = "warning"
+	default:
+		return nil, c.store.ResolveQualityFinding(ctx, connectorID, "credential_rotation")
+	}
+
+	ageDays := int(now.Sub(rotatedAt).Hours() / 24)
+	finding := &store.QualityFindingRecord{
+		ConnectorID:     connectorID,
+		CheckType:       "credential_rotation",
+		Severity:        severity,
+		Title:           "Credential rotation due",
+		Description:     fmt.Sprintf("Secret last rotated %d days ago; due %s.", ageDays, due.Format(time.RFC3339)),
+		RemediationLink: "/connectors/" + connectorID + "/edit",
+	}
+	return c.upsert(ctx, finding)
+}
+
 // RunStaleSweepOnce performs one pass of stale documentation checks for all connectors.
-func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, logger *slog.Logger) {
-	checker := NewChecker(s, hub)
+func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifier FindingNotifier, logger *slog.Logger) {
+	checker := NewChecker(s, hub, notifier, RotationConfig{})
 	connectors, err := checker.store.ListAllConnectors(ctx)
 	if err != nil {
 		logger.Error("list connectors for stale sweep", "error", err)
