@@ -68,14 +68,14 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Role == "" {
-		req.Role = "viewer"
+		req.Role = "user"
 	}
-	if req.Role != "viewer" && req.Role != "operator" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'viewer' or 'operator'")
+	if req.Role != "user" && req.Role != "admin" {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'")
 		return
 	}
-	if req.CanManageDashboardDefaults && req.Role != "operator" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'operator'")
+	if req.CanManageDashboardDefaults && req.Role != "admin" {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'")
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Username:                   req.Username,
 		DisplayName:                req.Username,
 		Email:                      req.Email,
-		Role:                       req.Role,
+		InstanceAdminRole:          req.Role,
 		AuthSource:                 "local",
 		PasswordHash:               hash,
 		CanManageDashboardDefaults: req.CanManageDashboardDefaults,
@@ -137,11 +137,11 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		updates["email"] = *req.Email
 	}
 	if req.Role != nil {
-		if *req.Role != "viewer" && *req.Role != "operator" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'viewer' or 'operator'")
+		if *req.Role != "user" && *req.Role != "admin" {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'")
 			return
 		}
-		updates["role"] = *req.Role
+		updates["instance_admin_role"] = *req.Role
 	}
 	if req.Disabled != nil {
 		updates["disabled"] = *req.Disabled
@@ -158,10 +158,10 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 				httputil.Errorf(w, err)
 				return
 			}
-			effectiveRole = &existing.Role
+			effectiveRole = &existing.InstanceAdminRole
 		}
-		if *req.CanManageDashboardDefaults && *effectiveRole != "operator" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'operator'")
+		if *req.CanManageDashboardDefaults && *effectiveRole != "admin" {
+			httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'")
 			return
 		}
 		updates["can_manage_dashboard_defaults"] = *req.CanManageDashboardDefaults
@@ -285,7 +285,7 @@ func sanitizeUser(u *store.User) map[string]any {
 		"username":                   u.Username,
 		"displayName":                u.DisplayName,
 		"email":                      u.Email,
-		"role":                       u.Role,
+		"role":                       u.InstanceAdminRole,
 		"authSource":                 u.AuthSource,
 		"disabled":                   u.Disabled,
 		"canManageDashboardDefaults": u.CanManageDashboardDefaults,

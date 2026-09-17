@@ -112,7 +112,11 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 	return &testApp{Router: router, Store: s, JWT: jwtSvc, Config: cfg, Scheduler: jobRunner, BackupDir: backupDir}
 }
 
-// user seeds a local user with the given role and returns its ID and a valid access token.
+// user seeds a local user with the given flat instance role ("operator" or
+// "viewer", the spelling every existing test uses — "operator" maps to the
+// instance-admin flag) and returns its ID and a valid access token. Carries
+// no per-connector access; grant that separately with connectorGrant for
+// tests exercising connector-scoped routes.
 func (a *testApp) user(t *testing.T, role string) (userID, accessToken string) {
 	t.Helper()
 
@@ -120,22 +124,36 @@ func (a *testApp) user(t *testing.T, role string) (userID, accessToken string) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
+	instanceAdmin := role == "operator"
+	instanceAdminRole := "user"
+	if instanceAdmin {
+		instanceAdminRole = "admin"
+	}
 	u := &store.User{
-		Username:     "user-" + uuid.New().String(),
-		DisplayName:  "Test User",
-		Role:         role,
-		AuthSource:   "local",
-		PasswordHash: hash,
+		Username:          "user-" + uuid.New().String(),
+		DisplayName:       "Test User",
+		InstanceAdminRole: instanceAdminRole,
+		AuthSource:        "local",
+		PasswordHash:      hash,
 	}
 	if err := a.Store.CreateUser(context.Background(), u); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
-	pair, err := a.JWT.IssuePair(u.ID, role)
+	pair, err := a.JWT.IssuePair(u.ID, instanceAdmin)
 	if err != nil {
 		t.Fatalf("issue pair: %v", err)
 	}
 	return u.ID, pair.AccessToken
+}
+
+// connectorGrant gives userID the given per-connector role ("viewer" or
+// "operator") on connectorID, for tests exercising connector-scoped routes.
+func (a *testApp) connectorGrant(t *testing.T, userID, connectorID, role string) {
+	t.Helper()
+	if _, err := a.Store.UpsertConnectorGrant(context.Background(), userID, connectorID, role); err != nil {
+		t.Fatalf("grant connector role: %v", err)
+	}
 }
 
 func (a *testApp) elevationToken(t *testing.T, userID, action string) string {

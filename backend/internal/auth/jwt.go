@@ -16,20 +16,25 @@ const (
 )
 
 // Claims represents the JWT claims for access and refresh tokens.
+// InstanceAdmin reflects only the flat, non-connector-scoped role (user
+// management, API keys, granting connector permissions); per-connector
+// access is looked up per-request from the store, not carried in the token,
+// since it can change per connector at any time (see auth.RequireConnectorRole).
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID string `json:"uid"`
-	Role   string `json:"role"`
+	UserID        string `json:"uid"`
+	InstanceAdmin bool   `json:"admin"`
 }
 
 // APIKeyClaims represents the identity and lifecycle fields needed to
-// authenticate an opaque API key.
+// authenticate an opaque API key. Like Claims.InstanceAdmin, InstanceAdmin
+// here is the flat instance-wide role only.
 type APIKeyClaims struct {
-	KeyID     string
-	UserID    string
-	Role      string
-	ExpiresAt string
-	RevokedAt string
+	KeyID         string
+	UserID        string
+	InstanceAdmin bool
+	ExpiresAt     string
+	RevokedAt     string
 }
 
 // ElevationClaims represents a short-lived step-up token for destructive actions.
@@ -71,7 +76,7 @@ func NewService(secret string, accessTTL, refreshTTL time.Duration) *Service {
 }
 
 // IssuePair creates a new access + refresh token pair.
-func (s *Service) IssuePair(userID, role string) (*TokenPair, error) {
+func (s *Service) IssuePair(userID string, instanceAdmin bool) (*TokenPair, error) {
 	now := time.Now()
 
 	access, err := s.issue(Claims{
@@ -81,8 +86,8 @@ func (s *Service) IssuePair(userID, role string) (*TokenPair, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTTL)),
 			ID:        newTokenID(),
 		},
-		UserID: userID,
-		Role:   role,
+		UserID:        userID,
+		InstanceAdmin: instanceAdmin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("issue access token: %w", err)
@@ -95,8 +100,8 @@ func (s *Service) IssuePair(userID, role string) (*TokenPair, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.refreshTTL)),
 			ID:        newTokenID(),
 		},
-		UserID: userID,
-		Role:   role,
+		UserID:        userID,
+		InstanceAdmin: instanceAdmin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("issue refresh token: %w", err)

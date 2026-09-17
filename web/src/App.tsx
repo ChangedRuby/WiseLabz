@@ -10,7 +10,7 @@ import { PublicLayout } from './features/auth/PublicLayout';
 import { LoginPage } from './features/auth/LoginPage';
 import {
   RequireAuth,
-  RequireRole,
+  RequireInstanceAdmin,
   RequireOnboarded,
   ForbiddenPage,
   Splash,
@@ -183,26 +183,12 @@ const router = createBrowserRouter([
       { path: 'services', element: <ServicesPage /> },
       { path: 'services/new', element: <AddConnectorPage /> },
       { path: 'services/:id', element: <ServiceDetailPage /> },
-      {
-        path: 'connectors/:id/edit',
-        element: (
-          <RequireRole role="operator">
-            <ConnectorEditPage />
-          </RequireRole>
-        ),
-      },
+      { path: 'connectors/:id/edit', element: <ConnectorEditPage /> },
       { path: 'docs', element: <DocsPage /> },
       { path: 'docs/all', element: <AllDocsPage /> },
       { path: 'topology', element: <TopologyPage /> },
       { path: 'docs/:docId', element: <DocsPage /> },
-      {
-        path: 'docs/:docId/edit',
-        element: (
-          <RequireRole role="operator">
-            <DocEditorPage />
-          </RequireRole>
-        ),
-      },
+      { path: 'docs/:docId/edit', element: <DocEditorPage /> },
       { path: 'docs/:docId/history', element: <DocsPage /> },
       { path: 'chat', element: <ChatPage /> },
       { path: 'changes', element: <ChangesPage /> },
@@ -213,17 +199,17 @@ const router = createBrowserRouter([
       {
         path: 'templates',
         element: (
-          <RequireRole role="operator">
+          <RequireInstanceAdmin>
             <TemplatesPage />
-          </RequireRole>
+          </RequireInstanceAdmin>
         ),
       },
       {
         path: 'templates/:id',
         element: (
-          <RequireRole role="operator">
+          <RequireInstanceAdmin>
             <TemplateEditorPage />
-          </RequireRole>
+          </RequireInstanceAdmin>
         ),
       },
       {
@@ -235,65 +221,65 @@ const router = createBrowserRouter([
           {
             path: 'users',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <UsersPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'auth',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <AuthPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'ai',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <AiPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'notifications',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <NotificationsPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'system',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <SystemPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'runbooks',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <RunbooksPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'retention',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <RetentionPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           {
             path: 'audit',
             element: (
-              <RequireRole role="operator">
+              <RequireInstanceAdmin>
                 <AuditPage />
-              </RequireRole>
+              </RequireInstanceAdmin>
             ),
           },
           { path: 'appearance', element: <AppearancePage /> },

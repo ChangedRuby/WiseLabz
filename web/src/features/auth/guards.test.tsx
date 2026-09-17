@@ -1,13 +1,13 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { RequireAuth, RequireRole } from './guards';
+import { RequireAuth, RequireInstanceAdmin } from './guards';
 import { useAuth } from '../../store/auth';
 
-let role: 'viewer' | 'operator' | undefined;
+let isInstanceAdmin: boolean;
 
 vi.mock('../../hooks/useRole', () => ({
-  useRole: () => role,
+  useIsInstanceAdmin: () => isInstanceAdmin,
 }));
 
 function Location() {
@@ -30,7 +30,7 @@ function renderRoleGuard() {
   return render(
     <MemoryRouter initialEntries={['/settings/users']}>
       <Routes>
-        <Route path="/settings/users" element={<RequireRole role="operator"><p>operator controls</p></RequireRole>} />
+        <Route path="/settings/users" element={<RequireInstanceAdmin><p>operator controls</p></RequireInstanceAdmin>} />
         <Route path="/forbidden" element={<Location />} />
       </Routes>
     </MemoryRouter>,
@@ -41,7 +41,7 @@ describe('route guards', () => {
   afterEach(cleanup);
 
   beforeEach(() => {
-    role = undefined;
+    isInstanceAdmin = false;
     useAuth.setState({ status: 'unknown', user: null });
   });
 
@@ -64,13 +64,13 @@ describe('route guards', () => {
     expect(screen.getByText('/login')).toBeInTheDocument();
   });
 
-  it('blocks viewers from operator routes while allowing operators through', () => {
-    role = 'viewer';
+  it('blocks non-admins from instance-admin routes while allowing admins through', () => {
+    isInstanceAdmin = false;
     const { unmount } = renderRoleGuard();
     expect(screen.getByText('/forbidden')).toBeInTheDocument();
 
     unmount();
-    role = 'operator';
+    isInstanceAdmin = true;
     renderRoleGuard();
 
     expect(screen.getByText('operator controls')).toBeInTheDocument();

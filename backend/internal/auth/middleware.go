@@ -17,9 +17,9 @@ import (
 type contextKey string
 
 const (
-	ctxUserID contextKey = "userID"
-	ctxRole   contextKey = "role"
-	ctxClaims contextKey = "claims"
+	ctxUserID        contextKey = "userID"
+	ctxInstanceAdmin contextKey = "instanceAdmin"
+	ctxClaims        contextKey = "claims"
 )
 
 // UserIDFromContext extracts the authenticated user ID from the request context.
@@ -28,10 +28,21 @@ func UserIDFromContext(ctx context.Context) string {
 	return id
 }
 
-// RoleFromContext extracts the user's role from the request context.
-func RoleFromContext(ctx context.Context) string {
-	role, _ := ctx.Value(ctxRole).(string)
-	return role
+// ContextWithUser returns ctx with the same userID/instance-admin values
+// AuthMiddleware would set from a validated token, for tests that call a
+// handler directly instead of going through the full middleware chain.
+func ContextWithUser(ctx context.Context, userID string, instanceAdmin bool) context.Context {
+	ctx = context.WithValue(ctx, ctxUserID, userID)
+	return context.WithValue(ctx, ctxInstanceAdmin, instanceAdmin)
+}
+
+// InstanceAdminFromContext reports whether the authenticated user holds the
+// flat, non-connector-scoped instance-admin role. Per-connector access is
+// never carried in the request context; look it up per-request via
+// store.UserHasConnectorRole instead (see RequireConnectorRole).
+func InstanceAdminFromContext(ctx context.Context) bool {
+	admin, _ := ctx.Value(ctxInstanceAdmin).(bool)
+	return admin
 }
 
 // APIKeyChecker looks up opaque API keys without coupling auth to the store
@@ -41,12 +52,13 @@ type APIKeyChecker interface {
 	TouchAPIKeyLastUsed(ctx context.Context, keyID string) error
 }
 
-// UserStatusChecker returns a user's current role and disabled flag, so
-// AuthMiddleware can reject an access token whose role/disabled claims have
-// gone stale (a role change or disable revokes access immediately instead of
-// waiting out the access token's TTL). Optional: implemented by *store.Store
-// via a type assertion on the APIKeyChecker passed to AuthMiddleware, so
-// existing call sites and lightweight test doubles keep working unchanged.
+// UserStatusChecker returns a user's current instance-admin role (as
+// "admin"/"user") and disabled flag, so AuthMiddleware can reject an access
+// token whose claims have gone stale (a role change or disable revokes
+// access immediately instead of waiting out the access token's TTL).
+// Optional: implemented by *store.Store via a type assertion on the
+// APIKeyChecker passed to AuthMiddleware, so existing call sites and
+// lightweight test doubles keep working unchanged.
 type UserStatusChecker interface {
 	GetUserRoleStatus(ctx context.Context, userID string) (role string, disabled bool, err error)
 }
@@ -72,13 +84,13 @@ func AuthMiddleware(jwtSvc *Service, checkers ...APIKeyChecker) func(http.Handle
 			if err == nil {
 				if statusChecker, ok := checker.(UserStatusChecker); ok {
 					role, disabled, statusErr := statusChecker.GetUserRoleStatus(r.Context(), claims.UserID)
-					if statusErr != nil || disabled || role != claims.Role {
+					if statusErr != nil || disabled || (role == "admin") != claims.InstanceAdmin {
 						http.Error(w, `{"code":"unauthorized","message":"session no longer valid"}`, http.StatusUnauthorized)
 						return
 					}
 				}
 				ctx := context.WithValue(r.Context(), ctxUserID, claims.UserID)
-				ctx = context.WithValue(ctx, ctxRole, claims.Role)
+				ctx = context.WithValue(ctx, ctxInstanceAdmin, claims.InstanceAdmin)
 				ctx = context.WithValue(ctx, ctxClaims, claims)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
@@ -91,7 +103,7 @@ func AuthMiddleware(jwtSvc *Service, checkers ...APIKeyChecker) func(http.Handle
 						slog.Error("failed to update API key last-used timestamp", "key_id", keyClaims.KeyID, "error", touchErr)
 					}
 					ctx := context.WithValue(r.Context(), ctxUserID, keyClaims.UserID)
-					ctx = context.WithValue(ctx, ctxRole, keyClaims.Role)
+					ctx = context.WithValue(ctx, ctxInstanceAdmin, keyClaims.InstanceAdmin)
 					ctx = context.WithValue(ctx, ctxClaims, keyClaims)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
@@ -111,7 +123,7 @@ func hashToken(token string) string {
 }
 
 func validAPIKey(claims *APIKeyClaims) bool {
-	if claims == nil || claims.KeyID == "" || claims.UserID == "" || !roleSatisfies(claims.Role, "viewer") || claims.RevokedAt != "" {
+	if claims == nil || claims.KeyID == "" || claims.UserID == "" || claims.RevokedAt != "" {
 		return false
 	}
 	if claims.ExpiresAt == "" {
@@ -121,31 +133,49 @@ func validAPIKey(claims *APIKeyClaims) bool {
 	return err == nil && time.Now().UTC().Before(expiresAt)
 }
 
-// RequireRole returns middleware that checks the user's role meets a minimum level.
-// Roles are checked as: operator >= viewer. "viewer" means any authenticated user.
-func RequireRole(role string) func(http.Handler) http.Handler {
+// RequireInstanceAdmin returns middleware that rejects any request not made
+// by an instance admin. Used for actions that aren't connector-scoped: user
+// management, API keys, granting/revoking connector permissions. For
+// connector-scoped mutations, use RequireConnectorRole instead.
+func RequireInstanceAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !InstanceAdminFromContext(r.Context()) {
+			httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ConnectorRoleChecker looks up a user's per-connector role. Implemented by
+// *store.Store (see internal/store/connector_permission.go) to avoid an
+// import cycle between internal/auth and internal/store.
+type ConnectorRoleChecker interface {
+	UserHasConnectorRole(ctx context.Context, userID, connectorID, minRole string) (bool, error)
+}
+
+// RequireConnectorRole returns middleware that reads a connector ID from the
+// named chi URL parameter and requires the authenticated user hold at least
+// minRole ("viewer" or "operator") on that specific connector. No grant
+// means no access (default deny) — an instance admin is not implicitly
+// granted access to a connector they haven't been given a role on.
+//
+// Endpoints whose connector ID isn't in the URL path (a body-supplied ID
+// list, or an ID that must be resolved through another resource first, e.g.
+// a doc ID) can't use this middleware; they call checker.UserHasConnectorRole
+// directly in the handler instead.
+func RequireConnectorRole(checker ConnectorRoleChecker, minRole, idParam string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userRole := RoleFromContext(r.Context())
-			if !roleSatisfies(userRole, role) {
+			connectorID := r.PathValue(idParam)
+			ok, err := checker.UserHasConnectorRole(r.Context(), UserIDFromContext(r.Context()), connectorID, minRole)
+			if err != nil || !ok {
 				httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// roleSatisfies checks if the user's role meets or exceeds the required role.
-// operator > viewer. viewer only satisfies viewer.
-func roleSatisfies(userRole, requiredRole string) bool {
-	if requiredRole == "viewer" {
-		return userRole == "viewer" || userRole == "operator"
-	}
-	if requiredRole == "operator" {
-		return userRole == "operator"
-	}
-	return false
 }
 
 // PermissionChecker looks up whether a user has a named boolean permission flag.
@@ -161,12 +191,12 @@ type AuditRecorder interface {
 	RecordAuditFromContext(ctx context.Context, action, targetType, targetID string, detail any) error
 }
 
-// RequirePermission returns middleware requiring operator role AND a named
+// RequirePermission returns middleware requiring instance-admin AND a named
 // per-user boolean permission flag (e.g. "can_manage_dashboard_defaults").
 func RequirePermission(checker PermissionChecker, permission string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !roleSatisfies(RoleFromContext(r.Context()), "operator") {
+			if !InstanceAdminFromContext(r.Context()) {
 				httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
 				return
 			}

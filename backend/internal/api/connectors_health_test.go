@@ -62,8 +62,9 @@ func TestConnectorsHealthOnline(t *testing.T) {
 	registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -99,8 +100,9 @@ func TestConnectorsHealthDegraded(t *testing.T) {
 	registerHealthFakeType(t, &healthFakeConnector{err: nil, delay: 5 * time.Millisecond})
 
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -122,8 +124,9 @@ func TestConnectorsHealthOffline(t *testing.T) {
 	registerHealthFakeType(t, &healthFakeConnector{err: errors.New("connection refused")})
 
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -157,8 +160,9 @@ func TestConnectorsHealthDoesNotCreateSnapshot(t *testing.T) {
 	registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -183,9 +187,15 @@ func TestConnectorsHealthRoleBoundary(t *testing.T) {
 	}
 }
 
+// TestConnectorsHealthUnknownConnector404s pre-grants the caller on the
+// nonexistent ID so the request reaches the handler's own not-found check —
+// otherwise the default-deny connector-role gate would 403 first, which is
+// correct in production (no grant can exist on an ID that was never a real
+// connector) but isn't what this test is exercising.
 func TestConnectorsHealthUnknownConnector404s(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
+	app.connectorGrant(t, opUserID, "does-not-exist", "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/does-not-exist/health", nil, opToken)
 	if rec.Code != http.StatusNotFound {

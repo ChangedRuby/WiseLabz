@@ -32,17 +32,24 @@ const hrsAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
 const minsFromNow = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
 
-export const user: User = {
+// TODO: fold instanceAdminRole into the generated User type once the OpenAPI
+// spec is updated for #240 PR1 — see src/hooks/useRole.ts.
+export const user = {
   id: 'usr-1',
   username: 'ops',
   displayName: 'Ada',
   email: 'ada@homelab.lan',
   role: 'operator',
+  instanceAdminRole: 'admin',
   authSource: 'local',
   createdAt: daysAgo(212),
-};
+} satisfies User & { instanceAdminRole: 'admin' | 'user' };
 
-export const connectors: Connector[] = [
+// TODO: fold myRole into the generated Connector type once the OpenAPI spec
+// is updated for #240 PR1 — see src/hooks/useRole.ts. Every fixture connector
+// grants the fixture user (an instance admin) operator access, matching
+// today's single-admin-homelab default.
+const connectorsBase: Connector[] = [
   {
     id: 'svc-pve1',
     name: 'pve1',
@@ -138,6 +145,8 @@ export const connectors: Connector[] = [
     retryCount: 4,
   },
 ];
+
+export const connectors = connectorsBase.map((c) => ({ ...c, myRole: 'operator' as const }));
 
 export const changes: ChangeSummary[] = [
   {

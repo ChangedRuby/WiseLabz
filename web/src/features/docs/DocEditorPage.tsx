@@ -28,7 +28,7 @@ import {
   getGetDocsDocIdVersionsQueryKey,
   getGetDocsTreeQueryKey,
 } from '../../api/generated/docs/docs';
-import { useCanMutate } from '../../hooks/useRole';
+import { useConnectorRole, useIsInstanceAdmin } from '../../hooks/useRole';
 import { useAuth } from '../../store/auth';
 import { useLive } from '../../store/live';
 import { Button } from '../../components/ui/Button';
@@ -85,12 +85,16 @@ export function DocEditorPage() {
   const { docId = '' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canMutate = useCanMutate();
+  const isInstanceAdmin = useIsInstanceAdmin();
 
   const userId = useAuth((s) => s.user?.id);
   const docLock = useLive((s) => s.docLocks[docId]);
 
   const doc = useGetDocsDocId(docId);
+  // Service docs are gated on that connector's operator role; the lab
+  // overview doc has no owning connector, so it falls back to instance-admin.
+  const connectorRole = useConnectorRole(doc.data?.serviceId ?? undefined);
+  const canMutate = doc.data?.serviceId ? connectorRole === 'operator' : isInstanceAdmin;
 
   const [draft, setDraft] = useState<string | null>(null);
   const [provenance, setProvenance] = useState<Provenance>('manual');

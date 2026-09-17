@@ -15,7 +15,7 @@ import { Panel } from '../../components/ui/Panel';
 import { Pagination } from '../../components/ui/Pagination';
 import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui/states';
 import { ArrowRightIcon, CheckIcon } from '../../components/icons';
-import { useCanMutate } from '../../hooks/useRole';
+import { useOperatorConnectorIds } from '../../hooks/useRole';
 import { relativeTime } from '../../lib/time';
 
 const CHECK_TYPES: Array<{ value: QualityCheckType | 'all'; label: string }> = [
@@ -28,7 +28,7 @@ const CHECK_TYPES: Array<{ value: QualityCheckType | 'all'; label: string }> = [
 
 export function FindingsPage() {
   const { t } = useTranslation();
-  const canMutate = useCanMutate();
+  const operatorIds = useOperatorConnectorIds();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [checkType, setCheckType] = useState<QualityCheckType | 'all'>('all');
@@ -128,7 +128,7 @@ export function FindingsPage() {
                   >
                     {t('findings.remediate')} <ArrowRightIcon size={14} />
                   </Link>
-                  {canMutate && finding.status === 'open' && (
+                  {operatorIds.has(finding.connectorId) && finding.status === 'open' && (
                     <Button
                       variant="primary"
                       size="sm"

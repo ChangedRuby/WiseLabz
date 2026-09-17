@@ -50,8 +50,9 @@ func TestChangesAcknowledgeRoleBoundary(t *testing.T) {
 
 func TestChangesAcknowledgeSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	c := seedChange(t, app)
+	app.connectorGrant(t, opUserID, c.ServiceID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/changes/"+c.ID+"/ack", nil, opToken)
 	if rec.Code != http.StatusOK {
@@ -77,6 +78,9 @@ func TestChangesDismissNotFound(t *testing.T) {
 	}
 }
 
+// TestChangesBulkResolveRoleBoundary verifies a caller without an operator
+// grant on the change's connector gets a per-item "forbidden" outcome, not a
+// blanket 403 — see the matching TestAlertsBulkSnoozeRoleBoundary comment.
 func TestChangesBulkResolveRoleBoundary(t *testing.T) {
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
@@ -84,8 +88,21 @@ func TestChangesBulkResolveRoleBoundary(t *testing.T) {
 
 	rec := app.req(t, http.MethodPost, "/api/changes/bulk-resolve",
 		map[string]any{"ids": []string{c.ID}, "status": "acknowledged"}, viewerToken)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Results []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Results) != 1 || body.Results[0].Status != "error" || body.Results[0].Reason != "forbidden" {
+		t.Fatalf("results = %+v, want one error/forbidden", body.Results)
 	}
 }
 
@@ -99,6 +116,8 @@ func TestChangesBulkResolvePartialFailure(t *testing.T) {
 
 	lowRisk := seedChangeWithSeverity(t, app, "info")
 	critical := seedChangeWithSeverity(t, app, "critical")
+	app.connectorGrant(t, opUserID, lowRisk.ServiceID, "operator")
+	app.connectorGrant(t, opUserID, critical.ServiceID, "operator")
 	const missingID = "does-not-exist"
 
 	rec := app.req(t, http.MethodPost, "/api/changes/bulk-resolve", map[string]any{

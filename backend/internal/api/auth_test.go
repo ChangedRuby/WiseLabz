@@ -44,7 +44,11 @@ func seedLocalUser(t *testing.T, app *testApp, username, password, role string) 
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	u := &store.User{Username: username, DisplayName: username, Role: role, AuthSource: "local", PasswordHash: hash}
+	instanceAdminRole := "user"
+	if role == "operator" {
+		instanceAdminRole = "admin"
+	}
+	u := &store.User{Username: username, DisplayName: username, InstanceAdminRole: instanceAdminRole, AuthSource: "local", PasswordHash: hash}
 	if err := app.Store.CreateUser(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -374,8 +378,8 @@ func TestMeSuccess(t *testing.T) {
 	if resp["id"] != userID {
 		t.Fatalf("expected id = %s, got %v", userID, resp["id"])
 	}
-	if resp["role"] != "viewer" {
-		t.Fatalf("expected role = viewer, got %v", resp["role"])
+	if resp["role"] != "user" {
+		t.Fatalf("expected role = user, got %v", resp["role"])
 	}
 }
 

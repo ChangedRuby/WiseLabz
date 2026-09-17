@@ -13,7 +13,7 @@ import type { TemplateVersion, TemplateVersionMetaTrigger } from '../../api/mode
 import { DocDiff } from '../../components/diff/DiffViewer';
 import { Button } from '../../components/ui/Button';
 import { EmptyState, ErrorState, Skeleton, SkeletonRows } from '../../components/ui/states';
-import { useCanMutate } from '../../hooks/useRole';
+import { useIsInstanceAdmin } from '../../hooks/useRole';
 import { toast } from '../../lib/toast';
 import { cn } from '../../lib/cn';
 import { relativeTime } from '../../lib/time';
@@ -41,7 +41,7 @@ export function TemplateHistory({
   currentVersion: number;
 }) {
   const { t } = useTranslation();
-  const canMutate = useCanMutate();
+  const canMutate = useIsInstanceAdmin();
   const queryClient = useQueryClient();
   const versions = useGetTemplatesTemplateIdVersions(templateId);
   const [selected, setSelected] = useState(currentVersion);

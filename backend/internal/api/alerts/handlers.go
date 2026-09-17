@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -56,7 +57,11 @@ func (h *Handler) alertResponse(ctx context.Context, id string) (map[string]any,
 	}, nil
 }
 
-// List handles GET /api/alerts.
+// List handles GET /api/alerts. Default deny: filters to connectors the
+// caller has at least a viewer grant on.
+// ponytail: filters after the DB page is fetched, so a page can come back
+// shorter than pageSize for a caller with few grants; push the grant filter
+// into the SQL query if that skew matters at scale.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	page, pageSize, offset := httputil.Paginate(r)
 	serviceID := r.URL.Query().Get("serviceId")
@@ -72,10 +77,40 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	alerts, err = h.filterByGrant(r.Context(), alerts)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
 	httputil.WritePaginated(w, alerts, page, pageSize, total)
 }
 
-// Get handles GET /api/alerts/{id}.
+// filterByGrant keeps only alerts whose connector the caller has at least a
+// viewer grant on.
+func (h *Handler) filterByGrant(ctx context.Context, alerts []store.AlertRecord) ([]store.AlertRecord, error) {
+	serviceIDs := make([]string, len(alerts))
+	for i, a := range alerts {
+		serviceIDs[i] = a.ServiceID
+	}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(ctx, auth.UserIDFromContext(ctx), serviceIDs, "viewer")
+	if err != nil {
+		return nil, err
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+	out := make([]store.AlertRecord, 0, len(alerts))
+	for _, a := range alerts {
+		if isAllowed[a.ServiceID] {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// Get handles GET /api/alerts/{id}. Default deny: 404s if the caller has no
+// grant on the alert's connector.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	a, err := h.Store.GetAlert(r.Context(), id)
@@ -87,12 +122,59 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	if !h.viewerOrNotFound(w, r, a.ServiceID) {
+		return
+	}
 	httputil.JSON(w, http.StatusOK, a)
+}
+
+// viewerOrNotFound 404s (not 403, to avoid confirming the resource's
+// existence to a caller with no visibility into its connector) when the
+// caller lacks at least a viewer grant on connectorID. Returns true if the
+// caller may proceed.
+func (h *Handler) viewerOrNotFound(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
+		return false
+	}
+	return true
+}
+
+// operatorOrForbidden 403s when the caller lacks at least an operator grant
+// on connectorID. Returns true if the caller may proceed.
+func (h *Handler) operatorOrForbidden(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "operator")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		return false
+	}
+	return true
 }
 
 // Resolve handles POST /api/alerts/{id}/resolve.
 func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	a, err := h.Store.GetAlert(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, a.ServiceID) {
+		return
+	}
 	if err := h.Store.UpdateAlertStatus(r.Context(), id, "resolved", ""); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
@@ -115,6 +197,18 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 // Dismiss handles POST /api/alerts/{id}/dismiss.
 func (h *Handler) Dismiss(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	a, err := h.Store.GetAlert(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, a.ServiceID) {
+		return
+	}
 	if err := h.Store.UpdateAlertStatus(r.Context(), id, "dismissed", ""); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
@@ -149,6 +243,19 @@ func (h *Handler) Snooze(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := time.Parse(time.RFC3339, req.Until); err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "until must be an RFC3339 timestamp")
+		return
+	}
+
+	a, err := h.Store.GetAlert(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Alert not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, a.ServiceID) {
 		return
 	}
 
@@ -210,17 +317,44 @@ func (h *Handler) BulkSnooze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ponytail: resolves each alert individually to authorize per-connector
+	// (max 500 items per request, same cap as the other bulk endpoints);
+	// batch this into one query if bulk-snooze throughput becomes a hot path.
 	results := make([]bulkSnoozeItemResult, 0, len(req.IDs))
-	found, err := h.Store.UpdateAlertStatuses(r.Context(), req.IDs, "snoozed", req.Until)
+	allowedIDs := make([]string, 0, len(req.IDs))
+	userID := auth.UserIDFromContext(r.Context())
+	for _, id := range req.IDs {
+		a, err := h.Store.GetAlert(r.Context(), id)
+		if errors.Is(err, store.ErrNotFound) {
+			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "not_found"})
+			continue
+		}
+		if err != nil {
+			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "internal_error"})
+			continue
+		}
+		ok, err := h.Store.UserHasConnectorRole(r.Context(), userID, a.ServiceID, "operator")
+		if err != nil {
+			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "internal_error"})
+			continue
+		}
+		if !ok {
+			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "forbidden"})
+			continue
+		}
+		allowedIDs = append(allowedIDs, id)
+	}
+
+	found, err := h.Store.UpdateAlertStatuses(r.Context(), allowedIDs, "snoozed", req.Until)
 	if err != nil {
-		for _, id := range req.IDs {
+		for _, id := range allowedIDs {
 			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "internal_error"})
 		}
 		httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
 		return
 	}
 	auditRecords := make([]store.AuditRecord, 0, len(found))
-	for _, id := range req.IDs {
+	for _, id := range allowedIDs {
 		if !found[id] {
 			results = append(results, bulkSnoozeItemResult{ID: id, Status: "error", Reason: "not_found"})
 			continue

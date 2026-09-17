@@ -245,7 +245,7 @@ function DocReader({ docId }: { docId: string }) {
               {t('docs.history')}
             </TabButton>
           </div>
-          <RoleGate>
+          <RoleGate connectorId={data.serviceId ?? undefined}>
             <Button variant="secondary" size="sm" onClick={() => navigate(`/docs/${docId}/edit`)}>
               <EditIcon size={14} />
               {t('docs.editAction')}
@@ -283,7 +283,7 @@ function DocReader({ docId }: { docId: string }) {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             >
-              <DocHistory docId={docId} currentVersion={data.currentVersion} />
+              <DocHistory docId={docId} currentVersion={data.currentVersion} connectorId={data.serviceId ?? undefined} />
             </motion.div>
           )}
         </AnimatePresence>

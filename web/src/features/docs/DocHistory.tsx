@@ -18,7 +18,7 @@ import {
 import { DocDiff } from '../../components/diff/DiffViewer';
 import { Button } from '../../components/ui/Button';
 import { Skeleton, SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
-import { useCanMutate } from '../../hooks/useRole';
+import { useConnectorRole, useIsInstanceAdmin } from '../../hooks/useRole';
 import { toast } from '../../lib/toast';
 import { cn } from '../../lib/cn';
 import { relativeTime } from '../../lib/time';
@@ -42,9 +42,19 @@ const TRIGGER: Record<
   sync: { Icon: SyncIcon, tone: 'var(--color-ink-muted)' },
 };
 
-export function DocHistory({ docId, currentVersion }: { docId: string; currentVersion: number }) {
+export function DocHistory({
+  docId,
+  currentVersion,
+  connectorId,
+}: {
+  docId: string;
+  currentVersion: number;
+  connectorId?: string;
+}) {
   const { t } = useTranslation();
-  const canMutate = useCanMutate();
+  const isInstanceAdmin = useIsInstanceAdmin();
+  const connectorRole = useConnectorRole(connectorId);
+  const canMutate = connectorId ? connectorRole === 'operator' : isInstanceAdmin;
   const queryClient = useQueryClient();
   const versions = useGetDocsDocIdVersions(docId);
   // Mounted fresh per doc (DocReader is keyed by docId), so initial = latest rev.

@@ -93,7 +93,10 @@ func (h *Handler) changeDetail(ctx context.Context, id string) (map[string]any, 
 	}, nil
 }
 
-// List handles GET /api/changes.
+// List handles GET /api/changes. Default deny: filters to connectors the
+// caller has at least a viewer grant on.
+// ponytail: filters after the DB page is fetched, same trade-off as
+// alerts.Handler.List; push into SQL if pagination skew matters at scale.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	page, pageSize, offset := httputil.Paginate(r)
 	serviceID := r.URL.Query().Get("serviceId")
@@ -104,13 +107,33 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	httputil.WritePaginated(w, changes, page, pageSize, total)
+	serviceIDs := make([]string, len(changes))
+	for i, c := range changes {
+		serviceIDs[i] = c.ServiceID
+	}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(r.Context(), auth.UserIDFromContext(r.Context()), serviceIDs, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+	filtered := make([]store.ChangeRecord, 0, len(changes))
+	for _, c := range changes {
+		if isAllowed[c.ServiceID] {
+			filtered = append(filtered, c)
+		}
+	}
+	httputil.WritePaginated(w, filtered, page, pageSize, total)
 }
 
-// Get handles GET /api/changes/{id}.
+// Get handles GET /api/changes/{id}. Default deny: 404s if the caller has
+// no grant on the change's connector.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	detail, err := h.changeDetail(r.Context(), id)
+	c, err := h.Store.GetChange(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
 		return
@@ -119,12 +142,62 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	if !h.viewerOrNotFound(w, r, c.ServiceID) {
+		return
+	}
+	detail, err := h.changeDetail(r.Context(), id)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
 	httputil.JSON(w, http.StatusOK, detail)
+}
+
+// viewerOrNotFound 404s (not 403, to avoid confirming the resource's
+// existence) when the caller lacks at least a viewer grant on connectorID.
+func (h *Handler) viewerOrNotFound(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
+		return false
+	}
+	return true
+}
+
+// operatorOrForbidden 403s when the caller lacks at least an operator grant
+// on connectorID.
+func (h *Handler) operatorOrForbidden(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "operator")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		return false
+	}
+	return true
 }
 
 // Acknowledge handles POST /api/changes/{id}/ack.
 func (h *Handler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	c, err := h.Store.GetChange(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, c.ServiceID) {
+		return
+	}
 	if err := h.Store.UpdateChangeStatus(r.Context(), id, "acknowledged"); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
@@ -147,6 +220,18 @@ func (h *Handler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 // Dismiss handles POST /api/changes/{id}/dismiss.
 func (h *Handler) Dismiss(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	c, err := h.Store.GetChange(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, c.ServiceID) {
+		return
+	}
 	if err := h.Store.UpdateChangeStatus(r.Context(), id, "dismissed"); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Change not found")
@@ -224,12 +309,25 @@ func (h *Handler) BulkResolve(w http.ResponseWriter, r *http.Request) {
 		httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
 		return
 	}
+	userID := auth.UserIDFromContext(r.Context())
+	forbidden := make(map[string]bool)
+	for id, c := range changes {
+		ok, err := h.Store.UserHasConnectorRole(r.Context(), userID, c.ServiceID, "operator")
+		if err != nil {
+			results = append(results, bulkResolveItemResult{ID: id, Status: "error", Reason: "internal_error"})
+			continue
+		}
+		if !ok {
+			forbidden[id] = true
+		}
+	}
+
 	resolvedIDs := make([]string, 0, len(changes))
 	auditRecords := make([]store.AuditRecord, 0, len(changes))
 	eligible := make(map[string]bool, len(changes))
 	for _, id := range req.IDs {
 		c, ok := changes[id]
-		if !ok || c.Severity == "critical" {
+		if !ok || c.Severity == "critical" || forbidden[id] {
 			continue
 		}
 		resolvedIDs = append(resolvedIDs, id)
@@ -247,6 +345,8 @@ func (h *Handler) BulkResolve(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case !ok:
 			results = append(results, bulkResolveItemResult{ID: id, Status: "error", Reason: "not_found"})
+		case forbidden[id]:
+			results = append(results, bulkResolveItemResult{ID: id, Status: "error", Reason: "forbidden"})
 		case c.Severity == "critical":
 			results = append(results, bulkResolveItemResult{ID: id, Status: "error", Reason: "not_low_risk"})
 		case updateErr != nil && eligible[id]:
@@ -272,6 +372,9 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, c.ServiceID) {
 		return
 	}
 
@@ -331,6 +434,9 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, c.ServiceID) {
 		return
 	}
 

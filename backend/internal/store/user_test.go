@@ -239,22 +239,22 @@ func TestRegisterFailedLoginLocksAfterMaxAttempts(t *testing.T) {
 func TestGetUserRoleStatus(t *testing.T) {
 	s := newDocTestStore(t)
 	ctx := context.Background()
-	u := &User{Username: "role-status-user", Role: "operator"}
+	u := &User{Username: "role-status-user", InstanceAdminRole: "admin"}
 	if err := s.CreateUser(ctx, u); err != nil {
 		t.Fatalf("CreateUser() error: %v", err)
 	}
 
 	role, disabled, err := s.GetUserRoleStatus(ctx, u.ID)
-	if err != nil || role != "operator" || disabled {
-		t.Fatalf("GetUserRoleStatus() = %q, %v, %v; want operator, false, nil", role, disabled, err)
+	if err != nil || role != "admin" || disabled {
+		t.Fatalf("GetUserRoleStatus() = %q, %v, %v; want admin, false, nil", role, disabled, err)
 	}
 
-	if err := s.UpdateUser(ctx, u.ID, map[string]any{"role": "viewer", "disabled": true}); err != nil {
+	if err := s.UpdateUser(ctx, u.ID, map[string]any{"instance_admin_role": "user", "disabled": true}); err != nil {
 		t.Fatalf("UpdateUser() error: %v", err)
 	}
 	role, disabled, err = s.GetUserRoleStatus(ctx, u.ID)
-	if err != nil || role != "viewer" || !disabled {
-		t.Fatalf("GetUserRoleStatus() after update = %q, %v, %v; want viewer, true, nil", role, disabled, err)
+	if err != nil || role != "user" || !disabled {
+		t.Fatalf("GetUserRoleStatus() after update = %q, %v, %v; want user, true, nil", role, disabled, err)
 	}
 
 	if _, _, err := s.GetUserRoleStatus(ctx, "missing-id"); !errors.Is(err, ErrNotFound) {
@@ -342,17 +342,17 @@ func TestUpdateUserErrors(t *testing.T) {
 	}
 
 	t.Run("successful update", func(t *testing.T) {
-		if err := s.UpdateUser(ctx, u.ID, map[string]any{"role": "operator"}); err != nil {
+		if err := s.UpdateUser(ctx, u.ID, map[string]any{"instance_admin_role": "admin"}); err != nil {
 			t.Fatalf("UpdateUser() error: %v", err)
 		}
 		updated, err := s.GetUserByID(ctx, u.ID)
-		if err != nil || updated.Role != "operator" {
-			t.Fatalf("GetUserByID() after update = %q, %v; want operator, nil", updated.Role, err)
+		if err != nil || updated.InstanceAdminRole != "admin" {
+			t.Fatalf("GetUserByID() after update = %q, %v; want admin, nil", updated.InstanceAdminRole, err)
 		}
 	})
 
 	t.Run("user not found", func(t *testing.T) {
-		if err := s.UpdateUser(ctx, "missing-id", map[string]any{"role": "viewer"}); !errors.Is(err, ErrNotFound) {
+		if err := s.UpdateUser(ctx, "missing-id", map[string]any{"instance_admin_role": "user"}); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("UpdateUser(missing) error = %v, want ErrNotFound", err)
 		}
 	})

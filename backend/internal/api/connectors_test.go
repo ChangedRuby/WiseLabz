@@ -125,11 +125,12 @@ func TestConnectorsCreateSuccess(t *testing.T) {
 
 func TestConnectorsUpdateOwner(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	c := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com", Owner: "Platform"}
 	if err := app.Store.CreateConnector(context.Background(), c); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opUserID, c.ID, "operator")
 	rec := app.req(t, http.MethodPut, "/api/connectors/"+c.ID, map[string]any{"owner": ""}, opToken)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
@@ -156,12 +157,13 @@ func TestConnectorsUpdateRoleBoundary(t *testing.T) {
 
 func TestConnectorsUpdateScheduleSeconds(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	t.Run("absent leaves schedule unchanged", func(t *testing.T) {
 		rec := app.req(t, http.MethodPatch, "/api/connectors/"+conn.ID, map[string]any{"name": "svc2"}, opToken)
@@ -208,12 +210,13 @@ func TestConnectorsUpdateScheduleSeconds(t *testing.T) {
 
 func TestConnectorsSyncsHistory(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerUserID, viewerToken := app.user(t, "viewer")
 
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, viewerUserID, conn.ID, "viewer")
 
 	older := time.Now().Add(-time.Hour).Format(time.RFC3339)
 	newer := time.Now().Format(time.RFC3339)
@@ -258,6 +261,7 @@ func TestConnectorsSyncsHistory(t *testing.T) {
 	})
 
 	t.Run("unknown connector 404s", func(t *testing.T) {
+		app.connectorGrant(t, viewerUserID, "does-not-exist", "viewer")
 		rec := app.req(t, http.MethodGet, "/api/connectors/does-not-exist/syncs", nil, viewerToken)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body)
@@ -267,7 +271,7 @@ func TestConnectorsSyncsHistory(t *testing.T) {
 
 func TestConnectorRestartPreview(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
 
 	conn := &store.ConnectorRecord{
@@ -276,6 +280,7 @@ func TestConnectorRestartPreview(t *testing.T) {
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
 	snapshot, err := json.Marshal(connector.ServiceSnapshot{
 		ServiceName: "service-a",
 		Dependencies: []connector.ServiceDependency{
@@ -413,7 +418,8 @@ func TestConnectorRestartPreview(t *testing.T) {
 
 func TestConnectorRestartNonDryRunOnMissingConnectorReturnsNotFound(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
+	app.connectorGrant(t, opUserID, "unknown", "operator")
 
 	// Any value other than an exact "dryRun=true" now takes the real,
 	// mutating restart path (gated by elevation) instead of the preview.
@@ -429,12 +435,14 @@ func TestConnectorRestartNonDryRunOnMissingConnectorReturnsNotFound(t *testing.T
 
 func TestConnectorRestartPreviewSnapshotErrors(t *testing.T) {
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
+	opUserID, opToken := app.user(t, "operator")
 
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
+	app.connectorGrant(t, opUserID, "unknown", "operator")
 
 	t.Run("missing snapshot", func(t *testing.T) {
 		rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/restart?dryRun=true", nil, opToken)
@@ -473,6 +481,7 @@ func TestConnectorsDeleteElevationBoundary(t *testing.T) {
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opID, conn.ID, "operator")
 
 	t.Run("viewer forbidden", func(t *testing.T) {
 		rec := app.req(t, http.MethodDelete, "/api/connectors/"+conn.ID, nil, viewerToken)
@@ -522,14 +531,30 @@ func TestConnectorsDeleteElevationBoundary(t *testing.T) {
 	})
 }
 
+// TestConnectorsBulkSyncAndReauthRoleBoundary verifies a caller without an
+// operator grant on the connector gets a per-item "forbidden" outcome, not a
+// blanket 403 — see the matching TestAlertsBulkSnoozeRoleBoundary comment.
 func TestConnectorsBulkSyncAndReauthRoleBoundary(t *testing.T) {
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
 	for _, path := range []string{"/api/connectors/bulk-sync", "/api/connectors/bulk-reauth"} {
 		rec := app.req(t, http.MethodPost, path, map[string]any{"ids": []string{"x"}}, viewerToken)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("%s: status = %d, want 403; body = %s", path, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200; body = %s", path, rec.Code, rec.Body)
+		}
+		var body struct {
+			Results []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+				Reason string `json:"reason"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: decode body: %v", path, err)
+		}
+		if len(body.Results) != 1 || body.Results[0].Status != "error" || body.Results[0].Reason != "not_found" {
+			t.Fatalf("%s: results = %+v, want one error/not_found (id \"x\" was never a real connector)", path, body.Results)
 		}
 	}
 }
@@ -547,12 +572,18 @@ func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
 	}
+	app.connectorGrant(t, opID, conn.ID, "operator")
 	body := map[string]any{"ids": []string{conn.ID}}
 
-	t.Run("viewer forbidden", func(t *testing.T) {
+	// The elevation gate runs before any per-connector authorization (it's
+	// per-user, not per-role), so a viewer without an elevation token gets
+	// the same 400 an operator without one does — not a blanket 403. Even
+	// with a valid token, the handler's per-item grant check still applies
+	// (see TestConnectorsBulkSyncAndReauthRoleBoundary for that case).
+	t.Run("viewer missing elevation token", func(t *testing.T) {
 		rec := app.req(t, http.MethodPost, "/api/connectors/bulk-restart", body, viewerToken)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body)
 		}
 	})
 
@@ -590,6 +621,7 @@ func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
 		if err := app.Store.CreateConnector(context.Background(), conn2); err != nil {
 			t.Fatalf("seed connector2: %v", err)
 		}
+		app.connectorGrant(t, opID, conn2.ID, "operator")
 		tok := app.elevationToken(t, opID, "connector.bulkRestart")
 		req := app.newRequest(t, http.MethodPost, "/api/connectors/bulk-restart",
 			map[string]any{"ids": []string{conn.ID, conn2.ID}}, opToken)

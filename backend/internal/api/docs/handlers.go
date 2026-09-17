@@ -69,6 +69,19 @@ func (h *Handler) Tree(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	connectorIDs := make([]string, len(connectors))
+	for i, c := range connectors {
+		connectorIDs[i] = c.ID
+	}
+	allowedIDs, err := h.Store.FilterConnectorIDsByGrant(r.Context(), auth.UserIDFromContext(r.Context()), connectorIDs, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	isAllowed := make(map[string]bool, len(allowedIDs))
+	for _, id := range allowedIDs {
+		isAllowed[id] = true
+	}
 	docsByService, err := h.Store.ListDocsGroupedByService(r.Context())
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -89,6 +102,9 @@ func (h *Handler) Tree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, c := range connectors {
+		if !isAllowed[c.ID] {
+			continue
+		}
 		connNode := TreeNode{
 			ID:    c.ID,
 			Title: c.Name,
@@ -121,7 +137,28 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	httputil.WritePaginated(w, docs, page, pageSize, total)
+	serviceIDs := make([]string, 0, len(docs))
+	for _, d := range docs {
+		if d.ServiceID != "" {
+			serviceIDs = append(serviceIDs, d.ServiceID)
+		}
+	}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(r.Context(), auth.UserIDFromContext(r.Context()), serviceIDs, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+	filtered := make([]store.DocRecord, 0, len(docs))
+	for _, d := range docs {
+		if d.ServiceID == "" || isAllowed[d.ServiceID] {
+			filtered = append(filtered, d)
+		}
+	}
+	httputil.WritePaginated(w, filtered, page, pageSize, total)
 }
 
 // Get handles GET /api/docs/{id}.
@@ -145,6 +182,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	d, err := h.Store.GetDoc(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		// Not a doc ID — maybe it's a connector ID. Fall back to service lookup.
+		if !h.requireDocViewer(w, r, id) {
+			return
+		}
 		docs, svcErr := h.Store.ListDocsByService(r.Context(), id)
 		if svcErr == nil && len(docs) > 0 {
 			httputil.JSON(w, http.StatusOK, docs[0])
@@ -168,12 +208,18 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	if !h.requireDocViewer(w, r, d.ServiceID) {
+		return
+	}
 	httputil.JSON(w, http.StatusOK, d)
 }
 
 // ByService handles GET /api/docs/service/{connectorId}.
 func (h *Handler) ByService(w http.ResponseWriter, r *http.Request) {
 	connectorID := r.PathValue("id")
+	if !h.requireDocViewer(w, r, connectorID) {
+		return
+	}
 	docs, err := h.Store.ListDocsByService(r.Context(), connectorID)
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -202,6 +248,19 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		Trigger     string `json:"trigger"`
 	}](w, r)
 	if !ok {
+		return
+	}
+
+	existing, err := h.Store.GetDoc(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.requireDocOperator(w, r, existing.ServiceID) {
 		return
 	}
 
@@ -309,6 +368,19 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existingDoc, err := h.Store.GetDoc(r.Context(), docID)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.requireDocOperator(w, r, existingDoc.ServiceID) {
+		return
+	}
+
 	if err := h.Store.UpdateDoc(r.Context(), docID, target.Content, nil); err != nil {
 		httputil.Errorf(w, err)
 		return
@@ -347,6 +419,19 @@ func (h *Handler) AcquireLock(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	userID := auth.UserIDFromContext(r.Context())
 
+	existing, err := h.Store.GetDoc(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.requireDocOperator(w, r, existing.ServiceID) {
+		return
+	}
+
 	lock, err := h.Store.AcquireDocLock(r.Context(), id, userID)
 	if errors.Is(err, store.ErrLockHeldByOther) {
 		httputil.JSON(w, http.StatusConflict, lock)
@@ -366,6 +451,19 @@ func (h *Handler) AcquireLock(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ReleaseLock(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	userID := auth.UserIDFromContext(r.Context())
+
+	existing, err := h.Store.GetDoc(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.requireDocOperator(w, r, existing.ServiceID) {
+		return
+	}
 
 	if err := h.Store.ReleaseDocLock(r.Context(), id, userID); err != nil {
 		httputil.Errorf(w, err)
@@ -389,6 +487,9 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.TemplateID == "" || req.ConnectorID == "" {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "templateId and connectorId are required")
+		return
+	}
+	if !h.requireDocOperator(w, r, req.ConnectorID) {
 		return
 	}
 
@@ -523,6 +624,9 @@ func (h *Handler) AISuggest(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	if !h.requireDocOperator(w, r, d.ServiceID) {
+		return
+	}
 
 	cfg := h.Settings.LoadAIConfig(r.Context())
 	if !cfg.Enabled {
@@ -566,4 +670,47 @@ func (h *Handler) AISuggest(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	httputil.JSON(w, http.StatusAccepted, map[string]any{"requestId": requestID})
+}
+
+// requireDocOperator 403s unless the caller may mutate a doc scoped to
+// connectorID. Lab-wide docs (connectorID == "", e.g. the Lab Topology doc)
+// have no connector to check against, so they're gated on instance-admin
+// instead of a per-connector grant.
+func (h *Handler) requireDocOperator(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	if connectorID == "" {
+		if !auth.InstanceAdminFromContext(r.Context()) {
+			httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+			return false
+		}
+		return true
+	}
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "operator")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		return false
+	}
+	return true
+}
+
+// requireDocViewer 404s (not 403, to avoid confirming existence) unless the
+// caller may view a doc scoped to connectorID. Lab-wide docs are visible to
+// any authenticated user, same as before this migration.
+func (h *Handler) requireDocViewer(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	if connectorID == "" {
+		return true
+	}
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return false
+	}
+	return true
 }

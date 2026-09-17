@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -70,8 +71,25 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	connectorIDs := make([]string, len(findings))
+	for i, f := range findings {
+		connectorIDs[i] = f.ConnectorID
+	}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(r.Context(), auth.UserIDFromContext(r.Context()), connectorIDs, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, id := range allowed {
+		isAllowed[id] = true
+	}
+
 	items := make([]map[string]any, 0, len(findings))
 	for _, finding := range findings {
+		if !isAllowed[finding.ConnectorID] {
+			continue
+		}
 		item, err := h.response(r.Context(), finding)
 		if err != nil {
 			httputil.Errorf(w, err)
@@ -96,6 +114,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
+	if !h.viewerOrNotFound(w, r, finding.ConnectorID) {
+		return
+	}
 	response, err := h.response(r.Context(), *finding)
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -107,6 +128,18 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // Resolve handles POST /api/findings/{id}/resolve.
 func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	existing, err := h.Store.GetQualityFinding(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Quality finding not found")
+		return
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if !h.operatorOrForbidden(w, r, existing.ConnectorID) {
+		return
+	}
 	if err := h.Store.UpdateQualityFindingStatus(r.Context(), id, "resolved"); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Quality finding not found")
@@ -129,4 +162,34 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.JSON(w, http.StatusOK, response)
+}
+
+// viewerOrNotFound 404s (not 403, to avoid confirming the resource's
+// existence) when the caller lacks at least a viewer grant on connectorID.
+func (h *Handler) viewerOrNotFound(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Quality finding not found")
+		return false
+	}
+	return true
+}
+
+// operatorOrForbidden 403s when the caller lacks at least an operator grant
+// on connectorID.
+func (h *Handler) operatorOrForbidden(w http.ResponseWriter, r *http.Request, connectorID string) bool {
+	ok, err := h.Store.UserHasConnectorRole(r.Context(), auth.UserIDFromContext(r.Context()), connectorID, "operator")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	if !ok {
+		httputil.Error(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		return false
+	}
+	return true
 }

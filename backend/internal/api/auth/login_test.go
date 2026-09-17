@@ -112,7 +112,7 @@ func TestLogin(t *testing.T) {
 	})
 
 	t.Run("oidc-only user cannot use local login", func(t *testing.T) {
-		oidcUser := &store.User{Username: "oidc-user", DisplayName: "OIDC", Role: "viewer", AuthSource: "oidc"}
+		oidcUser := &store.User{Username: "oidc-user", DisplayName: "OIDC", InstanceAdminRole: "user", AuthSource: "oidc"}
 		if err := th.Store.CreateUser(req(t).Context(), oidcUser); err != nil {
 			t.Fatalf("create oidc user: %v", err)
 		}
@@ -171,7 +171,7 @@ func TestChangePassword(t *testing.T) {
 			"currentPassword": password,
 			"newPassword":     "new-password-456",
 		})
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.ChangePassword)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.ChangePassword)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
 		}
@@ -195,7 +195,7 @@ func TestChangePassword(t *testing.T) {
 			"currentPassword": "totally-wrong",
 			"newPassword":     "new-password-456",
 		})
-		rr := th.authedRequest(t, r, other.ID, other.Role, th.H.ChangePassword)
+		rr := th.authedRequest(t, r, other.ID, other.InstanceAdminRole, th.H.ChangePassword)
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
 		}
@@ -204,7 +204,7 @@ func TestChangePassword(t *testing.T) {
 	t.Run("missing fields", func(t *testing.T) {
 		other, _ := th.createUser(t, "viewer", false)
 		r := doJSON(t, http.MethodPost, "/api/me/password", map[string]string{"currentPassword": "x"})
-		rr := th.authedRequest(t, r, other.ID, other.Role, th.H.ChangePassword)
+		rr := th.authedRequest(t, r, other.ID, other.InstanceAdminRole, th.H.ChangePassword)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -274,7 +274,7 @@ func TestCreateUser(t *testing.T) {
 		r := doJSON(t, http.MethodPost, "/api/users", map[string]any{
 			"username": "newuser1",
 			"password": "some-password",
-			"role":     "viewer",
+			"role":     "user",
 		})
 		rr := httptest.NewRecorder()
 		th.H.CreateUser(rr, r)
@@ -284,7 +284,7 @@ func TestCreateUser(t *testing.T) {
 	})
 
 	t.Run("duplicate username", func(t *testing.T) {
-		body := map[string]any{"username": "dupuser", "password": "some-password", "role": "viewer"}
+		body := map[string]any{"username": "dupuser", "password": "some-password", "role": "user"}
 		r1 := doJSON(t, http.MethodPost, "/api/users", body)
 		th.H.CreateUser(httptest.NewRecorder(), r1)
 
@@ -424,7 +424,7 @@ func TestDeleteUser(t *testing.T) {
 		user, _ := th.createUser(t, "viewer", false)
 		r := httptest.NewRequest(http.MethodDelete, "/api/users/"+user.ID, nil)
 		r.SetPathValue("id", user.ID)
-		rr := th.authedRequest(t, r, operator.ID, operator.Role, th.H.DeleteUser)
+		rr := th.authedRequest(t, r, operator.ID, operator.InstanceAdminRole, th.H.DeleteUser)
 		if rr.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
 		}
@@ -434,7 +434,7 @@ func TestDeleteUser(t *testing.T) {
 		user, _ := th.createUser(t, "operator", false)
 		r := httptest.NewRequest(http.MethodDelete, "/api/users/"+user.ID, nil)
 		r.SetPathValue("id", user.ID)
-		rr := th.authedRequest(t, r, user.ID, user.Role, th.H.DeleteUser)
+		rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.DeleteUser)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -443,7 +443,7 @@ func TestDeleteUser(t *testing.T) {
 	t.Run("missing id", func(t *testing.T) {
 		operator, _ := th.createUser(t, "operator", false)
 		r := httptest.NewRequest(http.MethodDelete, "/api/users/", nil)
-		rr := th.authedRequest(t, r, operator.ID, operator.Role, th.H.DeleteUser)
+		rr := th.authedRequest(t, r, operator.ID, operator.InstanceAdminRole, th.H.DeleteUser)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -453,7 +453,7 @@ func TestDeleteUser(t *testing.T) {
 		operator, _ := th.createUser(t, "operator", false)
 		r := httptest.NewRequest(http.MethodDelete, "/api/users/does-not-exist", nil)
 		r.SetPathValue("id", "does-not-exist")
-		rr := th.authedRequest(t, r, operator.ID, operator.Role, th.H.DeleteUser)
+		rr := th.authedRequest(t, r, operator.ID, operator.InstanceAdminRole, th.H.DeleteUser)
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 		}

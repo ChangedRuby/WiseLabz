@@ -31,8 +31,9 @@ func seedQualityFinding(t *testing.T, app *testApp) *store.QualityFindingRecord 
 
 func TestFindingsListSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, token := app.user(t, "viewer")
+	userID, token := app.user(t, "viewer")
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, userID, finding.ConnectorID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/findings?status=open&checkType=ownership_incomplete", nil, token)
 	if rec.Code != http.StatusOK {
@@ -55,8 +56,9 @@ func TestFindingsListSuccess(t *testing.T) {
 
 func TestFindingsGetSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, token := app.user(t, "viewer")
+	userID, token := app.user(t, "viewer")
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, userID, finding.ConnectorID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/findings/"+finding.ID, nil, token)
 	if rec.Code != http.StatusOK {
@@ -89,8 +91,9 @@ func TestFindingsResolveRoleBoundary(t *testing.T) {
 
 func TestFindingsResolveSuccess(t *testing.T) {
 	app := newTestApp(t)
-	_, token := app.user(t, "operator")
+	userID, token := app.user(t, "operator")
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, userID, finding.ConnectorID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/findings/"+finding.ID+"/resolve", nil, token)
 	if rec.Code != http.StatusOK {

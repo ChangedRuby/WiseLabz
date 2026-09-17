@@ -9,13 +9,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useGetUsers,
   getGetUsersQueryKey,
-  postUsers,
-  patchUsersUserId,
   deleteUsersUserId,
   postUsersUserIdResetPassword,
 } from '../../api/generated/users/users';
+import { patchUserInstanceAdmin, postUserInstanceAdmin, type InstanceAdminRole } from '../../api/permissions';
 import { useGetMe } from '../../api/generated/me/me';
-import type { Role, User } from '../../api/model';
+import type { User } from '../../api/model';
 import { Button } from '../../components/ui/Button';
 import { Panel } from '../../components/ui/Panel';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
@@ -23,8 +22,11 @@ import { Dialog } from '../../components/ui/Dialog';
 import { ElevationConfirm } from '../../components/manager/ElevationConfirm';
 import { ToneTag } from '../../components/ui/ToneTag';
 import { toast } from '../../lib/toast';
-import { SubHeader, Field, TextInput, Select } from './parts';
+import { SubHeader, Field, TextInput } from './parts';
 import { PlusIcon, LayersIcon } from '../../components/icons';
+
+// TODO: fold into docs/openapi.yaml once the backend PR1 spec update lands.
+type UserWithInstanceAdmin = User & { instanceAdminRole?: InstanceAdminRole };
 
 export function UsersPage() {
   const { t } = useTranslation();
@@ -40,15 +42,15 @@ export function UsersPage() {
   const patch = useMutation({
     mutationFn: ({
       id,
-      role,
+      instanceAdminRole,
       disabled,
       canManageDashboardDefaults,
     }: {
       id: string;
-      role?: Role;
+      instanceAdminRole?: InstanceAdminRole;
       disabled?: boolean;
       canManageDashboardDefaults?: boolean;
-    }) => patchUsersUserId(id, { role, disabled, canManageDashboardDefaults }),
+    }) => patchUserInstanceAdmin(id, { instanceAdminRole, disabled, canManageDashboardDefaults }),
     onSuccess: () => {
       invalidate();
       toast.success(t('settings.users.updated'));
@@ -97,8 +99,9 @@ export function UsersPage() {
           <EmptyState icon={<LayersIcon size={18} />} title={t('settings.users.emptyTitle')} />
         ) : (
           <ul className="divide-y divide-line-soft">
-            {data.map((u) => {
+            {(data as UserWithInstanceAdmin[]).map((u) => {
               const isSelf = u.id === me?.id;
+              const isAdmin = u.instanceAdminRole === 'admin';
               return (
                 <li key={u.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                   <div className="min-w-0 flex-1">
@@ -114,18 +117,22 @@ export function UsersPage() {
                     </p>
                   </div>
 
-                  <Select
-                    aria-label={t('settings.users.role')}
-                    value={u.role}
-                    disabled={isSelf || patch.isPending}
-                    onChange={(e) => patch.mutate({ id: u.id, role: e.target.value as Role })}
-                    className="w-32"
-                  >
-                    <option value="viewer">{t('settings.users.roleViewer')}</option>
-                    <option value="operator">{t('settings.users.roleOperator')}</option>
-                  </Select>
+                  <label className="flex items-center gap-1.5 text-xs text-ink">
+                    <input
+                      type="checkbox"
+                      checked={isAdmin}
+                      disabled={isSelf || patch.isPending}
+                      onChange={(e) =>
+                        patch.mutate({
+                          id: u.id,
+                          instanceAdminRole: e.target.checked ? 'admin' : 'user',
+                        })
+                      }
+                    />
+                    {t('settings.users.instanceAdmin')}
+                  </label>
 
-                  {u.role === 'operator' && (
+                  {isAdmin && (
                     <label className="flex items-center gap-1.5 text-2xs text-ink-faint">
                       <input
                         type="checkbox"
@@ -219,23 +226,23 @@ function InviteDialog({
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('viewer');
+  const [instanceAdminRole, setInstanceAdminRole] = useState<InstanceAdminRole>('user');
   const [canManageDashboardDefaults, setCanManageDashboardDefaults] = useState(false);
 
   const create = useMutation({
     mutationFn: () =>
-      postUsers({
+      postUserInstanceAdmin({
         username,
         email: email || undefined,
-        role,
-        canManageDashboardDefaults: role === 'operator' ? canManageDashboardDefaults : undefined,
+        instanceAdminRole,
+        canManageDashboardDefaults: instanceAdminRole === 'admin' ? canManageDashboardDefaults : undefined,
       }),
     onSuccess: () => {
       onCreated();
       toast.success(t('settings.users.created'));
       setUsername('');
       setEmail('');
-      setRole('viewer');
+      setInstanceAdminRole('user');
       setCanManageDashboardDefaults(false);
       onClose();
     },
@@ -267,13 +274,15 @@ function InviteDialog({
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
-        <Field label={t('settings.users.role')} htmlFor="inv-role">
-          <Select id="inv-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="viewer">{t('settings.users.roleViewer')}</option>
-            <option value="operator">{t('settings.users.roleOperator')}</option>
-          </Select>
-        </Field>
-        {role === 'operator' && (
+        <label className="flex items-center gap-1.5 text-xs text-ink-faint">
+          <input
+            type="checkbox"
+            checked={instanceAdminRole === 'admin'}
+            onChange={(e) => setInstanceAdminRole(e.target.checked ? 'admin' : 'user')}
+          />
+          {t('settings.users.instanceAdmin')}
+        </label>
+        {instanceAdminRole === 'admin' && (
           <label className="flex items-center gap-1.5 text-xs text-ink-faint">
             <input
               type="checkbox"

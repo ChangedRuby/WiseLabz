@@ -17,7 +17,7 @@ import {
   postConnectorsBulkRestart,
 } from '../../api/generated/connectors/connectors';
 import { useLive } from '../../store/live';
-import { useCanMutate } from '../../hooks/useRole';
+import { useIsInstanceAdmin, useOperatorConnectorIds } from '../../hooks/useRole';
 import { runSync } from '../../lib/runSync';
 import { StatusPill } from '../../components/ui/StatusDot';
 import { Button, IconButton } from '../../components/ui/Button';
@@ -45,7 +45,8 @@ export function ServicesPage() {
   const overrides = useLive((s) => s.statusOverrides);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canMutate = useCanMutate();
+  const isInstanceAdmin = useIsInstanceAdmin();
+  const operatorIds = useOperatorConnectorIds();
   const [q, setQ] = useState('');
   const [removing, setRemoving] = useState<Connector | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -150,7 +151,7 @@ export function ServicesPage() {
             />
           </div>
           <SavedViewsMenu surface="services" filters={{ q }} onApply={(f) => setQ(f.q ?? '')} />
-          {canMutate && (
+          {isInstanceAdmin && (
             <Button variant="primary" size="md" onClick={() => navigate('/services/new')}>
               <PlusIcon size={15} /> {t('services.addConnector')}
             </Button>
@@ -158,7 +159,7 @@ export function ServicesPage() {
         </div>
       </header>
 
-      {canMutate && selectedIds.length > 0 && (
+      {operatorIds.size > 0 && selectedIds.length > 0 && (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-canvas-sunken px-4 py-2.5">
           <span className="text-xs text-ink-muted">
             {t('services.bulk.selectedCount', { count: selectedIds.length })}
@@ -202,7 +203,7 @@ export function ServicesPage() {
           <table className="w-full min-w-140 text-sm">
             <thead>
               <tr className="border-b border-line-soft text-left text-2xs text-ink-faint">
-                {canMutate && <th className="w-8 px-4 py-2.5" />}
+                {operatorIds.size > 0 && <th className="w-8 px-4 py-2.5" />}
                 <th className="px-4 py-2.5 font-semibold">{t('services.col.service')}</th>
                 <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">
                   {t('services.col.category')}
@@ -228,7 +229,7 @@ export function ServicesPage() {
                     transition={{ delay: idx * 0.03, duration: 0.25 }}
                     className="group border-b border-line-soft transition-colors last:border-0 hover:bg-surface-raised"
                   >
-                    {canMutate && (
+                    {operatorIds.has(c.id) && (
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
@@ -285,7 +286,7 @@ export function ServicesPage() {
                       {t('common.ago', { time: relativeTime(c.lastSyncAt) })}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {canMutate && (
+                      {operatorIds.has(c.id) && (
                         <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                           <Button
                             size="sm"

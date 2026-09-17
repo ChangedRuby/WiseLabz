@@ -9,7 +9,7 @@ import (
 func TestIssueAndValidateAccess(t *testing.T) {
 	svc := NewService("test-secret-key-32-bytes-long!!", 15*time.Minute, 7*24*time.Hour)
 
-	pair, err := svc.IssuePair("user-123", "operator")
+	pair, err := svc.IssuePair("user-123", true)
 	if err != nil {
 		t.Fatalf("IssuePair() error: %v", err)
 	}
@@ -31,15 +31,15 @@ func TestIssueAndValidateAccess(t *testing.T) {
 	if claims.UserID != "user-123" {
 		t.Errorf("UserID = %q, want user-123", claims.UserID)
 	}
-	if claims.Role != "operator" {
-		t.Errorf("Role = %q, want operator", claims.Role)
+	if !claims.InstanceAdmin {
+		t.Errorf("InstanceAdmin = %v, want true", claims.InstanceAdmin)
 	}
 }
 
 func TestValidateRefresh(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
 
-	pair, err := svc.IssuePair("user-456", "viewer")
+	pair, err := svc.IssuePair("user-456", false)
 	if err != nil {
 		t.Fatalf("IssuePair() error: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestValidateRefresh(t *testing.T) {
 
 func TestTokenPurposesCannotBeExchanged(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, err := svc.IssuePair("user-456", "viewer")
+	pair, err := svc.IssuePair("user-456", false)
 	if err != nil {
 		t.Fatalf("IssuePair() error: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestElevationRequiresOwner(t *testing.T) {
 func TestExpiredAccessToken(t *testing.T) {
 	svc := NewService("test-secret", -1*time.Second, time.Hour) // access expires immediately
 
-	pair, err := svc.IssuePair("user-789", "viewer")
+	pair, err := svc.IssuePair("user-789", false)
 	if err != nil {
 		t.Fatalf("IssuePair() error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestWrongSecret(t *testing.T) {
 	svc1 := NewService("secret-one", time.Minute, time.Hour)
 	svc2 := NewService("secret-two", time.Minute, time.Hour)
 
-	pair, _ := svc1.IssuePair("user-1", "viewer")
+	pair, _ := svc1.IssuePair("user-1", false)
 
 	_, err := svc2.ValidateAccess(pair.AccessToken)
 	if err == nil {
@@ -156,7 +156,7 @@ func TestConcurrentIssuePairUniqueTokenIDs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			pair, err := svc.IssuePair("user", "viewer")
+			pair, err := svc.IssuePair("user", false)
 			if err != nil {
 				t.Error(err)
 				return

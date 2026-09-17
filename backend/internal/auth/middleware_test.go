@@ -11,13 +11,13 @@ import (
 
 func TestAuthMiddlewareValidToken(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, _ := svc.IssuePair("user-1", "operator")
+	pair, _ := svc.IssuePair("user-1", true)
 
 	handler := AuthMiddleware(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := UserIDFromContext(r.Context())
-		role := RoleFromContext(r.Context())
+		admin := InstanceAdminFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(userID + ":" + role)) //nolint:errcheck
+		w.Write([]byte(userID + ":" + boolLabel(admin))) //nolint:errcheck
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -29,9 +29,16 @@ func TestAuthMiddlewareValidToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if body := rec.Body.String(); body != "user-1:operator" {
-		t.Errorf("body = %q, want user-1:operator", body)
+	if body := rec.Body.String(); body != "user-1:admin" {
+		t.Errorf("body = %q, want user-1:admin", body)
 	}
+}
+
+func boolLabel(b bool) string {
+	if b {
+		return "admin"
+	}
+	return "user"
 }
 
 func TestAuthMiddlewareMissingHeader(t *testing.T) {
@@ -71,7 +78,7 @@ func TestAuthMiddlewareInvalidToken(t *testing.T) {
 
 func TestAuthMiddlewareRejectsRefreshToken(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, _ := svc.IssuePair("user-1", "viewer")
+	pair, _ := svc.IssuePair("user-1", false)
 	handler := AuthMiddleware(svc)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { t.Error("handler should not be called") }))
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Set("Authorization", "Bearer "+pair.RefreshToken)
@@ -82,29 +89,26 @@ func TestAuthMiddlewareRejectsRefreshToken(t *testing.T) {
 	}
 }
 
-func TestRequireRoleOperator(t *testing.T) {
+func TestRequireInstanceAdmin(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	tests := []struct {
-		name         string
-		userRole     string
-		requiredRole string
-		wantStatus   int
+		name       string
+		admin      bool
+		wantStatus int
 	}{
-		{"operator satisfies operator", "operator", "operator", http.StatusOK},
-		{"viewer blocked from operator", "viewer", "operator", http.StatusForbidden},
-		{"operator satisfies viewer", "operator", "viewer", http.StatusOK},
-		{"viewer satisfies viewer", "viewer", "viewer", http.StatusOK},
+		{"admin allowed", true, http.StatusOK},
+		{"non-admin blocked", false, http.StatusForbidden},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mw := RequireRole(tt.requiredRole)(handler)
+			mw := RequireInstanceAdmin(handler)
 
 			req := httptest.NewRequest("GET", "/test", nil)
-			ctx := contextWithRole(req.Context(), tt.userRole)
+			ctx := contextWithInstanceAdmin(req.Context(), tt.admin)
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
 
@@ -114,6 +118,79 @@ func TestRequireRoleOperator(t *testing.T) {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}
 		})
+	}
+}
+
+// fakeConnectorRoleChecker satisfies ConnectorRoleChecker with a single
+// canned (userID, connectorID) -> role mapping for RequireConnectorRole tests.
+type fakeConnectorRoleChecker struct {
+	roles map[string]string // key: userID+"/"+connectorID -> role
+	err   error
+}
+
+func (f *fakeConnectorRoleChecker) UserHasConnectorRole(_ context.Context, userID, connectorID, minRole string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	role := f.roles[userID+"/"+connectorID]
+	if role == "" {
+		return false, nil
+	}
+	rank := map[string]int{"viewer": 1, "operator": 2}
+	return rank[role] >= rank[minRole], nil
+}
+
+func TestRequireConnectorRole(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		name       string
+		roles      map[string]string
+		minRole    string
+		wantStatus int
+	}{
+		{"no grant is forbidden", map[string]string{}, "viewer", http.StatusForbidden},
+		{"viewer grant insufficient for operator", map[string]string{"user-1/conn-1": "viewer"}, "operator", http.StatusForbidden},
+		{"exact role passes", map[string]string{"user-1/conn-1": "operator"}, "operator", http.StatusOK},
+		{"higher role satisfies lower minimum", map[string]string{"user-1/conn-1": "operator"}, "viewer", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &fakeConnectorRoleChecker{roles: tt.roles}
+			mw := RequireConnectorRole(checker, tt.minRole, "id")(handler)
+
+			req := httptest.NewRequest("GET", "/connectors/conn-1", nil)
+			req.SetPathValue("id", "conn-1")
+			ctx := context.WithValue(req.Context(), ctxUserID, "user-1")
+			req = req.WithContext(ctx)
+			rec := httptest.NewRecorder()
+
+			mw.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestRequireConnectorRoleCheckerError(t *testing.T) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("handler should not be called")
+	})
+	checker := &fakeConnectorRoleChecker{err: errors.New("db unavailable")}
+	mw := RequireConnectorRole(checker, "viewer", "id")(handler)
+
+	req := httptest.NewRequest("GET", "/connectors/conn-1", nil)
+	req.SetPathValue("id", "conn-1")
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
 	}
 }
 
@@ -242,8 +319,8 @@ func TestRequireElevationAuditRecorderErrorDoesNotAlterDecision(t *testing.T) {
 	}
 }
 
-func contextWithRole(ctx context.Context, role string) context.Context {
-	return context.WithValue(ctx, ctxRole, role)
+func contextWithInstanceAdmin(ctx context.Context, admin bool) context.Context {
+	return context.WithValue(ctx, ctxInstanceAdmin, admin)
 }
 
 type testAuditCall struct {
@@ -271,7 +348,7 @@ func (r *testAuditRecorder) RecordAuditFromContext(_ context.Context, action, ta
 func requestWithUser(userID string) *http.Request {
 	req := httptest.NewRequest(http.MethodDelete, "/test", nil)
 	ctx := context.WithValue(req.Context(), ctxUserID, userID)
-	return req.WithContext(context.WithValue(ctx, ctxRole, "operator"))
+	return req.WithContext(context.WithValue(ctx, ctxInstanceAdmin, true))
 }
 
 func assertElevationAuditCalls(t *testing.T, calls []testAuditCall, action, reason string) {
@@ -312,9 +389,9 @@ func (f *fakeStatusChecker) GetUserRoleStatus(context.Context, string) (string, 
 
 func TestAuthMiddlewareRejectsStaleRoleClaim(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, _ := svc.IssuePair("user-1", "operator")
+	pair, _ := svc.IssuePair("user-1", true)
 
-	checker := &fakeStatusChecker{role: "viewer"} // demoted since the token was issued
+	checker := &fakeStatusChecker{role: "user"} // demoted since the token was issued
 	handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not be called for a stale role claim")
 	}))
@@ -331,9 +408,9 @@ func TestAuthMiddlewareRejectsStaleRoleClaim(t *testing.T) {
 
 func TestAuthMiddlewareRejectsDisabledUser(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, _ := svc.IssuePair("user-1", "operator")
+	pair, _ := svc.IssuePair("user-1", true)
 
-	checker := &fakeStatusChecker{role: "operator", disabled: true}
+	checker := &fakeStatusChecker{role: "admin", disabled: true}
 	handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not be called for a disabled user")
 	}))
@@ -350,9 +427,9 @@ func TestAuthMiddlewareRejectsDisabledUser(t *testing.T) {
 
 func TestAuthMiddlewareAllowsCurrentRoleClaim(t *testing.T) {
 	svc := NewService("test-secret", time.Minute, time.Hour)
-	pair, _ := svc.IssuePair("user-1", "operator")
+	pair, _ := svc.IssuePair("user-1", true)
 
-	checker := &fakeStatusChecker{role: "operator"}
+	checker := &fakeStatusChecker{role: "admin"}
 	called := false
 	handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
