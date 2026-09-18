@@ -93,5 +93,5 @@ func (d *Dispatcher) retryChannel(ctx context.Context, notif *store.Notification
 	if url == "" {
 		return errors.New(channelType + " url not configured")
 	}
-	return sendWebhook(ctx, url, payloadFn(notif.Title, notif.Message))
+	return sendWebhook(ctx, url, d.signingSecret(cfg), payloadFn(notif.Title, notif.Message))
 }

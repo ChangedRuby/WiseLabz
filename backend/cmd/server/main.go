@@ -113,6 +113,7 @@ func main() {
 	// Initialize notification dispatcher (must precede sync engine so it can
 	// notify on alert creation)
 	notifDispatcher := notifications.NewDispatcher(s, wsHub)
+	notifDispatcher.SetEncryptionKey(cfg.Encryption.Key)
 
 	// Initialize engines
 	qualityChecker := quality.NewChecker(s, wsHub, notifDispatcher,

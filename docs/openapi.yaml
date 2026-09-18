@@ -3758,7 +3758,12 @@ components:
         config:
           type: object
           additionalProperties: true
-          description: Channel-specific (SMTP host/port/creds, webhook URL/headers, etc.)
+          description: >-
+            Channel-specific (SMTP host/port/creds, webhook URL/headers, etc.). Webhook, Discord and
+            Slack channels accept a write-only `secret`: when set, deliveries are signed with
+            HMAC-SHA256 over `timestamp.body` (headers `X-WiseLabz-Timestamp`, `X-WiseLabz-Signature`).
+            It is stored encrypted and never returned; reads expose `secretSet: true` instead.
+            Omit `secret` on update to keep the stored one; send an empty string to clear it.
     NotificationRoute:
       type: object
       required: [eventType, channel, enabled]

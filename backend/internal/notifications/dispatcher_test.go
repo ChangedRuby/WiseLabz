@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -21,6 +22,8 @@ import (
 // dispatcher logic exercises actual SQL instead of a mock.
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
+	// Webhook tests target httptest servers on 127.0.0.1, which the guarded dialer blocks.
+	connector.AllowLoopbackForTest(t)
 	dir := t.TempDir()
 	dsn := "file:" + dir + "/test.db?cache=shared"
 	db, err := sql.Open("sqlite", dsn)

@@ -7,10 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
-	"strings"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/crypto"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
@@ -25,18 +24,28 @@ const maxDeliveryAttempts = 5 // len(retrySchedule)
 
 const maxConcurrentNotifications = 8
 
-var webhookClient = &http.Client{Timeout: 10 * time.Second}
-
 // Dispatcher routes alert events to notification channels based on config.
 type Dispatcher struct {
 	store     *store.Store
 	hub       *ws.Hub
 	fanoutSem chan struct{}
+	encKey    []byte // decodes per-channel signing secrets; nil disables signing
 }
 
 // NewDispatcher creates a new notification dispatcher.
 func NewDispatcher(s *store.Store, hub *ws.Hub) *Dispatcher {
 	return &Dispatcher{store: s, hub: hub, fanoutSem: make(chan struct{}, maxConcurrentNotifications)}
+}
+
+// SetEncryptionKey installs the base64 key used to decrypt per-channel webhook signing
+// secrets. An invalid key leaves signing disabled and is logged.
+func (d *Dispatcher) SetEncryptionKey(b64 string) {
+	key, err := crypto.DecodeKey(b64)
+	if err != nil {
+		slog.Error("notification signing disabled: invalid encryption key", "error", err)
+		return
+	}
+	d.encKey = key
 }
 
 // maxNotifyUsers bounds the single-page user fetch in NotifyAlertCreated.
@@ -355,7 +364,7 @@ func (d *Dispatcher) attemptChannel(ctx context.Context, notificationID, channel
 		d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusFailed, channelType+" url not configured")
 		return
 	}
-	if err := sendWebhook(ctx, url, payload); err != nil {
+	if err := sendWebhook(ctx, url, d.signingSecret(cfg), payload); err != nil {
 		d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusFailed, err.Error())
 		return
 	}
@@ -375,26 +384,4 @@ func discordPayload(title, message string) any {
 // slackPayload shapes a title/message pair into a Slack incoming-webhook body.
 func slackPayload(title, message string) any {
 	return map[string]string{"text": fmt.Sprintf("*%s*\n%s", title, message)}
-}
-
-// sendWebhook POSTs a JSON payload to url and treats any transport error or non-2xx response as failure.
-func sendWebhook(ctx context.Context, url string, payload any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := webhookClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
-	}
-	return nil
 }
