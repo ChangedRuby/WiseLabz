@@ -20,7 +20,7 @@ RUN bun run build
 # =============================================================================
 # Stage 2/3: backend — build the static Go binary
 # =============================================================================
-FROM golang:1.26-alpine AS backend
+FROM golang:1.27-alpine AS backend
 
 # git is required for `go build`'s automatic VCS stamping (debug.ReadBuildInfo,
 # included in the operator diagnostics bundle) — the alpine golang image ships without it.
