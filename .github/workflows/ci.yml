@@ -63,7 +63,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -182,7 +182,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -222,7 +222,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -260,7 +260,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: backend/go.sum
 
