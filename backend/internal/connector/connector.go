@@ -217,7 +217,7 @@ func GuardedDialer(timeout time.Duration) *net.Dialer {
 			if ip == nil {
 				return fmt.Errorf("unresolvable address %q", host)
 			}
-			if IsDangerousIP(ip) && !(allowLoopbackForTest.Load() && ip.IsLoopback()) {
+			if IsDangerousIP(ip) && (!allowLoopbackForTest.Load() || !ip.IsLoopback()) {
 				return fmt.Errorf("connection to blocked address %s denied", ip)
 			}
 			return nil
