@@ -40,10 +40,15 @@ func init() {
 				verifyTLS = b
 			}
 		}
+		dialer := connector.GuardedDialer(30 * time.Second)
 		client := &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
+				DialContext:     dialer.DialContext,
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
+			},
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
 			},
 		}
 		return &Connector{

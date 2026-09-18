@@ -51,14 +51,19 @@ func (s *Store) DeleteDocSectionEmbeddings(ctx context.Context, docID string) er
 	return nil
 }
 
-// ListDocSectionEmbeddings returns embedded sections for retrieval. An empty
-// docID lists across all docs (lab-wide scope); a non-empty docID filters to
-// that doc (doc scope).
-func (s *Store) ListDocSectionEmbeddings(ctx context.Context, docID string) ([]DocSectionEmbeddingRecord, error) {
-	query := `SELECT doc_id, section_key, content, vector, model, updated_at FROM doc_section_embeddings`
-	var args []any
+// ListDocSectionEmbeddings returns embedded sections for retrieval, limited to
+// docs userID may view: lab-wide docs (no service) plus docs on connectors the
+// user holds a grant on. An empty docID lists across all visible docs (lab
+// scope); a non-empty docID filters to that doc (doc scope).
+func (s *Store) ListDocSectionEmbeddings(ctx context.Context, userID, docID string) ([]DocSectionEmbeddingRecord, error) {
+	query := `SELECT e.doc_id, e.section_key, e.content, e.vector, e.model, e.updated_at
+		FROM doc_section_embeddings e
+		JOIN docs d ON d.id = e.doc_id
+		WHERE (d.service_id IS NULL OR d.service_id = ''
+			OR d.service_id IN (SELECT connector_id FROM user_connector_roles WHERE user_id = ?))`
+	args := []any{userID}
 	if docID != "" {
-		query += ` WHERE doc_id = ?`
+		query += ` AND e.doc_id = ?`
 		args = append(args, docID)
 	}
 	rows, err := s.db.QueryContext(ctx, query, args...)

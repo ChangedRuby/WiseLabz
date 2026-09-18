@@ -36,10 +36,12 @@ func TestAttentionEmptyList(t *testing.T) {
 
 func TestAttentionMergesAlertsAndFindings(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, "svc-1", "viewer")
 
 	alert := seedAlert(t, app)
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, viewerID, finding.ConnectorID, "viewer")
 
 	rec := app.req(t, http.MethodGet, "/api/attention", nil, viewerToken)
 	if rec.Code != http.StatusOK {
@@ -104,7 +106,8 @@ func TestAttentionMergesAlertsAndFindings(t *testing.T) {
 
 func TestAttentionSeverityOrdering(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, "svc-1", "viewer")
 	ctx := context.Background()
 
 	criticalAlert := &store.AlertRecord{
@@ -159,7 +162,8 @@ func TestAttentionSeverityOrdering(t *testing.T) {
 
 func TestAttentionRunbookLinkForAlert(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, "svc-1", "viewer")
 
 	alert := seedAlert(t, app)
 	rb := seedRunbook(t, app, "alert_severity", alert.Severity)
@@ -193,9 +197,11 @@ func TestAttentionRunbookLinkForAlert(t *testing.T) {
 
 func TestAttentionRunbookLinkForFinding(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, "svc-1", "viewer")
 
 	finding := seedQualityFinding(t, app)
+	app.connectorGrant(t, viewerID, finding.ConnectorID, "viewer")
 	rb := seedRunbook(t, app, "finding_check_type", finding.CheckType)
 
 	rec := app.req(t, http.MethodGet, "/api/attention", nil, viewerToken)
@@ -231,7 +237,8 @@ func TestAttentionRunbookLinkForFinding(t *testing.T) {
 // defaulting back to "everything" for back-compat.
 func TestAttentionDaysWindow(t *testing.T) {
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, "svc-1", "viewer")
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -254,6 +261,7 @@ func TestAttentionDaysWindow(t *testing.T) {
 	if err := app.Store.CreateConnector(ctx, connector); err != nil {
 		t.Fatalf("CreateConnector: %v", err)
 	}
+	app.connectorGrant(t, viewerID, connector.ID, "viewer")
 	recentFinding := &store.QualityFindingRecord{
 		ConnectorID: connector.ID, CheckType: "stale", Severity: "warning",
 		Title: "recent finding", Description: "desc",
@@ -311,5 +319,26 @@ func TestAttentionAuthenticatedAccess(t *testing.T) {
 	rec := app.req(t, http.MethodGet, "/api/attention", nil, viewerToken)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 for viewer role; body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAttentionHidesUngrantedConnectors(t *testing.T) {
+	app := newTestApp(t)
+	_, viewerToken := app.user(t, "viewer")
+	seedAlert(t, app)
+	seedQualityFinding(t, app)
+
+	rec := app.req(t, http.MethodGet, "/api/attention", nil, viewerToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Total != 0 {
+		t.Errorf("user without grants saw %d items, want 0", body.Total)
 	}
 }

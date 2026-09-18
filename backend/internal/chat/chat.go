@@ -139,15 +139,15 @@ type Match struct {
 
 // Retrieve embeds question and returns the topN most similar doc sections.
 // When scopeDocID is non-empty, retrieval is limited to that doc (doc scope);
-// otherwise it ranks across every doc (lab scope).
-func Retrieve(ctx context.Context, s *store.Store, embedder ai.Embedder, question, scopeDocID string, topN int) ([]Match, error) {
+// otherwise it ranks across every doc userID may view (lab scope).
+func Retrieve(ctx context.Context, s *store.Store, embedder ai.Embedder, question, userID, scopeDocID string, topN int) ([]Match, error) {
 	vectors, err := embedder.Embed(ctx, []string{question})
 	if err != nil {
 		return nil, fmt.Errorf("embed question: %w", err)
 	}
 	queryVector := vectors[0]
 
-	rows, err := s.ListDocSectionEmbeddings(ctx, scopeDocID)
+	rows, err := s.ListDocSectionEmbeddings(ctx, userID, scopeDocID)
 	if err != nil {
 		return nil, err
 	}

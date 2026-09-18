@@ -356,7 +356,7 @@ func newTCPDockerClient(addr string, config map[string]any) (*http.Client, strin
 			if ip == nil {
 				return fmt.Errorf("unresolvable address %q", h)
 			}
-			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			if connector.IsDangerousIP(ip) {
 				return fmt.Errorf("connection to blocked address %s denied", ip)
 			}
 			return nil
