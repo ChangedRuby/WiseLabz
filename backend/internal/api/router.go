@@ -68,6 +68,7 @@ func NewRouter(cfg Config) chi.Router {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
+	r.Use(middleware.SecurityHeaders(cfg.Config.Server.TrustedProxies))
 	r.Use(middleware.CORS(cfg.Config.Server.Origin))
 
 	// --- Handlers ---

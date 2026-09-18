@@ -3,6 +3,7 @@ package httputil
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -47,12 +48,21 @@ func Errorf(w http.ResponseWriter, err error) {
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
 }
 
+// MaxJSONBodyBytes caps JSON request bodies read via DecodeJSON.
+const MaxJSONBodyBytes = 4 << 20
+
 // DecodeJSON decodes the request body into a T. On failure it writes the
 // standard 400 "invalid_request" response and returns the zero value with
 // ok=false; callers should return immediately when ok is false.
 func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	var v T
-	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)).Decode(&v); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			Error(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Request body too large")
+			var zero T
+			return zero, false
+		}
 		Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
 		var zero T
 		return zero, false

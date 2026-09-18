@@ -63,15 +63,22 @@ func (p *OIDCProvider) Initialize(ctx context.Context) error {
 // nonce is a per-flow random value that must round-trip in the ID token.
 // redirectURL is the callback URL for this authentication flow.
 func (p *OIDCProvider) AuthURL(state, nonce, redirectURL string) string {
-	p.oauth2.RedirectURL = redirectURL
-	return p.oauth2.AuthCodeURL(state, oidc.Nonce(nonce))
+	return p.configFor(redirectURL).AuthCodeURL(state, oidc.Nonce(nonce))
+}
+
+// configFor returns a per-flow copy of the OAuth2 config carrying redirectURL,
+// so concurrent requests never share or mutate the provider's config.
+func (p *OIDCProvider) configFor(redirectURL string) *oauth2.Config {
+	cfg := *p.oauth2
+	cfg.RedirectURL = redirectURL
+	return &cfg
 }
 
 // Exchange exchanges an authorization code for an ID token. expectedNonce must
 // match the nonce embedded in the ID token, binding it to the flow that
 // requested this code and preventing authorization-code injection.
-func (p *OIDCProvider) Exchange(ctx context.Context, code, expectedNonce string) (*OIDCClaims, error) {
-	oauth2Token, err := p.oauth2.Exchange(ctx, code)
+func (p *OIDCProvider) Exchange(ctx context.Context, code, expectedNonce, redirectURL string) (*OIDCClaims, error) {
+	oauth2Token, err := p.configFor(redirectURL).Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("exchange code: %w", err)
 	}

@@ -71,7 +71,7 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Exchange code for claims
-	claims, err := prov.Exchange(r.Context(), req.Code, nonce)
+	claims, err := prov.Exchange(r.Context(), req.Code, nonce, h.oidcRedirectURL(r))
 	if err != nil {
 		slog.Error("OIDC exchange failed", "error", err, "provider", logsafe.Sanitize(req.ProviderID))
 		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Failed to authenticate with provider")
@@ -173,11 +173,7 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 		AuthURL     string `json:"authUrl"`
 	}
 
-	scheme := "http"
-	if httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies) {
-		scheme = "https"
-	}
-	redirectURL := fmt.Sprintf("%s://%s/auth/callback", scheme, r.Host)
+	redirectURL := h.oidcRedirectURL(r)
 
 	var oidc []providerInfo
 	for i := range h.Config.Auth.OIDC {
@@ -222,6 +218,15 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 
 // --- OIDC helpers ---
 
+// oidcRedirectURL builds the callback URL for the request's scheme and host.
+func (h *Handler) oidcRedirectURL(r *http.Request) string {
+	scheme := "http"
+	if httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies) {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/auth/callback", scheme, r.Host)
+}
+
 func (h *Handler) findOIDCProvider(id string) *config.OIDCProvider {
 	for i := range h.Config.Auth.OIDC {
 		if h.Config.Auth.OIDC[i].ID == id {
@@ -232,6 +237,8 @@ func (h *Handler) findOIDCProvider(id string) *config.OIDCProvider {
 }
 
 func (h *Handler) getOrInitOIDCProvider(ctx context.Context, cfg *config.OIDCProvider) *auth.OIDCProvider {
+	h.oidcMu.Lock()
+	defer h.oidcMu.Unlock()
 	if h.oidcProv == nil {
 		h.oidcProv = make(map[string]*auth.OIDCProvider)
 	}

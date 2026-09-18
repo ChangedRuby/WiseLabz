@@ -12,6 +12,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
+	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/sync"
 
 	// Register connector implementations (proxmox, custom, ...) for restart tests.
@@ -20,6 +21,7 @@ import (
 
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
+	connector.AllowLoopbackForTest(t)
 	s := apitest.NewStore(t)
 	cfg := &config.Config{Encryption: config.EncryptionSettings{Key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="}}
 	jwtSvc := auth.NewService("test-secret-test-secret-test-secret", time.Hour, time.Hour)
@@ -473,5 +475,40 @@ func TestSyncAllSuccess(t *testing.T) {
 	}
 	if _, ok := result["jobId"]; !ok {
 		t.Errorf("missing jobId in response")
+	}
+}
+
+func TestUpdateEndpointChangeRequiresInstanceAdmin(t *testing.T) {
+	h := newTestHandler(t)
+
+	createRR := httptest.NewRecorder()
+	h.Create(createRR, httptest.NewRequest(http.MethodPost, "/api/connectors",
+		strings.NewReader(`{"name":"C","category":"virtualization","type":"custom","url":"https://a.example.com"}`)))
+	var created map[string]any
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	id, _ := created["id"].(string)
+
+	patch := func(admin bool, body string) int {
+		req := httptest.NewRequest(http.MethodPatch, "/api/connectors/"+id, strings.NewReader(body))
+		req.SetPathValue("id", id)
+		req = req.WithContext(auth.ContextWithUser(req.Context(), "u1", admin))
+		rr := httptest.NewRecorder()
+		h.Update(rr, req)
+		return rr.Code
+	}
+
+	if got := patch(false, `{"url":"https://evil.example.com"}`); got != http.StatusForbidden {
+		t.Errorf("operator url change: status = %d, want 403", got)
+	}
+	if got := patch(false, `{"verifyTls":false}`); got != http.StatusForbidden {
+		t.Errorf("operator verifyTls change: status = %d, want 403", got)
+	}
+	if got := patch(false, `{"name":"Renamed","url":"https://a.example.com"}`); got != http.StatusOK {
+		t.Errorf("operator resending unchanged url: status = %d, want 200", got)
+	}
+	if got := patch(true, `{"url":"https://b.example.com"}`); got != http.StatusOK {
+		t.Errorf("admin url change: status = %d, want 200", got)
 	}
 }

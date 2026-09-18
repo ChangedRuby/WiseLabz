@@ -272,6 +272,26 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	// Repointing a connector makes the server send its stored credentials to
+	// the new endpoint, so changing where or how it connects is an
+	// instance-admin action; operators may still send unchanged values.
+	if (req.URL != nil || req.Type != nil || req.VerifyTLS != nil) && !auth.InstanceAdminFromContext(r.Context()) {
+		current, err := h.Store.GetConnector(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+				return
+			}
+			httputil.Errorf(w, err)
+			return
+		}
+		if (req.URL != nil && *req.URL != current.URL) ||
+			(req.Type != nil && *req.Type != current.Type) ||
+			(req.VerifyTLS != nil && *req.VerifyTLS != current.VerifyTLS) {
+			httputil.Error(w, http.StatusForbidden, "forbidden", "Changing url, type or verifyTls requires an instance admin")
+			return
+		}
+	}
 	if req.Name != nil {
 		updates["name"] = *req.Name
 	}

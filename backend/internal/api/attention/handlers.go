@@ -4,6 +4,7 @@ package attention
 import (
 	"net/http"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -26,7 +27,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// days is optional; unset keeps today's back-compat behavior of showing everything.
 	since := store.SinceFromDays(r.URL.Query().Get("days"), 0)
 
-	items, total, err := h.Store.MergedAttentionItems(r.Context(), since, offset, pageSize)
+	items, total, err := h.Store.MergedAttentionItems(r.Context(), auth.UserIDFromContext(r.Context()), since, offset, pageSize)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

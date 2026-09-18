@@ -35,9 +35,10 @@ func attentionSeverityRank(severity string) int {
 
 // MergedAttentionItems merges pending alerts and open quality findings into a
 // single severity-then-recency-sorted attention queue, optionally cut off at
-// since (RFC3339), and paginates the result. It runs one runbook lookup per
+// since (RFC3339), keeps only items on connectors userID holds a viewer grant
+// on (default deny), and paginates the result. It runs one runbook lookup per
 // distinct (kind, severity/checkType) pair rather than one per item.
-func (s *Store) MergedAttentionItems(ctx context.Context, since string, offset, pageSize int) ([]AttentionItem, int, error) {
+func (s *Store) MergedAttentionItems(ctx context.Context, userID, since string, offset, pageSize int) ([]AttentionItem, int, error) {
 	alerts, _, err := s.ListAlerts(ctx, "", "", "pending", since, 0, 1000) // ponytail: unbounded fetch for merge, paginate at the store level if this becomes a bottleneck
 	if err != nil {
 		return nil, 0, fmt.Errorf("list alerts for attention: %w", err)
@@ -71,6 +72,30 @@ func (s *Store) MergedAttentionItems(ctx context.Context, since string, offset, 
 			FindingType: f.CheckType,
 		})
 	}
+
+	seen := make(map[string]bool, len(items))
+	connectorIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		if !seen[item.ConnectorID] {
+			seen[item.ConnectorID] = true
+			connectorIDs = append(connectorIDs, item.ConnectorID)
+		}
+	}
+	allowedIDs, err := s.FilterConnectorIDsByGrant(ctx, userID, connectorIDs, "viewer")
+	if err != nil {
+		return nil, 0, fmt.Errorf("filter attention by grant: %w", err)
+	}
+	allowed := make(map[string]bool, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowed[id] = true
+	}
+	visible := items[:0]
+	for _, item := range items {
+		if allowed[item.ConnectorID] {
+			visible = append(visible, item)
+		}
+	}
+	items = visible
 
 	sort.Slice(items, func(i, j int) bool {
 		if attentionSeverityRank(items[i].Severity) != attentionSeverityRank(items[j].Severity) {
