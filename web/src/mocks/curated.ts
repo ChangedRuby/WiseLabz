@@ -93,6 +93,8 @@ export const curatedHandlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
+  http.post('*/ws/ticket', () => HttpResponse.json({ ticket: 'mock-ticket' })),
+
   http.get('*/auth/config', async () => {
     await delay(LATENCY);
     return HttpResponse.json(authConfig);

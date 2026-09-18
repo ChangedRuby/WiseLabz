@@ -24,6 +24,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
+	"github.com/WiseLabz/wiselabz/internal/ws"
 )
 
 // testApp wires a real chi router (via api.NewRouter) to a fresh, migrated
@@ -36,6 +37,7 @@ type testApp struct {
 	Config    *config.Config
 	Scheduler *scheduler.Runner
 	BackupDir string
+	WSHub     *ws.Hub
 }
 
 func newTestApp(t *testing.T) *testApp {
@@ -97,7 +99,11 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 	ai.RegisterOllamaEmbedder(embedRegistry)
 	ai.RegisterOpenAIEmbedder(embedRegistry)
 
+	wsHub := ws.NewHub(cfg.Server.Origin)
+	go wsHub.Run()
+
 	router := api.NewRouter(api.Config{
+		WSHub:         wsHub,
 		Store:         s,
 		JWT:           jwtSvc,
 		Config:        cfg,
@@ -109,7 +115,7 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 		EmbedRegistry: embedRegistry,
 	})
 
-	return &testApp{Router: router, Store: s, JWT: jwtSvc, Config: cfg, Scheduler: jobRunner, BackupDir: backupDir}
+	return &testApp{Router: router, Store: s, JWT: jwtSvc, Config: cfg, Scheduler: jobRunner, BackupDir: backupDir, WSHub: wsHub}
 }
 
 // user seeds a local user with the given flat instance role ("operator" or

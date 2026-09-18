@@ -251,3 +251,49 @@ func TestGetDecryptedAPIKeyNoKeyStored(t *testing.T) {
 		t.Errorf("GetDecryptedAPIKey() = %q, want empty when nothing stored", got)
 	}
 }
+
+func TestNotificationsConfigSigningSecret(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s, testConfig(), ai.NewRegistry())
+
+	put := func(body string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/api/notifications/config", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.UpdateNotificationsConfig(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d; body=%s", rr.Code, rr.Body.String())
+		}
+		return rr.Body.String()
+	}
+	stored := func() string {
+		t.Helper()
+		var raw string
+		if err := s.DB().QueryRow(`SELECT config_json FROM notification_config WHERE id = 1`).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+
+	resp := put(`{"channels":[{"type":"webhook","enabled":true,"config":{"url":"https://x.test/h","secret":"hunter2"}}],"routing":[]}`)
+	if strings.Contains(resp, "hunter2") || strings.Contains(resp, "secretEncrypted") || !strings.Contains(resp, `"secretSet":true`) {
+		t.Errorf("response must mask the secret, got %s", resp)
+	}
+	raw := stored()
+	if strings.Contains(raw, "hunter2") || !strings.Contains(raw, "secretEncrypted") {
+		t.Errorf("secret must be stored encrypted, got %s", raw)
+	}
+
+	// Omitting the secret (e.g. a GET-then-PUT round trip) keeps the stored one.
+	put(`{"channels":[{"type":"webhook","enabled":true,"config":{"url":"https://x.test/h2","secretSet":true}}],"routing":[]}`)
+	if !strings.Contains(stored(), "secretEncrypted") {
+		t.Error("omitted secret should preserve the stored one")
+	}
+
+	// An empty string clears it.
+	put(`{"channels":[{"type":"webhook","enabled":true,"config":{"url":"https://x.test/h2","secret":""}}],"routing":[]}`)
+	if strings.Contains(stored(), "secretEncrypted") {
+		t.Error("empty secret should clear the stored one")
+	}
+}

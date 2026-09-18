@@ -17,6 +17,7 @@ import { toast } from '../lib/toast';
 import { navigateTo } from '../lib/navigation';
 import i18n from '../i18n';
 import { useAuth } from '../store/auth';
+import { customInstance } from '../api/axios-instance';
 import type { WsEvent } from '../types/ws';
 
 const jump = (to: string) => ({
@@ -24,9 +25,14 @@ const jump = (to: string) => ({
   onClick: () => navigateTo(to),
 });
 
-const wsUrl = () => {
-  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws`;
+const wsUrl = (ticket: string) => {
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws?ticket=${encodeURIComponent(ticket)}`;
 };
+
+// The socket is authorized by a one-time, short-lived ticket minted with the
+// normal access token, so the refresh cookie is never the WS credential.
+const fetchTicket = () =>
+  customInstance<{ ticket: string }>({ url: '/ws/ticket', method: 'POST' }).then((r) => r.ticket);
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
@@ -44,9 +50,19 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     let retry: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
 
-    const connect = () => {
+    const connect = async () => {
       useLive.getState().setWs('connecting');
-      socket = new WebSocket(wsUrl());
+      let ticket: string;
+      try {
+        ticket = await fetchTicket();
+      } catch {
+        if (closed) return;
+        const delay = Math.min(1000 * 2 ** reconnects.current++, 15000);
+        retry = setTimeout(connect, delay);
+        return;
+      }
+      if (closed) return;
+      socket = new WebSocket(wsUrl(ticket));
 
       socket.onopen = () => {
         reconnects.current = 0;
@@ -71,7 +87,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       };
     };
 
-    connect();
+    void connect();
     return () => {
       closed = true;
       if (retry) clearTimeout(retry);

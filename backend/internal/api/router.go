@@ -457,33 +457,54 @@ func NewRouter(cfg Config) chi.Router {
 	})
 
 	// --- WebSocket endpoint ---
-	r.Get("/api/ws", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("refresh_token")
-		if err != nil {
-			httputil.Error(w, http.StatusUnauthorized, "unauthorized", "Missing refresh token")
-			return
-		}
-		claims, err := cfg.JWT.ValidateRefresh(cookie.Value)
-		if err != nil {
-			httputil.Error(w, http.StatusUnauthorized, "unauthorized", "Invalid access token")
-			return
-		}
-		active, err := cfg.Store.HasSessionTokenHash(r.Context(), claims.UserID, store.HashToken(cookie.Value))
-		if err != nil || !active {
-			httputil.Error(w, http.StatusUnauthorized, "unauthorized", "Refresh token is no longer active")
-			return
-		}
-		user, err := cfg.Store.GetUserByID(r.Context(), claims.UserID)
-		if err != nil || user.Disabled {
-			httputil.Error(w, http.StatusUnauthorized, "unauthorized", "User not found or disabled")
-			return
-		}
-		if cfg.WSHub != nil {
-			if err := cfg.WSHub.UpgradeHandler(w, r, claims.UserID, wsRoleLabel(claims.InstanceAdmin)); err != nil {
+	// The upgrade is authorized by a one-time ticket minted from an
+	// authenticated request (POST /api/ws/ticket), not by the long-lived
+	// refresh cookie. Open connections are re-validated on every ping.
+	if cfg.WSHub != nil {
+		cfg.WSHub.SetRevalidator(func(ctx context.Context, userID, role, sessionHash string) bool {
+			userRole, disabled, err := cfg.Store.GetUserRoleStatus(ctx, userID)
+			if err != nil || disabled || wsRoleLabel(userRole == "admin") != role {
+				return false
+			}
+			if sessionHash == "" {
+				return true
+			}
+			active, err := cfg.Store.HasSessionTokenHash(ctx, userID, sessionHash)
+			return err == nil && active
+		})
+		r.With(cfg.AuthMiddleware()).Post("/api/ws/ticket", func(w http.ResponseWriter, r *http.Request) {
+			userID := auth.UserIDFromContext(r.Context())
+			// Bind the ticket to the caller's refresh session when the cookie is
+			// present so logout / password change closes the socket.
+			var sessionHash string
+			if cookie, err := r.Cookie("refresh_token"); err == nil {
+				sessionHash = store.HashToken(cookie.Value)
+				if active, err := cfg.Store.HasSessionTokenHash(r.Context(), userID, sessionHash); err != nil || !active {
+					sessionHash = ""
+				}
+			}
+			id, err := cfg.WSHub.IssueTicket(userID, wsRoleLabel(auth.InstanceAdminFromContext(r.Context())), sessionHash)
+			if err != nil {
+				httputil.Errorf(w, err)
+				return
+			}
+			httputil.JSON(w, http.StatusOK, map[string]any{"ticket": id})
+		})
+		r.Get("/api/ws", func(w http.ResponseWriter, r *http.Request) {
+			userID, role, sessionHash, ok := cfg.WSHub.RedeemTicket(r.URL.Query().Get("ticket"))
+			if !ok {
+				httputil.Error(w, http.StatusUnauthorized, "unauthorized", "Invalid or expired ticket")
+				return
+			}
+			if !cfg.WSHub.Revalidate(r.Context(), userID, role, sessionHash) {
+				httputil.Error(w, http.StatusUnauthorized, "unauthorized", "User not found or disabled")
+				return
+			}
+			if err := cfg.WSHub.UpgradeHandler(w, r, userID, role, sessionHash); err != nil {
 				slog.Error("WebSocket upgrade failed", "error", err)
 			}
-		}
-	})
+		})
+	}
 
 	if cfg.Config.Server.Embed && cfg.SPAFiles != nil {
 		r.NotFound(spaHandler(cfg.SPAFiles))

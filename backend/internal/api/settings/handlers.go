@@ -560,9 +560,64 @@ func (h *Handler) loadNotificationConfig(ctx context.Context) notificationConfig
 	return cfg
 }
 
-// GetNotificationsConfig handles GET /api/notifications/config.
+// GetNotificationsConfig handles GET /api/notifications/config. Signing secrets are write-only:
+// the encrypted value is replaced by a secretSet flag.
 func (h *Handler) GetNotificationsConfig(w http.ResponseWriter, r *http.Request) {
-	httputil.JSON(w, http.StatusOK, h.loadNotificationConfig(r.Context()))
+	cfg := h.loadNotificationConfig(r.Context())
+	for _, ch := range cfg.Channels {
+		conf, _ := ch["config"].(map[string]any)
+		if conf == nil {
+			continue
+		}
+		if enc, _ := conf["secretEncrypted"].(string); enc != "" {
+			conf["secretSet"] = true
+		}
+		delete(conf, "secretEncrypted")
+	}
+	httputil.JSON(w, http.StatusOK, cfg)
+}
+
+// applyChannelSecrets turns each channel's write-only config.secret into config.secretEncrypted.
+// An absent secret keeps the previously stored one for that channel type; an empty string clears it.
+func (h *Handler) applyChannelSecrets(ctx context.Context, cfg *notificationConfigDoc) error {
+	prev := map[string]string{}
+	for _, ch := range h.loadNotificationConfig(ctx).Channels {
+		typ, _ := ch["type"].(string)
+		if conf, _ := ch["config"].(map[string]any); conf != nil {
+			prev[typ], _ = conf["secretEncrypted"].(string)
+		}
+	}
+	var key []byte
+	for _, ch := range cfg.Channels {
+		conf, _ := ch["config"].(map[string]any)
+		if conf == nil {
+			continue
+		}
+		typ, _ := ch["type"].(string)
+		delete(conf, "secretSet")
+		delete(conf, "secretEncrypted")
+		secret, provided := conf["secret"].(string)
+		delete(conf, "secret")
+		switch {
+		case !provided:
+			if prev[typ] != "" {
+				conf["secretEncrypted"] = prev[typ]
+			}
+		case secret != "":
+			if key == nil {
+				var err error
+				if key, err = crypto.DecodeKey(h.Config.Encryption.Key); err != nil {
+					return fmt.Errorf("load encryption key: %w", err)
+				}
+			}
+			enc, err := crypto.Encrypt(secret, key)
+			if err != nil {
+				return fmt.Errorf("encrypt signing secret: %w", err)
+			}
+			conf["secretEncrypted"] = enc
+		}
+	}
+	return nil
 }
 
 // UpdateNotificationsConfig handles PUT /api/notifications/config.
@@ -578,6 +633,11 @@ func (h *Handler) UpdateNotificationsConfig(w http.ResponseWriter, r *http.Reque
 		cfg.Routing = []map[string]any{}
 	}
 
+	if err := h.applyChannelSecrets(r.Context(), &cfg); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -588,7 +648,7 @@ func (h *Handler) UpdateNotificationsConfig(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	httputil.JSON(w, http.StatusOK, cfg)
+	h.GetNotificationsConfig(w, r)
 }
 
 // TestNotificationsConfig handles POST /api/notifications/config/test.
