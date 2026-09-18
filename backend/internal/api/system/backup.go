@@ -142,6 +142,9 @@ func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// maxBackupRunsLimit caps the page size for backup run listings.
+const maxBackupRunsLimit = 200
+
 // ListBackupRuns handles GET /api/system/backup/runs. Operator-only.
 // Returns a paginated list of past backups.
 func (h *Handler) ListBackupRuns(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +155,9 @@ func (h *Handler) ListBackupRuns(w http.ResponseWriter, r *http.Request) {
 	if limitStr != "" {
 		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
 			limit = n
+		}
+		if limit > maxBackupRunsLimit {
+			limit = maxBackupRunsLimit
 		}
 	}
 

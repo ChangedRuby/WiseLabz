@@ -32,6 +32,11 @@ func CORS(allowedOrigins string) func(http.Handler) http.Handler {
 			}
 
 			if r.Method == http.MethodOptions {
+				// A CORS preflight from a disallowed origin must not look successful.
+				if origin != "" && !allowed[origin] {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

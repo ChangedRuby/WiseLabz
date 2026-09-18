@@ -46,7 +46,7 @@ func init() {
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				DialContext:     dialer.DialContext,
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
 			},
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -154,6 +154,9 @@ func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef,
 	if entityRef == "" {
 		return fmt.Errorf("netbird config-push requires a target peer ID")
 	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 	if fieldKey != "approved" {
 		return fmt.Errorf("unsupported field %q", fieldKey)
 	}
@@ -198,7 +201,7 @@ func (c *Connector) doRequestBody(ctx context.Context, method, path string, body
 		}
 	}()
 
-	data, err = io.ReadAll(resp.Body)
+	data, err = connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

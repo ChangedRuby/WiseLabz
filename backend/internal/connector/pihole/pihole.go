@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -44,7 +43,10 @@ func init() {
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				DialContext:     dialer.DialContext,
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
+			},
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
 			},
 		}
 		return &Connector{
@@ -150,7 +152,7 @@ func (c *Connector) Restart(ctx context.Context, _ map[string]any, _ string) err
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -199,7 +201,7 @@ func (c *Connector) setBlocking(ctx context.Context, blocking bool) error {
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -225,6 +227,9 @@ func (c *Connector) WritableFields() []connector.ConfigField {
 func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
 	if entityRef == "" {
 		return fmt.Errorf("pihole config-push requires a target hostname")
+	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
 	}
 	if fieldKey != "ip" {
 		return fmt.Errorf("unsupported field %q", fieldKey)
@@ -264,7 +269,7 @@ func (c *Connector) hostsItem(ctx context.Context, sid, method, ip, hostname str
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -297,7 +302,7 @@ func (c *Connector) authenticate(ctx context.Context) (sid string, err error) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read auth response: %w", err)
 	}
@@ -342,7 +347,7 @@ func (c *Connector) doRequest(ctx context.Context, sid, path string) ([]byte, er
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

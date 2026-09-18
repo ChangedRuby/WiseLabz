@@ -398,10 +398,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Elevation validation will be done in Phase 6 when sync engine is built
-	// For now, accept the token as a placeholder
-	_ = elevationToken
-
 	if err := h.Store.DeleteConnector(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
@@ -823,6 +819,11 @@ func (h *Handler) mutateOp(w http.ResponseWriter, r *http.Request, op mutatingOp
 		_ = json.NewDecoder(r.Body).Decode(&body) // ponytail: absent/empty body means entityRef == "", matches default
 	}
 
+	if err := connector.ValidateCompositeRef(body.EntityRef); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "invalid entityRef")
+		return
+	}
+
 	if err := fn(r.Context(), cfg, body.EntityRef); err != nil {
 		slog.Error("connector "+op.verb+" failed", "connector", id, "error", err)
 		alert := &store.AlertRecord{
@@ -919,6 +920,10 @@ func (h *Handler) ConfigPush(w http.ResponseWriter, r *http.Request) {
 		PreviousValue any `json:"previousValue"`
 	}](w, r)
 	if !ok {
+		return
+	}
+	if err := connector.ValidateCompositeRef(req.EntityRef); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "invalid entityRef")
 		return
 	}
 	if req.FieldKey == "" {

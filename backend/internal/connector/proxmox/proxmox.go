@@ -45,7 +45,7 @@ func init() {
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				DialContext:     dialer.DialContext,
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
 			},
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -650,7 +650,7 @@ func (p *Connector) doRequest(ctx context.Context, method, path string, body io.
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

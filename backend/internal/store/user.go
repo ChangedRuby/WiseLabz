@@ -198,13 +198,21 @@ func (s *Store) UpdateUser(ctx context.Context, id string, updates map[string]an
 			args = append(args, v)
 		case "disabled":
 			setClauses = append(setClauses, "disabled = ?")
-			args = append(args, boolToInt(v.(bool)))
+			b, ok := v.(bool)
+			if !ok {
+				return fmt.Errorf("update user: field %q must be a bool", k)
+			}
+			args = append(args, boolToInt(b))
 		case "username":
 			setClauses = append(setClauses, "username = ?")
 			args = append(args, v)
 		case "can_manage_dashboard_defaults":
 			setClauses = append(setClauses, "can_manage_dashboard_defaults = ?")
-			args = append(args, boolToInt(v.(bool)))
+			b, ok := v.(bool)
+			if !ok {
+				return fmt.Errorf("update user: field %q must be a bool", k)
+			}
+			args = append(args, boolToInt(b))
 		case "digest_cadence":
 			setClauses = append(setClauses, "digest_cadence = ?")
 			args = append(args, v)

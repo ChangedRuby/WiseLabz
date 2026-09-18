@@ -36,6 +36,11 @@ func init() {
 	}, func(config map[string]any) (connector.Connector, error) {
 		apiToken, _ := config["api_token"].(string)
 		accountID, _ := config["account_id"].(string)
+		if accountID != "" {
+			if err := connector.ValidateRefSegment(accountID); err != nil {
+				return nil, fmt.Errorf("invalid cloudflare account_id: %w", err)
+			}
+		}
 		dialer := connector.GuardedDialer(30 * time.Second)
 		client := &http.Client{
 			Timeout:   30 * time.Second,
@@ -234,6 +239,9 @@ func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef,
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return fmt.Errorf("cloudflare config-push requires an entityRef of the form \"<parentID>/<id>\", got %q", entityRef)
 	}
+	if err := connector.ValidateCompositeRef(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 
 	switch fieldKey {
 	case "proxied":
@@ -295,7 +303,7 @@ func (c *Connector) doRequestBody(ctx context.Context, method, path string, body
 		}
 	}()
 
-	data, err = io.ReadAll(resp.Body)
+	data, err = connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
