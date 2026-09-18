@@ -1,10 +1,12 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,7 +132,7 @@ func TestUpgradeHandlerAndWritePump(t *testing.T) {
 	go hub.Run()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-test-123", "admin")
+		err := hub.UpgradeHandler(w, r, "user-test-123", "admin", "")
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -191,7 +193,7 @@ func TestReadPumpGarbageInput(t *testing.T) {
 	go hub.Run()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-garbage-456", "viewer")
+		err := hub.UpgradeHandler(w, r, "user-garbage-456", "viewer", "")
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -244,7 +246,7 @@ func TestClientCloseDisconnect(t *testing.T) {
 	go hub.Run()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-close-789", "operator")
+		err := hub.UpgradeHandler(w, r, "user-close-789", "operator", "")
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -334,7 +336,7 @@ func setupWSConnection(t *testing.T, hub *Hub, userID string) *websocket.Conn {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, userID, "user")
+		err := hub.UpgradeHandler(w, r, userID, "user", "")
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -351,4 +353,113 @@ func setupWSConnection(t *testing.T, hub *Hub, userID string) *websocket.Conn {
 	}
 
 	return conn
+}
+
+func TestHubMultipleConfiguredOrigins(t *testing.T) {
+	hub := NewHub("https://a.example.com, https://b.example.com:8443/", "http://c.example.com")
+	check := func(origin string) bool {
+		r := httptest.NewRequest("GET", "/api/ws", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		return hub.upgrader.CheckOrigin(r)
+	}
+	for _, ok := range []string{"https://a.example.com", "https://b.example.com:8443", "http://c.example.com", "HTTPS://A.example.com"} {
+		if !check(ok) {
+			t.Errorf("origin %q rejected", ok)
+		}
+	}
+	for _, bad := range []string{"", "https://evil.example.com", "https://a.example.com.evil.com", "https://b.example.com", "https://a.example.com,https://b.example.com:8443"} {
+		if check(bad) {
+			t.Errorf("origin %q accepted", bad)
+		}
+	}
+}
+
+func TestHubMalformedOriginsFailClosed(t *testing.T) {
+	hub := NewHub("not-a-url", "*", "ftp://x")
+	r := httptest.NewRequest("GET", "/api/ws", nil)
+	r.Header.Set("Origin", "https://app.example.com")
+	r.Host = "app.example.com"
+	if hub.upgrader.CheckOrigin(r) {
+		t.Fatal("malformed configuration must not fall back to accepting origins")
+	}
+}
+
+func TestTicketsAreSingleUseAndExpire(t *testing.T) {
+	hub := NewHub()
+	id, err := hub.IssueTicket("u1", "admin", "sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid, role, sess, ok := hub.RedeemTicket(id)
+	if !ok || uid != "u1" || role != "admin" || sess != "sess" {
+		t.Fatalf("redeem = %q %q %q %v", uid, role, sess, ok)
+	}
+	if _, _, _, ok := hub.RedeemTicket(id); ok {
+		t.Error("ticket redeemed twice")
+	}
+	if _, _, _, ok := hub.RedeemTicket("bogus"); ok {
+		t.Error("unknown ticket accepted")
+	}
+
+	id, _ = hub.IssueTicket("u1", "admin", "")
+	hub.ticketMu.Lock()
+	tk := hub.tickets[id]
+	tk.expires = time.Now().Add(-time.Second)
+	hub.tickets[id] = tk
+	hub.ticketMu.Unlock()
+	if _, _, _, ok := hub.RedeemTicket(id); ok {
+		t.Error("expired ticket accepted")
+	}
+}
+
+// TestRevalidationClosesConnection verifies that once the revalidator reports the
+// identity as invalid (disabled/revoked/role change), the open socket is closed on the next tick.
+func TestRevalidationClosesConnection(t *testing.T) {
+	hub := NewHub()
+	hub.pingInterval = 20 * time.Millisecond
+	var valid atomic.Bool
+	valid.Store(true)
+	hub.SetRevalidator(func(_ context.Context, userID, _, _ string) bool {
+		return userID == "u1" && valid.Load()
+	})
+	go hub.Run()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = hub.UpgradeHandler(w, r, "u1", "viewer", "sess")
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	// Still valid across several ticks: the connection must stay open.
+	select {
+	case err := <-errCh:
+		t.Fatalf("connection closed while identity was valid: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	valid.Store(false)
+	select {
+	case err := <-errCh:
+		if !websocket.IsCloseError(err, websocket.ClosePolicyViolation) {
+			t.Fatalf("expected policy-violation close, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("connection not closed after revalidation failure")
+	}
 }

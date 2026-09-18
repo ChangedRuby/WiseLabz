@@ -2,9 +2,14 @@
 package ws
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +50,22 @@ type Client struct {
 	send   chan []byte
 	userID string
 	role   string
+	// sessionHash is the hash of the refresh token the connection was ticketed
+	// under ("" when it was not issued from a cookie session, e.g. API key).
+	sessionHash string
+}
+
+// Revalidator reports whether a connection's identity is still acceptable:
+// the user still exists, is enabled, still holds the same role, and (when
+// sessionHash is non-empty) the session is still active.
+type Revalidator func(ctx context.Context, userID, role, sessionHash string) bool
+
+// ticketTTL bounds how long an issued ticket can wait to be redeemed.
+const ticketTTL = 30 * time.Second
+
+type ticket struct {
+	userID, role, sessionHash string
+	expires                   time.Time
 }
 
 // Hub maintains the set of active clients and broadcasts messages.
@@ -55,6 +76,12 @@ type Hub struct {
 	broadcast  chan broadcastMsg
 	register   chan *Client
 	unregister chan *Client
+
+	revalidate   Revalidator
+	pingInterval time.Duration
+
+	ticketMu sync.Mutex
+	tickets  map[string]ticket
 }
 
 type broadcastMsg struct {
@@ -70,12 +97,95 @@ func NewHub(origins ...string) *Hub {
 		broadcast:  make(chan broadcastMsg, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+
+		pingInterval: 25 * time.Second,
+		tickets:      make(map[string]ticket),
 	}
-	if len(origins) > 0 && origins[0] != "" {
-		origin := origins[0]
-		h.upgrader.CheckOrigin = func(r *http.Request) bool { return r.Header.Get("Origin") == origin }
+	// Each argument may itself be a comma-separated list. With none configured
+	// gorilla's default same-origin check applies; if some were configured but
+	// none are usable, every cross-origin upgrade is refused.
+	var configured, allowed []string
+	for _, arg := range origins {
+		for _, o := range strings.Split(arg, ",") {
+			if o = strings.TrimSpace(o); o == "" {
+				continue
+			}
+			configured = append(configured, o)
+			if o = normalizeOrigin(o); o != "" {
+				allowed = append(allowed, o)
+			} else {
+				slog.Warn("ignoring malformed WebSocket origin", "origin", logsafe.Sanitize(o))
+			}
+		}
+	}
+	if len(configured) > 0 {
+		h.upgrader.CheckOrigin = func(r *http.Request) bool {
+			origin := normalizeOrigin(r.Header.Get("Origin"))
+			if origin == "" {
+				return false
+			}
+			for _, a := range allowed {
+				if a == origin {
+					return true
+				}
+			}
+			return false
+		}
 	}
 	return h
+}
+
+// normalizeOrigin lowercases scheme://host[:port] and returns "" for anything
+// that is not a bare http(s) origin.
+func normalizeOrigin(o string) string {
+	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(o), "/"))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.User != nil {
+		return ""
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host)
+}
+
+// SetRevalidator installs the periodic identity check run for every open
+// connection on each ping interval. Call before serving connections.
+func (h *Hub) SetRevalidator(fn Revalidator) { h.revalidate = fn }
+
+// Revalidate runs the installed Revalidator (true when none is installed).
+func (h *Hub) Revalidate(ctx context.Context, userID, role, sessionHash string) bool {
+	return h.revalidate == nil || h.revalidate(ctx, userID, role, sessionHash)
+}
+
+// IssueTicket mints a one-time, short-lived ticket that authorizes a single
+// WebSocket upgrade for the given identity. The caller must have authenticated
+// the user with a normal access token.
+func (h *Hub) IssueTicket(userID, role, sessionHash string) (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	id := base64.RawURLEncoding.EncodeToString(buf)
+	now := time.Now()
+
+	h.ticketMu.Lock()
+	defer h.ticketMu.Unlock()
+	for k, t := range h.tickets {
+		if now.After(t.expires) {
+			delete(h.tickets, k)
+		}
+	}
+	h.tickets[id] = ticket{userID: userID, role: role, sessionHash: sessionHash, expires: now.Add(ticketTTL)}
+	return id, nil
+}
+
+// RedeemTicket consumes a ticket, returning its identity. A ticket works once.
+func (h *Hub) RedeemTicket(id string) (userID, role, sessionHash string, ok bool) {
+	h.ticketMu.Lock()
+	t, found := h.tickets[id]
+	delete(h.tickets, id)
+	h.ticketMu.Unlock()
+	if !found || time.Now().After(t.expires) {
+		return "", "", "", false
+	}
+	return t.userID, t.role, t.sessionHash, true
 }
 
 // Run starts the hub's event loop. Should be run in a goroutine.
@@ -165,7 +275,7 @@ func (h *Hub) ClientCount() int {
 
 // UpgradeHandler upgrades an HTTP connection to WebSocket.
 // Caller must authenticate before upgrading.
-func (h *Hub) UpgradeHandler(w http.ResponseWriter, r *http.Request, userID, role string) error {
+func (h *Hub) UpgradeHandler(w http.ResponseWriter, r *http.Request, userID, role, sessionHash string) error {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return err
@@ -177,6 +287,8 @@ func (h *Hub) UpgradeHandler(w http.ResponseWriter, r *http.Request, userID, rol
 		send:   make(chan []byte, 256),
 		userID: userID,
 		role:   role,
+
+		sessionHash: sessionHash,
 	}
 
 	h.register <- client
@@ -211,7 +323,7 @@ func (c *Client) readPump() {
 
 // writePump writes messages from the send channel to the WebSocket connection.
 func (c *Client) writePump() {
-	ticker := time.NewTicker(25 * time.Second)
+	ticker := time.NewTicker(c.hub.pingInterval)
 	defer func() {
 		ticker.Stop()
 		c.conn.Close() //nolint:errcheck
@@ -232,6 +344,12 @@ func (c *Client) writePump() {
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+			if !c.hub.Revalidate(context.Background(), c.userID, c.role, c.sessionHash) {
+				slog.Info("closing WebSocket: identity no longer valid", "user_id", logsafe.Sanitize(c.userID))
+				c.conn.WriteControl(websocket.CloseMessage, //nolint:errcheck
+					websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "session no longer valid"), time.Now().Add(time.Second))
 				return
 			}
 		}

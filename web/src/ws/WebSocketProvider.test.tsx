@@ -8,6 +8,11 @@ import { useAuth } from '../store/auth';
 import { useLive } from '../store/live';
 import { WebSocketProvider } from './WebSocketProvider';
 
+vi.mock('../api/axios-instance', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/axios-instance')>()),
+  customInstance: vi.fn().mockResolvedValue({ ticket: 'test-ticket' }),
+}));
+
 class TestWebSocket {
   static last: TestWebSocket | undefined;
   static urls: string[] = [];
@@ -152,8 +157,7 @@ describe('WebSocketProvider', () => {
       </QueryClientProvider>
     );
     await waitFor(() => expect(TestWebSocket.urls).toHaveLength(1));
-    expect(TestWebSocket.urls[0]).toMatch(/\/api\/ws$/);
-    expect(TestWebSocket.urls[0]).not.toContain('?');
+    expect(TestWebSocket.urls[0]).toMatch(/\/api\/ws\?ticket=test-ticket$/);
   });
 
   it('updates docLocks store on doc lock events', async () => {
@@ -287,7 +291,7 @@ describe('WebSocketProvider', () => {
     expect(useLive.getState().ws).toBe('closed');
     expect(TestWebSocket.urls.length).toBe(initialUrlCount);
 
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(TestWebSocket.urls.length).toBe(initialUrlCount + 1);
 

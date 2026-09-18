@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -106,7 +107,7 @@ func main() {
 
 	// Initialize WebSocket hub (must be created before sync engine so sync
 	// can broadcast progress events).
-	wsHub := ws.NewHub(cfg.Server.Origin)
+	wsHub := ws.NewHub(splitOrigins(cfg.Server.Origin)...)
 	go wsHub.Run()
 	logger.Info("WebSocket hub started")
 
@@ -378,4 +379,15 @@ func newLogger(cfg config.LogSettings) *slog.Logger {
 	}
 
 	return slog.New(handler)
+}
+
+// splitOrigins turns the comma-separated server.origin setting into a list.
+func splitOrigins(raw string) []string {
+	var out []string
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
