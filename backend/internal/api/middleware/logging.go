@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
@@ -39,6 +40,34 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// sharePathPrefix is the unauthenticated share-link route; the segment after it
+// is a bearer token and must never reach the logs.
+const sharePathPrefix = "/api/share/"
+
+// loggablePath returns the request path with secrets masked: the share-link
+// token segment is replaced by a placeholder, keeping the rest of the route.
+func loggablePath(r *http.Request) string {
+	p := r.URL.Path
+	if rest, ok := strings.CutPrefix(p, sharePathPrefix); ok {
+		_, tail, _ := strings.Cut(rest, "/")
+		p = sharePathPrefix + "{token}"
+		if tail != "" {
+			p += "/" + tail
+		}
+	}
+	return logsafe.Sanitize(p)
+}
+
+// loggableQuery masks the one-time WebSocket ticket in the query string.
+func loggableQuery(r *http.Request) string {
+	q := r.URL.Query()
+	if !q.Has("ticket") {
+		return logsafe.Sanitize(r.URL.RawQuery)
+	}
+	q.Set("ticket", "REDACTED")
+	return logsafe.Sanitize(q.Encode())
+}
+
 // Logger logs each request with method, path, status, duration, and request ID.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,8 +79,8 @@ func Logger(next http.Handler) http.Handler {
 
 		slog.Info("request",
 			"method", r.Method,
-			"path", logsafe.Sanitize(r.URL.Path),
-			"query", logsafe.Sanitize(r.URL.RawQuery),
+			"path", loggablePath(r),
+			"query", loggableQuery(r),
 			"status", rw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"remote_addr", r.RemoteAddr,
