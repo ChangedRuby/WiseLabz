@@ -51,8 +51,29 @@ func (h *Handler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := auth.UserIDFromContext(r.Context())
+	if req.ScopeType == "doc" {
+		d, err := h.Store.GetDoc(r.Context(), req.ScopeID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			httputil.Errorf(w, err)
+			return
+		}
+		visible := err == nil
+		if visible && d.ServiceID != "" {
+			visible, err = h.Store.UserHasConnectorRole(r.Context(), userID, d.ServiceID, "viewer")
+			if err != nil {
+				httputil.Errorf(w, err)
+				return
+			}
+		}
+		if !visible {
+			httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+			return
+		}
+	}
+
 	c := &store.ChatConversationRecord{
-		UserID:    auth.UserIDFromContext(r.Context()),
+		UserID:    userID,
 		ScopeType: req.ScopeType,
 		ScopeID:   req.ScopeID,
 	}
@@ -130,7 +151,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	if c.ScopeType == "doc" {
 		scopeDocID = c.ScopeID
 	}
-	matches, err := chat.Retrieve(r.Context(), h.Store, embedder, req.Content, scopeDocID, topN)
+	matches, err := chat.Retrieve(r.Context(), h.Store, embedder, req.Content, auth.UserIDFromContext(r.Context()), scopeDocID, topN)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -216,7 +217,7 @@ func GuardedDialer(timeout time.Duration) *net.Dialer {
 			if ip == nil {
 				return fmt.Errorf("unresolvable address %q", host)
 			}
-			if IsDangerousIP(ip) {
+			if IsDangerousIP(ip) && !(allowLoopbackForTest.Load() && ip.IsLoopback()) {
 				return fmt.Errorf("connection to blocked address %s denied", ip)
 			}
 			return nil
@@ -224,9 +225,20 @@ func GuardedDialer(timeout time.Duration) *net.Dialer {
 	}
 }
 
-// IsDangerousIP returns true for loopback and link-local unicast addresses.
+var allowLoopbackForTest atomic.Bool
+
+// AllowLoopbackForTest lets GuardedDialer reach loopback addresses until the
+// test ends, so handler tests can point real connectors at httptest servers.
+// Only tests should call it.
+func AllowLoopbackForTest(t interface{ Cleanup(func()) }) {
+	allowLoopbackForTest.Store(true)
+	t.Cleanup(func() { allowLoopbackForTest.Store(false) })
+}
+
+// IsDangerousIP returns true for loopback, link-local, unspecified
+// (0.0.0.0, ::, which route to the local host) and multicast addresses.
 func IsDangerousIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsLinkLocalUnicast()
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
 // MetadataValue Metadata returns a string metadata value, or the fallback if not set.

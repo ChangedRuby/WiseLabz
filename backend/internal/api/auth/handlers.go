@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
@@ -19,6 +20,7 @@ type Handler struct {
 	Store    *store.Store
 	JWT      *auth.Service
 	Config   *config.Config
+	oidcMu   sync.Mutex                    // guards oidcProv
 	oidcProv map[string]*auth.OIDCProvider // initialized on first use
 }
 
@@ -187,7 +189,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	// A role demotion or disable must take effect immediately, not just once
 	// the caller's still-valid access token expires.
-	if _, ok := updates["role"]; ok {
+	if _, ok := updates["instance_admin_role"]; ok {
 		if err := h.Store.DeleteUserSessions(r.Context(), userID); err != nil {
 			h.logError("failed to delete user sessions after role change", err)
 		}
