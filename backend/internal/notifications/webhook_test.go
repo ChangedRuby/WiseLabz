@@ -91,7 +91,7 @@ func TestSendWebhook_SignatureVerifies(t *testing.T) {
 	const secret = "shared-secret"
 	var gotSig, gotTS string
 	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		gotSig, gotTS = r.Header.Get(signatureHeader), r.Header.Get(timestampHeader)
 		gotBody, _ = io.ReadAll(r.Body)
 	}))

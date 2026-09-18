@@ -8,6 +8,6 @@
  */
 
 /**
- * Channel-specific (SMTP host/port/creds, webhook URL/headers, etc.)
+ * Channel-specific (SMTP host/port/creds, webhook URL/headers, etc.). Webhook, Discord and Slack channels accept a write-only secret that signs deliveries with HMAC-SHA256 (X-WiseLabz-Timestamp and X-WiseLabz-Signature headers). It is stored encrypted and never returned; reads expose secretSet instead.
  */
 export type NotificationChannelConfig = { [key: string]: unknown };
