@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/WiseLabz/wiselabz/internal/connector"
 )
 
 // openAICompatibleProvider talks to any OpenAI-compatible chat completions
@@ -41,7 +43,7 @@ func RegisterOpenAICompatible(r *Registry) {
 				baseURL: strings.TrimRight(baseURL, "/"),
 				apiKey:  apiKey,
 				model:   model,
-				client:  &http.Client{Timeout: 60 * time.Second},
+				client:  &http.Client{Timeout: 60 * time.Second, CheckRedirect: noRedirect},
 			}, nil
 		}
 	}
@@ -84,7 +86,7 @@ func (p *openAICompatibleProvider) Suggest(ctx context.Context, req *SuggestRequ
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, connector.MaxResponseBytes))
 		return "", &StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
@@ -95,7 +97,7 @@ func (p *openAICompatibleProvider) Suggest(ctx context.Context, req *SuggestRequ
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(connector.LimitedBody(resp.Body)).Decode(&out); err != nil {
 		return "", fmt.Errorf("decode ai response: %w", err)
 	}
 	if len(out.Choices) == 0 {

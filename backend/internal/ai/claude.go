@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/WiseLabz/wiselabz/internal/connector"
 )
 
 // claudeProvider talks to Anthropic's Messages API.
@@ -38,7 +40,7 @@ func RegisterClaude(r *Registry) {
 			baseURL: strings.TrimRight(baseURL, "/"),
 			apiKey:  apiKey,
 			model:   model,
-			client:  &http.Client{Timeout: 60 * time.Second},
+			client:  &http.Client{Timeout: 60 * time.Second, CheckRedirect: noRedirect},
 		}, nil
 	}
 	r.Register("claude", factory)
@@ -81,7 +83,7 @@ func (p *claudeProvider) Suggest(ctx context.Context, req *SuggestRequest) (stri
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, connector.MaxResponseBytes))
 		return "", &StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
@@ -91,7 +93,7 @@ func (p *claudeProvider) Suggest(ctx context.Context, req *SuggestRequest) (stri
 			Text string `json:"text"`
 		} `json:"content"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(connector.LimitedBody(resp.Body)).Decode(&out); err != nil {
 		return "", fmt.Errorf("decode ai response: %w", err)
 	}
 	if len(out.Content) == 0 {

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/WiseLabz/wiselabz/internal/connector"
 )
 
 // ollamaEmbedder talks to a local (or self-hosted) Ollama server's batch
@@ -34,7 +36,7 @@ func RegisterOllamaEmbedder(r *EmbedRegistry) {
 		return &ollamaEmbedder{
 			baseURL: strings.TrimRight(baseURL, "/"),
 			model:   model,
-			client:  &http.Client{Timeout: 60 * time.Second},
+			client:  &http.Client{Timeout: 60 * time.Second, CheckRedirect: noRedirect},
 		}, nil
 	})
 }
@@ -60,14 +62,14 @@ func (e *ollamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, connector.MaxResponseBytes))
 		return nil, fmt.Errorf("embedder returned %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 
 	var out struct {
 		Embeddings [][]float32 `json:"embeddings"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(connector.LimitedBody(resp.Body)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode embed response: %w", err)
 	}
 	if len(out.Embeddings) != len(texts) {
@@ -100,7 +102,7 @@ func RegisterOpenAIEmbedder(r *EmbedRegistry) {
 			baseURL: strings.TrimRight(baseURL, "/"),
 			apiKey:  apiKey,
 			model:   model,
-			client:  &http.Client{Timeout: 60 * time.Second},
+			client:  &http.Client{Timeout: 60 * time.Second, CheckRedirect: noRedirect},
 		}, nil
 	})
 }
@@ -129,7 +131,7 @@ func (e *openAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, connector.MaxResponseBytes))
 		return nil, fmt.Errorf("embedder returned %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 
@@ -139,7 +141,7 @@ func (e *openAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 			Index     int       `json:"index"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(connector.LimitedBody(resp.Body)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode embed response: %w", err)
 	}
 	if len(out.Data) != len(texts) {
