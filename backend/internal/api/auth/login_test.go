@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -458,4 +459,57 @@ func TestDeleteUser(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 		}
 	})
+}
+
+// apiKeyUsable reports whether the raw key still authenticates.
+func (th *testHandler) apiKeyUsable(t *testing.T, raw string) bool {
+	t.Helper()
+	claims, err := th.Store.LookupAPIKey(context.Background(), store.HashToken(raw))
+	return err == nil && claims.RevokedAt == ""
+}
+
+func (th *testHandler) createAPIKey(t *testing.T, userID, raw string) {
+	t.Helper()
+	if err := th.Store.CreateAPIKey(context.Background(), &store.APIKey{
+		UserID: userID, Name: "k", TokenHash: store.HashToken(raw), Role: "viewer",
+	}); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+}
+
+func TestChangePasswordRevokesAPIKeys(t *testing.T) {
+	th := newTestHandler(t)
+	user, password := th.createUser(t, "viewer", false)
+	th.createAPIKey(t, user.ID, "wl_change_key")
+	if !th.apiKeyUsable(t, "wl_change_key") {
+		t.Fatal("precondition: key should be usable")
+	}
+
+	r := doJSON(t, http.MethodPost, "/api/me/password", map[string]string{
+		"currentPassword": password,
+		"newPassword":     "new-password-456",
+	})
+	if rr := th.authedRequest(t, r, user.ID, user.InstanceAdminRole, th.H.ChangePassword); rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	if th.apiKeyUsable(t, "wl_change_key") {
+		t.Error("API key still usable after password change")
+	}
+}
+
+func TestResetPasswordRevokesAPIKeys(t *testing.T) {
+	th := newTestHandler(t)
+	user, _ := th.createUser(t, "viewer", false)
+	th.createAPIKey(t, user.ID, "wl_reset_key")
+
+	r := doJSON(t, http.MethodPost, "/api/users/"+user.ID+"/reset-password", map[string]string{"newPassword": "brand-new-password"})
+	r.SetPathValue("id", user.ID)
+	rr := httptest.NewRecorder()
+	th.H.ResetPassword(rr, r)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	if th.apiKeyUsable(t, "wl_reset_key") {
+		t.Error("API key still usable after admin password reset")
+	}
 }

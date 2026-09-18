@@ -224,6 +224,13 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// API keys are independent bearer credentials, so a password change must
+	// revoke them too (the caller re-creates any keys they still need).
+	if err := h.Store.RevokeAllAPIKeysForUser(r.Context(), userID); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+
 	pair, err := h.JWT.IssuePair(userID, auth.InstanceAdminFromContext(r.Context()))
 	if err != nil {
 		httputil.Errorf(w, err)

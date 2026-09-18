@@ -275,6 +275,12 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.DeleteUserSessions(r.Context(), userID); err != nil {
 		h.logError("failed to delete user sessions after reset", err)
 	}
+	// API keys are long-lived bearer credentials that outlive a password, so they
+	// go too. Fail loudly so the admin retries rather than assuming they're gone.
+	if err := h.Store.RevokeAllAPIKeysForUser(r.Context(), userID); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
 
 	httputil.NoContent(w)
 }
