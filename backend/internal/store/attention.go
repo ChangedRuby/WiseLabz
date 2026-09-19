@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"sort"
 )
 
 // AttentionItem represents a merged alert or finding for the attention queue.
@@ -19,116 +18,84 @@ type AttentionItem struct {
 	RunbookID   string `json:"runbookId,omitempty"`
 }
 
-// attentionSeverityRank returns a numeric rank for sorting: critical=0, warning=1, info=2.
-func attentionSeverityRank(severity string) int {
-	switch severity {
-	case "critical":
-		return 0
-	case "warning":
-		return 1
-	case "info":
-		return 2
-	default:
-		return 3
-	}
-}
+// attentionUnion is the pending-alert / open-finding union, already narrowed
+// to connectors the caller holds a grant on and joined to its runbook. The
+// two %s slots take the since filters; both selects bind: roles..., userID,
+// [since], roles..., userID, [since].
+const attentionUnion = `
+	SELECT a.id AS id, 'alert' AS kind, a.severity AS severity, a.title AS title,
+	       a.service_id AS connector_id, a.created_at AS detected_at,
+	       COALESCE(a.change_id, '') AS change_id, '' AS check_type,
+	       COALESCE(rb.id, '') AS runbook_id
+	FROM alerts a
+	JOIN user_connector_roles g ON g.connector_id = a.service_id AND g.user_id = ? AND g.role IN (%s)
+	LEFT JOIN runbooks rb ON rb.target_type = 'alert_severity' AND rb.target_value = a.severity
+	WHERE a.status = 'pending'%s
+	UNION ALL
+	SELECT f.id, 'finding', f.severity, f.title, f.connector_id, f.last_seen_at,
+	       '', f.check_type, COALESCE(rb.id, '')
+	FROM quality_findings f
+	JOIN user_connector_roles g ON g.connector_id = f.connector_id AND g.user_id = ? AND g.role IN (%s)
+	LEFT JOIN runbooks rb ON rb.target_type = 'finding_check_type' AND rb.target_value = f.check_type
+	WHERE f.status = 'open'%s`
 
 // MergedAttentionItems merges pending alerts and open quality findings into a
 // single severity-then-recency-sorted attention queue, optionally cut off at
 // since (RFC3339), keeps only items on connectors userID holds a viewer grant
-// on (default deny), and paginates the result. It runs one runbook lookup per
-// distinct (kind, severity/checkType) pair rather than one per item.
+// on (default deny), and paginates the result. Filtering, runbook lookup,
+// ordering and pagination all happen in one UNION ALL query in SQL.
 func (s *Store) MergedAttentionItems(ctx context.Context, userID, since string, offset, pageSize int) ([]AttentionItem, int, error) {
-	alerts, _, err := s.ListAlerts(ctx, "", "", "pending", since, 0, 1000) // ponytail: unbounded fetch for merge, paginate at the store level if this becomes a bottleneck
+	var roles []any
+	for role, rank := range connectorRoleRank {
+		if rank >= connectorRoleRank["viewer"] {
+			roles = append(roles, role)
+		}
+	}
+	rolePH := placeholders(len(roles))
+	alertSince, findingSince := "", ""
+	if since != "" {
+		alertSince = " AND a.created_at >= ?"
+		findingSince = " AND f.last_seen_at >= ?"
+	}
+	union := fmt.Sprintf(attentionUnion, rolePH, alertSince, rolePH, findingSince)
+
+	var args []any
+	args = append(args, userID)
+	args = append(args, roles...)
+	if since != "" {
+		args = append(args, since)
+	}
+	args = append(args, userID)
+	args = append(args, roles...)
+	if since != "" {
+		args = append(args, since)
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+union+") u", args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count attention: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT * FROM (`+union+`) u
+		ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 WHEN 'info' THEN 2 ELSE 3 END,
+		         detected_at DESC, id
+		LIMIT ? OFFSET ?`, append(args, pageSize, offset)...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list alerts for attention: %w", err)
+		return nil, 0, fmt.Errorf("list attention: %w", err)
 	}
+	defer rows.Close() //nolint:errcheck
 
-	findings, _, err := s.ListQualityFindings(ctx, "", "", "open", since, 0, 1000) // ponytail: unbounded fetch for merge, paginate at the store level if this becomes a bottleneck
-	if err != nil {
-		return nil, 0, fmt.Errorf("list findings for attention: %w", err)
-	}
-
-	items := make([]AttentionItem, 0, len(alerts)+len(findings))
-	for _, a := range alerts {
-		items = append(items, AttentionItem{
-			ID:          a.ID,
-			Kind:        "alert",
-			Severity:    a.Severity,
-			Title:       a.Title,
-			ConnectorID: a.ServiceID,
-			DetectedAt:  a.CreatedAt,
-			ChangeID:    a.ChangeID,
-		})
-	}
-	for _, f := range findings {
-		items = append(items, AttentionItem{
-			ID:          f.ID,
-			Kind:        "finding",
-			Severity:    f.Severity,
-			Title:       f.Title,
-			ConnectorID: f.ConnectorID,
-			DetectedAt:  f.LastSeenAt,
-			FindingType: f.CheckType,
-		})
-	}
-
-	seen := make(map[string]bool, len(items))
-	connectorIDs := make([]string, 0, len(items))
-	for _, item := range items {
-		if !seen[item.ConnectorID] {
-			seen[item.ConnectorID] = true
-			connectorIDs = append(connectorIDs, item.ConnectorID)
+	items := make([]AttentionItem, 0)
+	for rows.Next() {
+		var it AttentionItem
+		if err := rows.Scan(&it.ID, &it.Kind, &it.Severity, &it.Title, &it.ConnectorID,
+			&it.DetectedAt, &it.ChangeID, &it.FindingType, &it.RunbookID); err != nil {
+			return nil, 0, fmt.Errorf("scan attention: %w", err)
 		}
+		items = append(items, it)
 	}
-	allowedIDs, err := s.FilterConnectorIDsByGrant(ctx, userID, connectorIDs, "viewer")
-	if err != nil {
-		return nil, 0, fmt.Errorf("filter attention by grant: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate attention: %w", err)
 	}
-	allowed := make(map[string]bool, len(allowedIDs))
-	for _, id := range allowedIDs {
-		allowed[id] = true
-	}
-	visible := items[:0]
-	for _, item := range items {
-		if allowed[item.ConnectorID] {
-			visible = append(visible, item)
-		}
-	}
-	items = visible
-
-	sort.Slice(items, func(i, j int) bool {
-		if attentionSeverityRank(items[i].Severity) != attentionSeverityRank(items[j].Severity) {
-			return attentionSeverityRank(items[i].Severity) < attentionSeverityRank(items[j].Severity)
-		}
-		return items[i].DetectedAt > items[j].DetectedAt
-	})
-
-	runbooks := make(map[string]*RunbookRecord)
-	for i, item := range items {
-		targetType, targetValue := "alert_severity", item.Severity
-		if item.Kind == "finding" {
-			targetType, targetValue = "finding_check_type", item.FindingType
-		}
-		key := targetType + "|" + targetValue
-		rb, cached := runbooks[key]
-		if !cached {
-			rb, _ = s.GetRunbookByTarget(ctx, targetType, targetValue)
-			runbooks[key] = rb
-		}
-		if rb != nil {
-			items[i].RunbookID = rb.ID
-		}
-	}
-
-	total := len(items)
-	start := offset
-	if start > total {
-		start = total
-	}
-	end := offset + pageSize
-	if end > total {
-		end = total
-	}
-	return items[start:end], total, nil
+	return items, total, nil
 }

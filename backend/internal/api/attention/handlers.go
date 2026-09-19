@@ -2,21 +2,28 @@
 package attention
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/ttlcache"
 )
+
+// cacheTTL bounds how stale a cached attention page may be.
+const cacheTTL = 5 * time.Second
 
 // Handler holds dependencies for attention queue endpoints.
 type Handler struct {
 	Store *store.Store
+	cache *ttlcache.Cache[map[string]any]
 }
 
 // NewHandler creates a new attention handler.
 func NewHandler(s *store.Store) *Handler {
-	return &Handler{Store: s}
+	return &Handler{Store: s, cache: ttlcache.New[map[string]any](cacheTTL)}
 }
 
 // List handles GET /api/attention.
@@ -27,16 +34,25 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// days is optional; unset keeps today's back-compat behavior of showing everything.
 	since := store.SinceFromDays(r.URL.Query().Get("days"), 0)
 
-	items, total, err := h.Store.MergedAttentionItems(r.Context(), auth.UserIDFromContext(r.Context()), since, offset, pageSize)
+	userID := auth.UserIDFromContext(r.Context())
+	key := fmt.Sprintf("%s|%s|%d|%d", userID, r.URL.Query().Get("days"), offset, pageSize)
+	if cached, ok := h.cache.Get(key); ok {
+		httputil.JSON(w, http.StatusOK, cached)
+		return
+	}
+
+	items, total, err := h.Store.MergedAttentionItems(r.Context(), userID, since, offset, pageSize)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	httputil.JSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"data":     items,
 		"page":     page,
 		"pageSize": pageSize,
 		"total":    total,
-	})
+	}
+	h.cache.Set(key, resp)
+	httputil.JSON(w, http.StatusOK, resp)
 }

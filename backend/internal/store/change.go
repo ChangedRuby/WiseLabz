@@ -475,32 +475,43 @@ func (s *Store) CountAlertsPending(ctx context.Context) (int, error) {
 	return count, err
 }
 
-// GetLatestChanges returns the most recent N changes detected at or after
-// since (RFC3339, matching the stored detected_at format). An empty since
-// applies no lower bound.
-func (s *Store) GetLatestChanges(ctx context.Context, n int, since string) ([]ChangeRecord, error) {
+// ChangeSummary is a change row without its heavy diff, joined to the name of
+// the connector it belongs to (empty if the connector is gone).
+type ChangeSummary struct {
+	ID          string
+	ServiceID   string
+	ServiceName string
+	ChangeType  string
+	Severity    string
+	Summary     string
+	DetectedAt  string
+}
+
+// GetLatestChangeSummaries returns the most recent N changes detected at or
+// after since (RFC3339, matching the stored detected_at format), with the
+// connector name resolved in the same query and no diff column. An empty
+// since applies no lower bound.
+func (s *Store) GetLatestChangeSummaries(ctx context.Context, n int, since string) ([]ChangeSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+changeColumns+`
-		FROM changes WHERE detected_at >= ? ORDER BY detected_at DESC LIMIT ?
+		SELECT c.id, c.service_id, COALESCE(k.name, ''), c.change_type, c.severity, c.summary, c.detected_at
+		FROM changes c LEFT JOIN connectors k ON k.id = c.service_id
+		WHERE c.detected_at >= ? ORDER BY c.detected_at DESC LIMIT ?
 	`, since, n)
 	if err != nil {
 		return nil, fmt.Errorf("get latest changes: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var changes []ChangeRecord
+	changes := make([]ChangeSummary, 0, n)
 	for rows.Next() {
-		var c ChangeRecord
-		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ChangeType, &c.Severity, &c.Summary, &c.Diff, &c.Status, &c.DetectedAt, &c.AffectedDocIDs, &c.RelatedServiceIDs, &c.PatternID, &c.Narration); err != nil {
+		var c ChangeSummary
+		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ServiceName, &c.ChangeType, &c.Severity, &c.Summary, &c.DetectedAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		changes = append(changes, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate latest changes: %w", err)
-	}
-	if changes == nil {
-		changes = []ChangeRecord{}
 	}
 	return changes, nil
 }

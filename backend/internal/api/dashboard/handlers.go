@@ -5,46 +5,53 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/ttlcache"
 )
 
-const overviewDefaultDays = 7
+const (
+	overviewDefaultDays = 7
+	overviewCacheTTL    = 5 * time.Second
+)
 
 // Handler holds dependencies for dashboard endpoints.
 type Handler struct {
 	Store *store.Store
+	cache *ttlcache.Cache[map[string]any]
 }
 
 // NewHandler creates a new dashboard handler.
 func NewHandler(s *store.Store) *Handler {
-	return &Handler{Store: s}
+	return &Handler{Store: s, cache: ttlcache.New[map[string]any](overviewCacheTTL)}
 }
 
 // Overview handles GET /api/dashboard/overview.
-// Returns aggregated dashboard data.
+// Returns aggregated dashboard data, cached briefly per ?days= window.
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	since := store.SinceFromDays(r.URL.Query().Get("days"), overviewDefaultDays)
+	days := r.URL.Query().Get("days")
+	if cached, ok := h.cache.Get(days); ok {
+		httputil.JSON(w, http.StatusOK, cached)
+		return
+	}
+	since := store.SinceFromDays(days, overviewDefaultDays)
 
 	statusCounts, _ := h.Store.CountConnectorsByStatus(ctx)
 	pendingAlerts, _ := h.Store.CountAlertsPending(ctx)
-	latestChanges, _ := h.Store.GetLatestChanges(ctx, 5, since)
+	latestChanges, _ := h.Store.GetLatestChangeSummaries(ctx, 5, since)
 	lastSync, _ := h.Store.GetLastSyncTimestamp(ctx)
 
 	recentChanges := make([]map[string]any, len(latestChanges))
 	for i, c := range latestChanges {
-		serviceName := ""
-		if conn, err := h.Store.GetConnector(ctx, c.ServiceID); err == nil {
-			serviceName = conn.Name
-		}
 		recentChanges[i] = map[string]any{
 			"id":            c.ID,
 			"serviceId":     c.ServiceID,
-			"serviceName":   serviceName,
+			"serviceName":   c.ServiceName,
 			"changeType":    c.ChangeType,
 			"severity":      c.Severity,
 			"summary":       c.Summary,
@@ -53,12 +60,14 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	httputil.JSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"statusCounts":  statusCounts,
 		"pendingAlerts": pendingAlerts,
 		"recentChanges": recentChanges,
 		"lastSyncAt":    lastSync,
-	})
+	}
+	h.cache.Set(days, resp)
+	httputil.JSON(w, http.StatusOK, resp)
 }
 
 // GetLayout handles GET /api/dashboard/layout.
