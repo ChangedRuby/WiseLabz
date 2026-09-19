@@ -1,6 +1,31 @@
 package chat
 
-import "testing"
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"io"
+	"log/slog"
+	"testing"
+
+	"github.com/WiseLabz/wiselabz/internal/store"
+)
+
+type stubEmbedder struct {
+	err error
+}
+
+func (e stubEmbedder) Name() string { return "stub" }
+func (e stubEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		out[i] = []float32{1, float32(i)}
+	}
+	return out, nil
+}
 
 func TestSplitSections(t *testing.T) {
 	content := "# Title\n\nintro\n\n## Overview\n\nThis is the overview.\n\n## Dependencies\n\n- foo\n- bar\n"
@@ -38,5 +63,44 @@ func TestPackUnpackVectorRoundTrips(t *testing.T) {
 		if got[i] != v[i] {
 			t.Fatalf("index %d: got %v want %v", i, got[i], v[i])
 		}
+	}
+}
+
+func TestSyncDocEmbeddingsKeepsOldRowsWhenEmbedFails(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db?cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.RunMigrations(db, "sqlite", slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	s := store.New(db, "sqlite")
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "d1", Title: "d1", Kind: "lab", Content: "x"}); err != nil {
+		t.Fatalf("CreateDoc: %v", err)
+	}
+
+	if err := SyncDocEmbeddings(ctx, s, stubEmbedder{}, "m", "d1", "## A\n\none\n\n## B\n\ntwo\n"); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	if err := SyncDocEmbeddings(ctx, s, stubEmbedder{err: errors.New("boom")}, "m", "d1", "## C\n\nthree\n"); err == nil {
+		t.Fatal("expected embed error")
+	}
+	rows, err := s.ListDocSectionEmbeddings(ctx, "", "d1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected old 2 rows preserved after failed embed, got %d", len(rows))
+	}
+
+	if err := SyncDocEmbeddings(ctx, s, stubEmbedder{}, "m", "d1", "## C\n\nthree\n"); err != nil {
+		t.Fatalf("resync: %v", err)
+	}
+	rows, _ = s.ListDocSectionEmbeddings(ctx, "", "d1")
+	if len(rows) != 1 || rows[0].SectionKey != "C" {
+		t.Fatalf("expected replaced single row C, got %+v", rows)
 	}
 }

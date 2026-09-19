@@ -95,38 +95,44 @@ func cosineSimilarity(a, b []float32) float64 {
 // is always current.
 func SyncDocEmbeddings(ctx context.Context, s *store.Store, embedder ai.Embedder, model, docID, content string) error {
 	sections := SplitSections(content)
-	if err := s.DeleteDocSectionEmbeddings(ctx, docID); err != nil {
-		return err
-	}
 	if len(sections) == 0 {
-		return nil
+		return s.DeleteDocSectionEmbeddings(ctx, docID)
 	}
 
 	texts := make([]string, len(sections))
 	for i, sec := range sections {
 		texts[i] = sec.Content
 	}
+	// Embed before touching stored rows so a failed embed keeps the old ones.
 	vectors, err := embedder.Embed(ctx, texts)
 	if err != nil {
 		return fmt.Errorf("embed doc sections: %w", err)
 	}
+	if len(vectors) != len(sections) {
+		return fmt.Errorf("embed doc sections: got %d vectors for %d sections", len(vectors), len(sections))
+	}
 
-	for i, sec := range sections {
-		key := sec.Key
-		if key == "" {
-			key = fmt.Sprintf("section-%d", i)
-		}
-		if err := s.UpsertDocSectionEmbedding(ctx, &store.DocSectionEmbeddingRecord{
-			DocID:      docID,
-			SectionKey: key,
-			Content:    sec.Content,
-			Vector:     packVector(vectors[i]),
-			Model:      model,
-		}); err != nil {
+	return s.WithinTransaction(ctx, func(tx *store.Store) error {
+		if err := tx.DeleteDocSectionEmbeddings(ctx, docID); err != nil {
 			return err
 		}
-	}
-	return nil
+		for i, sec := range sections {
+			key := sec.Key
+			if key == "" {
+				key = fmt.Sprintf("section-%d", i)
+			}
+			if err := tx.UpsertDocSectionEmbedding(ctx, &store.DocSectionEmbeddingRecord{
+				DocID:      docID,
+				SectionKey: key,
+				Content:    sec.Content,
+				Vector:     packVector(vectors[i]),
+				Model:      model,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Match is a retrieved doc section ranked by relevance to a question.
