@@ -35,6 +35,7 @@ type APIKeyClaims struct {
 	InstanceAdmin bool
 	ExpiresAt     string
 	RevokedAt     string
+	LastUsedAt    string
 }
 
 // ElevationClaims represents a short-lived step-up token for destructive actions.

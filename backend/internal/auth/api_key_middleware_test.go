@@ -80,3 +80,35 @@ func TestAuthMiddlewareRejectsExpiredAndRevokedAPIKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthMiddlewareThrottlesAPIKeyLastUsed(t *testing.T) {
+	svc := NewService("test-secret", time.Minute, time.Hour)
+	for _, tc := range []struct {
+		name     string
+		lastUsed string
+		touch    bool
+	}{
+		{"unused", "", true},
+		{"recent", time.Now().UTC().Format(time.RFC3339), false},
+		{"old", time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checker := &testAPIKeyChecker{claims: &APIKeyClaims{KeyID: "key", UserID: "user", LastUsedAt: tc.lastUsed}}
+			handler := AuthMiddleware(svc, checker)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", "Bearer wlz_secret")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || checker.called != tc.touch {
+				t.Fatalf("status = %d, touched = %v, want 200, %v", rec.Code, checker.called, tc.touch)
+			}
+			// A warm last-used timestamp must never bypass revocation.
+			checker.claims.RevokedAt = time.Now().UTC().Format(time.RFC3339)
+			rec = httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("revoked key status = %d", rec.Code)
+			}
+		})
+	}
+}

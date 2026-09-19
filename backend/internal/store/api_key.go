@@ -87,11 +87,11 @@ func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKe
 	var role string
 	var disabled int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT api_keys.id, api_keys.user_id, users.instance_admin_role, api_keys.expires_at, api_keys.revoked_at, users.disabled
+		SELECT api_keys.id, api_keys.user_id, users.instance_admin_role, api_keys.expires_at, api_keys.revoked_at, users.disabled, api_keys.last_used_at
 		FROM api_keys
 		JOIN users ON users.id = api_keys.user_id
 		WHERE api_keys.token_hash = ?
-	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &role, &claims.ExpiresAt, &claims.RevokedAt, &disabled)
+	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &role, &claims.ExpiresAt, &claims.RevokedAt, &disabled, &claims.LastUsedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -161,11 +161,13 @@ func (s *Store) RevokeAllAPIKeysForUser(ctx context.Context, userID string) erro
 	return nil
 }
 
-// TouchAPIKeyLastUsed records the most recent successful authentication.
+// TouchAPIKeyLastUsed records successful authentication at most once a minute.
+// The predicate also handles concurrent requests that read the same old timestamp.
 func (s *Store) TouchAPIKeyLastUsed(ctx context.Context, id string) error {
+	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE api_keys SET last_used_at = ? WHERE id = ?
-	`, time.Now().UTC().Format(time.RFC3339), id)
+		UPDATE api_keys SET last_used_at = ? WHERE id = ? AND (last_used_at = '' OR last_used_at <= ?)
+	`, now.Format(time.RFC3339), id, now.Add(-time.Minute).Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("touch api key last used: %w", err)
 	}

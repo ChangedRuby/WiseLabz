@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 )
@@ -25,7 +27,25 @@ type DBTX interface {
 // Store is the central data access layer, holding the database connection
 // and all repository implementations.
 type Store struct {
-	db DBTX
+	db                   DBTX
+	userStatusMu         sync.Mutex
+	userStatusGeneration uint64
+	userStatuses         map[string]userStatus
+}
+
+type userStatus struct {
+	role     string
+	disabled bool
+	expires  time.Time
+}
+
+// invalidateUserStatuses also prevents an in-flight read from repopulating
+// the cache with a value read before a mutation committed.
+func (s *Store) invalidateUserStatuses() {
+	s.userStatusMu.Lock()
+	defer s.userStatusMu.Unlock()
+	s.userStatusGeneration++
+	s.userStatuses = nil
 }
 
 type transactionDB struct {
@@ -104,6 +124,7 @@ func (s *Store) WithinTransaction(ctx context.Context, fn func(*Store) error) er
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
+	s.invalidateUserStatuses()
 	return nil
 }
 

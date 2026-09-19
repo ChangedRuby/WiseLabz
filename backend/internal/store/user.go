@@ -161,8 +161,17 @@ func (s *Store) ClearFailedLogins(ctx context.Context, userID string) error {
 // GetUserRoleStatus returns the current instance-admin role and disabled flag
 // for a user. Implements auth.UserStatusChecker so AuthMiddleware can detect
 // a role change or account disable that happened after an access token was
-// issued.
+// issued. Successful reads are cached for 30 seconds; user mutations invalidate
+// the cache immediately. Errors are never cached.
 func (s *Store) GetUserRoleStatus(ctx context.Context, userID string) (string, bool, error) {
+	now := time.Now()
+	s.userStatusMu.Lock()
+	cached, ok := s.userStatuses[userID]
+	generation := s.userStatusGeneration
+	s.userStatusMu.Unlock()
+	if ok && now.Before(cached.expires) {
+		return cached.role, cached.disabled, nil
+	}
 	var role string
 	var disabled int
 	err := s.db.QueryRowContext(ctx, `SELECT instance_admin_role, disabled FROM users WHERE id = ?`, userID).Scan(&role, &disabled)
@@ -172,6 +181,18 @@ func (s *Store) GetUserRoleStatus(ctx context.Context, userID string) (string, b
 	if err != nil {
 		return "", false, fmt.Errorf("get user role status: %w", err)
 	}
+	s.userStatusMu.Lock()
+	if generation == s.userStatusGeneration {
+		// Bound memory even if users stop making requests before their entries expire.
+		if len(s.userStatuses) >= 4096 {
+			s.userStatuses = nil
+		}
+		if s.userStatuses == nil {
+			s.userStatuses = make(map[string]userStatus)
+		}
+		s.userStatuses[userID] = userStatus{role: role, disabled: disabled != 0, expires: now.Add(30 * time.Second)}
+	}
+	s.userStatusMu.Unlock()
 	return role, disabled != 0, nil
 }
 
@@ -246,6 +267,7 @@ func (s *Store) UpdateUser(ctx context.Context, id string, updates map[string]an
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.invalidateUserStatuses()
 	return nil
 }
 
@@ -262,6 +284,7 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.invalidateUserStatuses()
 	return nil
 }
 

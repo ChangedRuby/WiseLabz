@@ -99,8 +99,11 @@ func AuthMiddleware(jwtSvc *Service, checkers ...APIKeyChecker) func(http.Handle
 			if checker != nil {
 				keyClaims, lookupErr := checker.LookupAPIKey(r.Context(), hashToken(token))
 				if lookupErr == nil && validAPIKey(keyClaims) {
-					if touchErr := checker.TouchAPIKeyLastUsed(r.Context(), keyClaims.KeyID); touchErr != nil {
-						slog.Error("failed to update API key last-used timestamp", "key_id", keyClaims.KeyID, "error", touchErr)
+					lastUsed, _ := time.Parse(time.RFC3339, keyClaims.LastUsedAt)
+					if time.Since(lastUsed) >= time.Minute {
+						if touchErr := checker.TouchAPIKeyLastUsed(r.Context(), keyClaims.KeyID); touchErr != nil {
+							slog.Error("failed to update API key last-used timestamp", "key_id", keyClaims.KeyID, "error", touchErr)
+						}
 					}
 					ctx := context.WithValue(r.Context(), ctxUserID, keyClaims.UserID)
 					ctx = context.WithValue(ctx, ctxInstanceAdmin, keyClaims.InstanceAdmin)
