@@ -29,7 +29,7 @@ func New(logger *slog.Logger) *Runner {
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
 	)
 	return &Runner{
-		c:      cron.New(cron.WithParser(parser)),
+		c:      cron.New(cron.WithParser(parser), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))),
 		logger: logger,
 		ctx:    context.Background(),
 	}

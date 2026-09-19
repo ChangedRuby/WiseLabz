@@ -103,37 +103,37 @@ func TestConnectorsUpdateRejectsMalformedConfig(t *testing.T) {
 }
 
 func TestConnectorsSyncAcceptsFieldsHint(t *testing.T) {
-	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
-
-	created := app.req(t, http.MethodPost, "/api/connectors", map[string]any{
-		"name": "svc", "category": "networking", "type": "api_test_validated", "url": "https://example.com",
-	}, opToken)
-	var c struct {
-		ID string `json:"id"`
+	for _, tc := range []struct {
+		name string
+		body any
+	}{
+		{name: "fields", body: map[string]any{"fields": []string{"vms"}}},
+		{name: "no body"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newTestApp(t)
+			_, opToken := app.user(t, "operator")
+			created := app.req(t, http.MethodPost, "/api/connectors", map[string]any{
+				"name": "svc", "category": "networking", "type": "api_test_validated", "url": "https://example.com",
+			}, opToken)
+			if created.Code != http.StatusCreated {
+				t.Fatalf("create status = %d; body = %s", created.Code, created.Body)
+			}
+			var c struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(created.Body.Bytes(), &c); err != nil {
+				t.Fatalf("decode created connector: %v", err)
+			}
+			rec := app.req(t, http.MethodPost, "/api/connectors/"+c.ID+"/sync", tc.body, opToken)
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202; body = %s", rec.Code, rec.Body)
+			}
+			// Each request shape must complete a real sync. Separate connectors
+			// avoid intentionally overlapping runs, which the engine now rejects.
+			waitForSyncRuns(t, app, c.ID, 1)
+		})
 	}
-	if err := json.Unmarshal(created.Body.Bytes(), &c); err != nil {
-		t.Fatalf("decode created connector: %v", err)
-	}
-
-	rec := app.req(t, http.MethodPost, "/api/connectors/"+c.ID+"/sync", map[string]any{
-		"fields": []string{"vms"},
-	}, opToken)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want 202; body = %s", rec.Code, rec.Body)
-	}
-
-	// A plain sync with no body must still work (fields is optional).
-	rec2 := app.req(t, http.MethodPost, "/api/connectors/"+c.ID+"/sync", nil, opToken)
-	if rec2.Code != http.StatusAccepted {
-		t.Fatalf("status (no body) = %d, want 202; body = %s", rec2.Code, rec2.Body)
-	}
-
-	// Both syncs run in background goroutines. Wait for them to finish
-	// before returning, otherwise this test's t.TempDir()/db cleanup can
-	// race with a goroutine still writing to them, e.g. by tearing down the
-	// database mid-write.
-	waitForSyncRuns(t, app, c.ID, 2)
 }
 
 func waitForSyncRuns(t *testing.T, app *testApp, connectorID string, want int) {

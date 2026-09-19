@@ -284,3 +284,53 @@ func TestListDueConnectorsIncludesExpiredMaintenanceWindow(t *testing.T) {
 		t.Fatalf("ListDueConnectors() = %+v, want connector %s with an expired window included", due, c.ID)
 	}
 }
+
+func TestClaimDueConnector(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+	now := time.Now().UTC()
+	schedule := 30
+	for _, tc := range []struct {
+		name                            string
+		enabled, scheduled, maintenance bool
+		next                            string
+		want                            bool
+	}{
+		{name: "unset", enabled: true, scheduled: true, want: true},
+		{name: "due", enabled: true, scheduled: true, next: now.Add(-time.Minute).Format(time.RFC3339), want: true},
+		{name: "future", enabled: true, scheduled: true, next: now.Add(time.Hour).Format(time.RFC3339)},
+		{name: "disabled", scheduled: true},
+		{name: "manual", enabled: true},
+		{name: "maintenance", enabled: true, scheduled: true, maintenance: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &ConnectorRecord{Name: tc.name, Category: "networking", Type: "test", Enabled: tc.enabled, NextRunAt: tc.next}
+			if tc.scheduled {
+				c.ScheduleSeconds = &schedule
+			}
+			if err := s.CreateConnector(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			if tc.maintenance {
+				if err := s.CreateMaintenanceWindow(ctx, &MaintenanceWindowRecord{ConnectorID: c.ID, StartsAt: now.Format(time.RFC3339), EndsAt: now.Add(time.Hour).Format(time.RFC3339), CreatedBy: "user-1"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			lease := now.Add(6 * time.Minute).Format(time.RFC3339)
+			claimed, err := s.ClaimDueConnector(ctx, c.ID, now.Format(time.RFC3339), lease)
+			if err != nil || claimed != tc.want {
+				t.Fatalf("claimed = %v, error = %v; want %v", claimed, err, tc.want)
+			}
+			claimed, err = s.ClaimDueConnector(ctx, c.ID, now.Format(time.RFC3339), lease)
+			if err != nil || claimed {
+				t.Fatalf("second claim = %v, error = %v", claimed, err)
+			}
+			if tc.want {
+				claimed, err = s.ClaimDueConnector(ctx, c.ID, now.Add(7*time.Minute).Format(time.RFC3339), now.Add(13*time.Minute).Format(time.RFC3339))
+				if err != nil || !claimed {
+					t.Fatalf("expired lease claim = %v, error = %v", claimed, err)
+				}
+			}
+		})
+	}
+}

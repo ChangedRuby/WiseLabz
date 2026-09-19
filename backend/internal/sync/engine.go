@@ -35,6 +35,12 @@ var retrySchedule = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minu
 // matching notifications.maxConcurrentNotifications' fanout pattern.
 const maxSyncConcurrency = 4
 
+// syncTimeout bounds upstream work for scheduled and manual syncs alike.
+const syncTimeout = 5 * time.Minute
+
+// ErrAlreadyRunning means this connector already has an active sync.
+var ErrAlreadyRunning = errors.New("connector sync already running")
+
 // computeNextRun decides a connector's next scheduled run time and updated
 // retry count after one sync attempt. Unlike notification delivery retries
 // (which give up after a fixed number of attempts), a scheduled connector
@@ -93,6 +99,7 @@ type DocRegenerator interface {
 
 // Engine runs sync jobs against connectors.
 type Engine struct {
+	inFlight       sync.Map // connector ID -> active run; entries are removed on every exit
 	store          *store.Store
 	hub            *ws.Hub
 	notifier       AlertNotifier
@@ -191,6 +198,31 @@ func (e *Engine) RefreshCredentials(ctx context.Context, connectorID string) err
 // a dashboard quick-check doesn't force a full fetch. A connector type that
 // doesn't support selective fetch ignores the hint and returns everything.
 func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID string, fields []string) (*RunResult, error) {
+	return e.runSyncFields(ctx, connectorID, jobID, fields, false)
+}
+
+func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, fields []string, scheduled bool) (*RunResult, error) {
+	if _, loaded := e.inFlight.LoadOrStore(connectorID, struct{}{}); loaded {
+		if e.hub != nil {
+			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
+				"serviceId": connectorID, "jobId": jobID, "error": ErrAlreadyRunning.Error(),
+			})
+		}
+		return nil, ErrAlreadyRunning
+	}
+	defer e.inFlight.Delete(connectorID)
+	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
+	defer cancel()
+	if scheduled {
+		now := time.Now().UTC()
+		claimed, err := e.store.ClaimDueConnector(ctx, connectorID, now.Format(time.RFC3339), now.Add(syncTimeout+time.Minute).Format(time.RFC3339))
+		if err != nil {
+			return nil, err
+		}
+		if !claimed {
+			return nil, nil
+		}
+	}
 	start := time.Now()
 	result := &RunResult{ConnectorID: connectorID}
 
@@ -231,6 +263,9 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// schedule state on the connector (see computeNextRun). Called from every
 	// exit path below once rec has been loaded.
 	finish := func(status string, runErr error) {
+		// Persist the outcome even when the fetch exhausted its deadline.
+		finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer finishCancel()
 		if status != "skipped" && e.hub != nil {
 			payload := map[string]any{
 				"serviceId":       connectorID,
@@ -256,7 +291,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 		case "skipped":
 			runStatus = store.SyncRunStatusSkipped
 		}
-		if err := e.store.CreateSyncRun(ctx, &store.SyncRunRecord{
+		if err := e.store.CreateSyncRun(finishCtx, &store.SyncRunRecord{
 			ConnectorID:  connectorID,
 			StartedAt:    start.UTC().Format(time.RFC3339Nano),
 			FinishedAt:   time.Now().UTC().Format(time.RFC3339Nano),
@@ -289,7 +324,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 		} else {
 			updates["next_run_at"] = nil
 		}
-		if err := e.store.UpdateConnector(ctx, connectorID, updates); err != nil {
+		if err := e.store.UpdateConnector(finishCtx, connectorID, updates); err != nil {
 			slog.Error("update connector schedule failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		}
 		if e.qualityChecker != nil {

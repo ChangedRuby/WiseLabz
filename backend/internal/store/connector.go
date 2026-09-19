@@ -372,6 +372,25 @@ func (s *Store) ListDueConnectors(ctx context.Context, now string, limit int) ([
 	return scanConnectorRows(rows)
 }
 
+// ClaimDueConnector atomically defers a due connector before fetching it.
+// The lease expires after the sync deadline so a process crash cannot leave
+// the connector permanently unscheduled. Completion sets the normal cadence.
+func (s *Store) ClaimDueConnector(ctx context.Context, id, now, leaseUntil string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE connectors SET next_run_at = ?
+ WHERE id = ? AND enabled = 1 AND schedule_seconds IS NOT NULL
+ AND (next_run_at IS NULL OR next_run_at <= ?)
+ AND NOT EXISTS (SELECT 1 FROM maintenance_windows mw WHERE mw.connector_id = connectors.id AND mw.ends_at > ?)
+ `, leaseUntil, id, now, now)
+	if err != nil {
+		return false, fmt.Errorf("claim due connector: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim due connector rows: %w", err)
+	}
+	return n == 1, nil
+}
+
 // --- Snapshot operations ---
 
 // CreateSnapshot inserts a new service snapshot.

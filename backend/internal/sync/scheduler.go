@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -21,7 +22,10 @@ func (e *Engine) RunDueSyncs(ctx context.Context, logger *slog.Logger) {
 		return
 	}
 	for _, c := range due {
-		if _, err := e.RunSync(ctx, c.ID, uuid.New().String()); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		if _, err := e.runSyncFields(ctx, c.ID, uuid.New().String(), nil, true); err != nil && !errors.Is(err, ErrAlreadyRunning) {
 			logger.Error("scheduled sync failed", "connector", c.ID, "error", err)
 		}
 	}

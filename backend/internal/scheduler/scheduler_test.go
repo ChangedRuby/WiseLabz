@@ -318,3 +318,34 @@ func TestContextGivenToJobFunction(t *testing.T) {
 		t.Fatalf("job function did not receive a context")
 	}
 }
+
+func TestJobSkipsOverlappingInvocations(t *testing.T) {
+	r := New(testLogger())
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	id, err := r.AddJob("blocking", "* * * * * *", func(context.Context) { entered <- struct{}{}; <-release })
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := r.c.Entry(id).WrappedJob
+	done := make(chan struct{})
+	go func() { defer close(done); job.Run() }()
+	<-entered
+	skipped := make(chan struct{})
+	go func() { defer close(skipped); job.Run() }()
+	select {
+	case <-skipped:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("overlap was queued instead of skipped")
+	}
+	if len(entered) != 0 {
+		t.Error("overlapping job executed")
+	}
+	close(release)
+	<-done
+	job.Run()
+	if len(entered) != 1 {
+		t.Error("job did not run after previous invocation completed")
+	}
+}
