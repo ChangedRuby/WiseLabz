@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: migrate <up|down>\n")
+		fmt.Fprintf(os.Stderr, "Usage: migrate <up|down|status|verify>\n")
 		os.Exit(1)
 	}
 
@@ -45,8 +45,19 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Migration rolled back (down).")
+	case "status", "verify":
+		st, err := store.GetMigrationStatus(db, cfg.DB.Driver)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Migration status failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("current=%d latest=%d dirty=%t pending=%t\n", st.Current, st.Latest, st.Dirty, st.Pending())
+		if direction == "verify" && (st.Dirty || st.Pending()) {
+			fmt.Fprintln(os.Stderr, "Verification failed: database is dirty or has pending migrations.")
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown direction: %s (use 'up' or 'down')\n", direction)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s (use 'up', 'down', 'status' or 'verify')\n", direction)
 		os.Exit(1)
 	}
 }

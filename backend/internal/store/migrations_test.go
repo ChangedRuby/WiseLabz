@@ -331,12 +331,17 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if !hasColumn(t, db, "postgres", "changes", "narration") {
 		t.Error("changes.narration should still exist from an earlier migration")
 	}
+	// Only the newest migration (snapshot_fetched_at_index) is rolled back: its
+	// index must be gone while ai_config_providers from an earlier migration stays.
 	var name string
-	err = db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_name = 'ai_config_providers'`).Scan(&name)
+	err = db.QueryRow(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_snapshots_fetched_at'`).Scan(&name)
 	if err == nil {
-		t.Error("ai_config_providers should not exist after rolling back its migration")
+		t.Error("idx_snapshots_fetched_at should not exist after rolling back its migration")
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("query information_schema.tables for ai_config_providers: %v", err)
+		t.Fatalf("query pg_indexes for idx_snapshots_fetched_at: %v", err)
+	}
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'ai_config_providers'`).Scan(&name); err != nil {
+		t.Errorf("ai_config_providers should still exist after rolling back only the last migration: %v", err)
 	}
 }
 
@@ -490,5 +495,33 @@ func TestRunMigrationsPreservesRowsWithForeignKeys(t *testing.T) {
 	var fk int
 	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fk); err != nil || fk != 1 {
 		t.Errorf("foreign_keys after migrate = %d, %v; want 1", fk, err)
+	}
+}
+
+func TestGetMigrationStatus(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+t.TempDir()+"/status.db?cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close() //nolint:errcheck
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	st, err := GetMigrationStatus(db, "sqlite")
+	if err != nil {
+		t.Fatalf("GetMigrationStatus() before migrate: %v", err)
+	}
+	if st.Current != 0 || st.Latest == 0 || !st.Pending() {
+		t.Errorf("before migrate = %+v, want current 0 and pending", st)
+	}
+
+	if err := RunMigrations(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrations() error: %v", err)
+	}
+	st, err = GetMigrationStatus(db, "sqlite")
+	if err != nil {
+		t.Fatalf("GetMigrationStatus() after migrate: %v", err)
+	}
+	if st.Current != st.Latest || st.Dirty || st.Pending() {
+		t.Errorf("after migrate = %+v, want current == latest, clean", st)
 	}
 }

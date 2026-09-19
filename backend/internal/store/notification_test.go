@@ -9,6 +9,8 @@ import (
 func TestNotificationCreateAndList(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 
 	if err := s.CreateNotification(ctx, &NotificationRecord{
 		UserID: "user-1", AlertID: "alert-1", EventType: "alert.created", Title: "Disk full",
@@ -31,6 +33,8 @@ func TestNotificationCreateAndList(t *testing.T) {
 func TestNotificationUnreadOnlyFilter(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 
 	if err := s.CreateNotification(ctx, &NotificationRecord{UserID: "user-1", EventType: "alert.created", Title: "A"}); err != nil {
 		t.Fatalf("CreateNotification() error: %v", err)
@@ -66,6 +70,8 @@ func TestNotificationUnreadOnlyFilter(t *testing.T) {
 func TestMarkNotificationReadIdempotentAndScoped(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 
 	if err := s.CreateNotification(ctx, &NotificationRecord{UserID: "user-1", EventType: "alert.created", Title: "A"}); err != nil {
 		t.Fatalf("CreateNotification() error: %v", err)
@@ -101,6 +107,8 @@ func TestMarkNotificationReadIdempotentAndScoped(t *testing.T) {
 func TestMarkAllNotificationsRead(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 
 	for range 3 {
 		if err := s.CreateNotification(ctx, &NotificationRecord{UserID: "user-1", EventType: "alert.created", Title: "A"}); err != nil {

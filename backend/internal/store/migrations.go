@@ -160,3 +160,45 @@ func newMigrator(db *sql.DB, driver string) (*migrate.Migrate, error) {
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
 }
+
+// MigrationStatus describes the applied migration state of a database.
+type MigrationStatus struct {
+	Current uint // last applied version; 0 when nothing is applied
+	Latest  uint // highest version bundled with the binary
+	Dirty   bool // a migration failed part-way and needs manual repair
+}
+
+// Pending reports whether bundled migrations exist that are not yet applied.
+func (s MigrationStatus) Pending() bool { return s.Current < s.Latest }
+
+// GetMigrationStatus reports the applied and latest bundled migration versions.
+func GetMigrationStatus(db *sql.DB, driver string) (MigrationStatus, error) {
+	m, err := newMigrator(db, driver)
+	if err != nil {
+		return MigrationStatus{}, err
+	}
+
+	var st MigrationStatus
+	cur, dirty, err := m.Version()
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+		return MigrationStatus{}, fmt.Errorf("read migration version: %w", err)
+	}
+	st.Current, st.Dirty = cur, dirty
+
+	fsys := sqliteMigrations
+	dir := "migrations/sqlite"
+	if driver == "postgres" {
+		fsys, dir = postgresMigrations, "migrations/postgres"
+	}
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return MigrationStatus{}, fmt.Errorf("read bundled migrations: %w", err)
+	}
+	for _, e := range entries {
+		var v uint
+		if _, err := fmt.Sscanf(e.Name(), "%d_", &v); err == nil && v > st.Latest {
+			st.Latest = v
+		}
+	}
+	return st, nil
+}

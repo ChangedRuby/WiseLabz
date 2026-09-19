@@ -235,6 +235,7 @@ func TestUpsertQualityFindingPostgresDedup(t *testing.T) {
 }
 
 func TestQualityFindingStatusIndexPlan(t *testing.T) {
+	skipOnPostgres(t, "EXPLAIN QUERY PLAN is SQLite-only")
 	s := newDocTestStore(t)
 	rows, err := s.DB().QueryContext(context.Background(), `EXPLAIN QUERY PLAN
 		SELECT `+qualityFindingColumns+` FROM quality_findings

@@ -6,17 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
+// newDocTestStore returns a migrated Store. It uses a per-test SQLite file by
+// default; when WISELABZ_TEST_POSTGRES_DSN is set it instead uses a fresh,
+// isolated schema in that Postgres database so the same store tests run against
+// both dialects.
 func newDocTestStore(t *testing.T) *Store {
 	t.Helper()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	if pgDSN := os.Getenv("WISELABZ_TEST_POSTGRES_DSN"); pgDSN != "" {
+		return newPostgresTestStore(t, pgDSN, logger)
+	}
+
 	dir := t.TempDir()
 	dsn := "file:" + dir + "/test.db?cache=shared"
 
@@ -26,13 +39,68 @@ func newDocTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	if err := RunMigrations(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 	db.SetMaxOpenConns(1)
 
 	return New(db, "sqlite")
+}
+
+// newPostgresTestStore creates a uniquely named schema, migrates it, and drops
+// it on cleanup, so tests sharing one Postgres database stay isolated.
+func newPostgresTestStore(t *testing.T, dsn string, logger *slog.Logger) *Store {
+	t.Helper()
+	admin, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	schema := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := admin.Exec("CREATE SCHEMA " + schema); err != nil {
+		_ = admin.Close()
+		t.Fatalf("create schema: %v", err)
+	}
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse postgres dsn: %v", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+
+	db, err := sql.Open("pgx", u.String())
+	if err != nil {
+		t.Fatalf("open postgres schema db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+		_, _ = admin.Exec("DROP SCHEMA " + schema + " CASCADE")
+		_ = admin.Close()
+	})
+	if err := RunMigrations(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrations() error: %v", err)
+	}
+	return New(db, "postgres")
+}
+
+// skipOnPostgres skips tests that depend on SQLite-only features.
+func skipOnPostgres(t *testing.T, why string) {
+	t.Helper()
+	if os.Getenv("WISELABZ_TEST_POSTGRES_DSN") != "" {
+		t.Skip(why)
+	}
+}
+
+// mustCreateUser inserts a user with the given id (if absent) so foreign keys resolve.
+func mustCreateUser(t *testing.T, s *Store, id string) {
+	t.Helper()
+	if u, err := s.GetUserByID(context.Background(), id); err == nil && u != nil {
+		return
+	}
+	if err := s.CreateUser(context.Background(), &User{ID: id, Username: id, DisplayName: id, Email: id + "@example.com"}); err != nil {
+		t.Fatalf("CreateUser(%s) error: %v", id, err)
+	}
 }
 
 func TestUpdateDocOptimisticConcurrency(t *testing.T) {
@@ -99,7 +167,8 @@ func TestUpdateDocOptimisticConcurrency(t *testing.T) {
 func TestListDocsGroupedByService(t *testing.T) {
 	s := newDocTestStore(t)
 	ctx := context.Background()
-	for _, serviceID := range []string{"service-a", "service-b"} {
+	serviceA, serviceB := mustCreateMaintenanceConnector(t, s), mustCreateMaintenanceConnector(t, s)
+	for _, serviceID := range []string{serviceA, serviceB} {
 		if err := s.CreateDoc(ctx, &DocRecord{Title: serviceID, Kind: "service", ServiceID: serviceID, Content: "content"}); err != nil {
 			t.Fatalf("CreateDoc() error: %v", err)
 		}
@@ -109,7 +178,7 @@ func TestListDocsGroupedByService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListDocsGroupedByService() error: %v", err)
 	}
-	if len(got["service-a"]) != 1 || len(got["service-b"]) != 1 {
+	if len(got[serviceA]) != 1 || len(got[serviceB]) != 1 {
 		t.Fatalf("grouped docs = %+v, want one doc per service", got)
 	}
 }
@@ -300,6 +369,7 @@ func TestUpdateTemplateConcurrentVersionBumps(t *testing.T) {
 }
 
 func TestTemplateVersionIndexAndCascade(t *testing.T) {
+	skipOnPostgres(t, "EXPLAIN QUERY PLAN and PRAGMA are SQLite-only")
 	ctx := context.Background()
 	s := newDocTestStore(t)
 	tmpl := &TemplateRecord{Name: "Runbook"}
@@ -353,6 +423,8 @@ func TestTemplateVersionIndexAndCascade(t *testing.T) {
 func TestDocLockConflict(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 	d := &DocRecord{Title: "Test Doc", Content: "v1"}
 	if err := s.CreateDoc(ctx, d); err != nil {
 		t.Fatalf("CreateDoc() error: %v", err)
@@ -378,6 +450,8 @@ func TestDocLockConflict(t *testing.T) {
 func TestDocLockRenewalByHolder(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 	d := &DocRecord{Title: "Test Doc", Content: "v1"}
 	if err := s.CreateDoc(ctx, d); err != nil {
 		t.Fatalf("CreateDoc() error: %v", err)
@@ -406,6 +480,8 @@ func TestDocLockRenewalByHolder(t *testing.T) {
 func TestDocLockAcquireAfterExpiry(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 	d := &DocRecord{Title: "Test Doc", Content: "v1"}
 	if err := s.CreateDoc(ctx, d); err != nil {
 		t.Fatalf("CreateDoc() error: %v", err)
@@ -433,6 +509,8 @@ func TestDocLockAcquireAfterExpiry(t *testing.T) {
 func TestDocLockReleaseOnlyByHolder(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
+	mustCreateUser(t, s, "user-1")
+	mustCreateUser(t, s, "user-2")
 	d := &DocRecord{Title: "Test Doc", Content: "v1"}
 	if err := s.CreateDoc(ctx, d); err != nil {
 		t.Fatalf("CreateDoc() error: %v", err)

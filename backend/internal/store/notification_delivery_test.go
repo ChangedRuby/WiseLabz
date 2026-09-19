@@ -9,6 +9,7 @@ import (
 
 func createTestNotification(ctx context.Context, t *testing.T, s *Store) string {
 	t.Helper()
+	mustCreateUser(t, s, "user-1")
 	n := &NotificationRecord{UserID: "user-1", EventType: "alert.created", Title: "Disk full"}
 	if err := s.CreateNotification(ctx, n); err != nil {
 		t.Fatalf("CreateNotification() error: %v", err)

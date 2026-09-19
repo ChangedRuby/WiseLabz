@@ -35,7 +35,7 @@ func (s *Store) CreateNotification(ctx context.Context, n *NotificationRecord) e
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO in_app_notifications (id, user_id, alert_id, event_type, title, message, read, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, n.ID, n.UserID, nilToStr(n.AlertID), n.EventType, n.Title, n.Message, n.Read, n.CreatedAt)
+	`, n.ID, n.UserID, nilToStr(n.AlertID), n.EventType, n.Title, n.Message, boolToInt(n.Read), n.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}

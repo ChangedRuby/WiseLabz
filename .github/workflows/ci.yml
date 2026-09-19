@@ -230,11 +230,59 @@ jobs:
         run: go test -race ./internal/ws/... ./internal/notifications/... ./internal/sync/... ./internal/api/connectors/...
         working-directory: backend
 
+  test-backend-postgres:
+    name: Test (Backend, Postgres)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wiselabz
+          POSTGRES_PASSWORD: wiselabz
+          POSTGRES_DB: wiselabz
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wiselabz"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Run store tests and migration parity against Postgres
+        run: go test -p 1 ./internal/store/...
+        working-directory: backend
+        env:
+          WISELABZ_TEST_POSTGRES_DSN: postgres://wiselabz:wiselabz@localhost:5432/wiselabz?sslmode=disable
+
+      - name: Verify migrate up/status/verify on Postgres
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate verify
+        working-directory: backend
+        env:
+          WISELABZ_DB_DRIVER: postgres
+          WISELABZ_DB_DSN: postgres://wiselabz:wiselabz@localhost:5432/wiselabz?sslmode=disable
+
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race]
+    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race, test-backend-postgres]
     if: |
       always() &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') &&
@@ -301,7 +349,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race, build, compose-smoke]
+    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race, test-backend-postgres, build, compose-smoke]
     if: always()
     timeout-minutes: 2
 
