@@ -686,6 +686,7 @@ func (h *Handler) GetDecryptedAPIKey() string {
 	if err != nil {
 		// Legacy path: the row may predate WISELABZ_ENCRYPTION_KEY, when the
 		// key was derived from the JWT signing secret instead.
+		//lint:ignore SA1019 intentional legacy fallback for rows encrypted before WISELABZ_ENCRYPTION_KEY
 		legacyKey := crypto.DeriveKey(h.Config.Auth.Secret) //nolint:staticcheck // intentional legacy fallback for rows encrypted before WISELABZ_ENCRYPTION_KEY
 		plaintext, err = crypto.Decrypt(encrypted, legacyKey)
 		if err != nil {

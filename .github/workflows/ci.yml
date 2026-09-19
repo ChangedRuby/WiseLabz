@@ -83,6 +83,56 @@ jobs:
           working-directory: backend
           args: --timeout=3m
 
+  staticcheck:
+    name: Staticcheck (Backend)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      # internal/web/dist/index.html is committed as an embed placeholder, so
+      # vet/staticcheck work on a clean checkout without a built frontend.
+      - name: Run go vet
+        run: go vet ./...
+        working-directory: backend
+
+      - name: Run staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+        working-directory: backend
+
+  govulncheck:
+    name: Govulncheck (Backend)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        working-directory: backend
+
   lint-frontend:
     name: Lint (Frontend)
     runs-on: ubuntu-latest
