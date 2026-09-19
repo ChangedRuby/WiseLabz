@@ -25,12 +25,25 @@ func OpenDB(driver, dsn string) (*sql.DB, error) {
 	sqlDriver := driver
 	if driver == "postgres" {
 		sqlDriver = "pgx"
-	} else if !strings.Contains(dsn, "_pragma=foreign_keys") {
-		separator := "?"
-		if strings.Contains(dsn, "?") {
-			separator = "&"
+	} else {
+		// WAL lets external readers (backup copy, sqlite3 CLI) coexist with
+		// the writer; busy_timeout makes contention wait instead of failing
+		// with SQLITE_BUSY.
+		for _, p := range []struct{ name, value string }{
+			{"foreign_keys", "1"},
+			{"journal_mode", "WAL"},
+			{"busy_timeout", "5000"},
+			{"synchronous", "NORMAL"},
+		} {
+			if strings.Contains(dsn, "_pragma="+p.name) {
+				continue
+			}
+			separator := "?"
+			if strings.Contains(dsn, "?") {
+				separator = "&"
+			}
+			dsn += separator + "_pragma=" + p.name + "(" + p.value + ")"
 		}
-		dsn += separator + "_pragma=foreign_keys(1)"
 	}
 
 	db, err := sql.Open(sqlDriver, dsn)

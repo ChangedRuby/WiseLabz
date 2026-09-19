@@ -48,3 +48,23 @@ func TestWithinTransactionRollsBack(t *testing.T) {
 		t.Fatalf("template after rollback = %#v", got)
 	}
 }
+
+func TestOpenDBSetsSQLiteDurabilityPragmas(t *testing.T) {
+	db, err := OpenDB("sqlite", "file:"+filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB() error: %v", err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	var mode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
+		t.Fatalf("journal_mode = %q, %v, want wal", mode, err)
+	}
+	var timeout, sync int
+	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil || timeout != 5000 {
+		t.Fatalf("busy_timeout = %d, %v, want 5000", timeout, err)
+	}
+	if err := db.QueryRow("PRAGMA synchronous").Scan(&sync); err != nil || sync != 1 {
+		t.Fatalf("synchronous = %d, %v, want 1 (NORMAL)", sync, err)
+	}
+}
