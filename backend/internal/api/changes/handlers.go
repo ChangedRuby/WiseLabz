@@ -491,12 +491,12 @@ const (
 	maxPromptDiffBytes    = 32 * 1024
 )
 
-// truncateUTF8 caps s at max bytes without splitting a rune.
-func truncateUTF8(s string, max int) string {
-	if len(s) <= max {
+// truncateUTF8 caps s at limit bytes without splitting a rune.
+func truncateUTF8(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	s = s[:max]
+	s = s[:limit]
 	for len(s) > 0 && !utf8.ValidString(s) {
 		s = s[:len(s)-1]
 	}
