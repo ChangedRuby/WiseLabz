@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +19,15 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
 		t.Errorf("X-Frame-Options = %q", got)
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "form-action 'self'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP %q missing %q", csp, want)
+		}
+	}
+	if strings.Contains(csp, "script-src 'self' 'unsafe") {
+		t.Errorf("CSP script-src must not allow unsafe sources: %q", csp)
 	}
 	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
 		t.Errorf("HSTS set on plain HTTP: %q", got)
