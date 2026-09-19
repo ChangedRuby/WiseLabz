@@ -36,6 +36,7 @@ import type {
   ElevationRequiredResponse,
   Error,
   ForbiddenResponse,
+  GetConnectorsConnectorIdPermissions200Item,
   GetConnectorsConnectorIdSyncsParams,
   HealthCheckResult,
   MaintenanceWindow,
@@ -50,6 +51,8 @@ import type {
   PostConnectorsConnectorIdStopParams,
   PostConnectorsConnectorIdSyncBody,
   PutConnectorsConnectorIdEnabledBody,
+  PutConnectorsConnectorIdPermissionsUserId200,
+  PutConnectorsConnectorIdPermissionsUserIdBody,
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
@@ -3958,6 +3961,543 @@ export function usePostSync<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getPostSyncQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary List per-connector access grants (instance-admin only)
+ */
+export const getConnectorsConnectorIdPermissions = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GetConnectorsConnectorIdPermissions200Item[]>(
+    { url: `/connectors/${connectorId}/permissions`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdPermissionsQueryKey = (connectorId: string) => {
+  return [`/connectors/${connectorId}/permissions`] as const;
+};
+
+export const getGetConnectorsConnectorIdPermissionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetConnectorsConnectorIdPermissionsQueryKey(connectorId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>> = ({
+    signal,
+  }) => getConnectorsConnectorIdPermissions(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdPermissionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>
+>;
+export type GetConnectorsConnectorIdPermissionsQueryError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export function useGetConnectorsConnectorIdPermissions<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdPermissions<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdPermissions<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List per-connector access grants (instance-admin only)
+ */
+
+export function useGetConnectorsConnectorIdPermissions<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdPermissions>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdPermissionsQueryOptions(connectorId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Grant or change a user's role on a connector (instance-admin only)
+ */
+export const putConnectorsConnectorIdPermissionsUserId = (
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<PutConnectorsConnectorIdPermissionsUserId200>(
+    {
+      url: `/connectors/${connectorId}/permissions/${userId}`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: putConnectorsConnectorIdPermissionsUserIdBody,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPutConnectorsConnectorIdPermissionsUserIdQueryKey = (
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody?: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>
+) => {
+  return [
+    'PUT',
+    `/connectors/${connectorId}/permissions/${userId}`,
+    putConnectorsConnectorIdPermissionsUserIdBody,
+  ] as const;
+};
+
+export const getPutConnectorsConnectorIdPermissionsUserIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getPutConnectorsConnectorIdPermissionsUserIdQueryKey(
+      connectorId,
+      userId,
+      putConnectorsConnectorIdPermissionsUserIdBody
+    );
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>
+  > = ({ signal }) =>
+    putConnectorsConnectorIdPermissionsUserId(
+      connectorId,
+      userId,
+      putConnectorsConnectorIdPermissionsUserIdBody,
+      requestOptions,
+      signal
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      connectorId !== null && connectorId !== undefined && userId !== null && userId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PutConnectorsConnectorIdPermissionsUserIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>
+>;
+export type PutConnectorsConnectorIdPermissionsUserIdQueryError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+export function usePutConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+          TError,
+          Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+          TError,
+          Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePutConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Grant or change a user's role on a connector (instance-admin only)
+ */
+
+export function usePutConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  putConnectorsConnectorIdPermissionsUserIdBody: BodyType<PutConnectorsConnectorIdPermissionsUserIdBody>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof putConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPutConnectorsConnectorIdPermissionsUserIdQueryOptions(
+    connectorId,
+    userId,
+    putConnectorsConnectorIdPermissionsUserIdBody,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Revoke a user's grant on a connector (instance-admin only)
+ */
+export const deleteConnectorsConnectorIdPermissionsUserId = (
+  connectorId: string,
+  userId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<void>(
+    { url: `/connectors/${connectorId}/permissions/${userId}`, method: 'DELETE', signal },
+    options
+  );
+};
+
+export const getDeleteConnectorsConnectorIdPermissionsUserIdQueryKey = (
+  connectorId: string,
+  userId: string
+) => {
+  return ['DELETE', `/connectors/${connectorId}/permissions/${userId}`] as const;
+};
+
+export const getDeleteConnectorsConnectorIdPermissionsUserIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getDeleteConnectorsConnectorIdPermissionsUserIdQueryKey(connectorId, userId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>
+  > = ({ signal }) =>
+    deleteConnectorsConnectorIdPermissionsUserId(connectorId, userId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      connectorId !== null && connectorId !== undefined && userId !== null && userId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type DeleteConnectorsConnectorIdPermissionsUserIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>
+>;
+export type DeleteConnectorsConnectorIdPermissionsUserIdQueryError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export function useDeleteConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Revoke a user's grant on a connector (instance-admin only)
+ */
+
+export function useDeleteConnectorsConnectorIdPermissionsUserId<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  userId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdPermissionsUserId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getDeleteConnectorsConnectorIdPermissionsUserIdQueryOptions(
+    connectorId,
+    userId,
+    options
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

@@ -40,19 +40,22 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// sharePathPrefix is the unauthenticated share-link route; the segment after it
+// sharePathPrefixes are the unauthenticated share-link route; the segment after it
 // is a bearer token and must never reach the logs.
-const sharePathPrefix = "/api/share/"
+var sharePathPrefixes = []string{"/api/v1/share/", "/api/share/"}
 
 // loggablePath returns the request path with secrets masked: the share-link
 // token segment is replaced by a placeholder, keeping the rest of the route.
 func loggablePath(r *http.Request) string {
 	p := r.URL.Path
-	if rest, ok := strings.CutPrefix(p, sharePathPrefix); ok {
-		_, tail, _ := strings.Cut(rest, "/")
-		p = sharePathPrefix + "{token}"
-		if tail != "" {
-			p += "/" + tail
+	for _, prefix := range sharePathPrefixes {
+		if rest, ok := strings.CutPrefix(p, prefix); ok {
+			_, tail, _ := strings.Cut(rest, "/")
+			p = prefix + "{token}"
+			if tail != "" {
+				p += "/" + tail
+			}
+			break
 		}
 	}
 	return logsafe.Sanitize(p)

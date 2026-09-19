@@ -22,6 +22,7 @@ import type {
   BackupSchedule,
   DiagnosticsBundle,
   Health,
+  PostWsTicket200,
   RetentionSettings,
   SystemInfo,
 } from '../../model';
@@ -539,6 +540,13 @@ export const getGetHealthResponseMock = (
   ...overrideResponse,
 });
 
+export const getPostWsTicketResponseMock = (
+  overrideResponse: Partial<Extract<PostWsTicket200, object>> = {}
+): PostWsTicket200 => ({
+  ticket: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  ...overrideResponse,
+});
+
 export const getGetSystemInfoMockHandler = (
   overrideResponse?:
     | SystemInfo
@@ -844,6 +852,30 @@ export const getGetHealthMockHandler = (
     options
   );
 };
+
+export const getPostWsTicketMockHandler = (
+  overrideResponse?:
+    | PostWsTicket200
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<PostWsTicket200> | PostWsTicket200),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/ws/ticket',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostWsTicketResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
 export const getSystemMock = () => [
   getGetSystemInfoMockHandler(),
   getGetSystemAuditMockHandler(),
@@ -858,4 +890,5 @@ export const getSystemMock = () => [
   getPostSystemBackupRunMockHandler(),
   getGetSystemDiagnosticsMockHandler(),
   getGetHealthMockHandler(),
+  getPostWsTicketMockHandler(),
 ];

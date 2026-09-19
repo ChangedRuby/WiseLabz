@@ -20,8 +20,10 @@ import type {
   ConnectorBulkSyncResponse,
   ConnectorTypeSchema,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
+  GetConnectorsConnectorIdPermissions200Item,
   HealthCheckResult,
   MaintenanceWindow,
+  PutConnectorsConnectorIdPermissionsUserId200,
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
@@ -675,6 +677,13 @@ export const getPostSyncResponseMock = (
   ...overrideResponse,
 });
 
+export const getGetConnectorsConnectorIdPermissionsResponseMock =
+  (): GetConnectorsConnectorIdPermissions200Item[] =>
+    Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({}));
+
+export const getPutConnectorsConnectorIdPermissionsUserIdResponseMock =
+  (): PutConnectorsConnectorIdPermissionsUserId200 => ({});
+
 export const getGetConnectorsMockHandler = (
   overrideResponse?:
     | Connector[]
@@ -1278,6 +1287,77 @@ export const getPostSyncMockHandler = (
     options
   );
 };
+
+export const getGetConnectorsConnectorIdPermissionsMockHandler = (
+  overrideResponse?:
+    | GetConnectorsConnectorIdPermissions200Item[]
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) =>
+        | Promise<GetConnectorsConnectorIdPermissions200Item[]>
+        | GetConnectorsConnectorIdPermissions200Item[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/connectors/:connectorId/permissions',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetConnectorsConnectorIdPermissionsResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPutConnectorsConnectorIdPermissionsUserIdMockHandler = (
+  overrideResponse?:
+    | PutConnectorsConnectorIdPermissionsUserId200
+    | ((
+        info: Parameters<Parameters<typeof http.put>[1]>[0]
+      ) =>
+        | Promise<PutConnectorsConnectorIdPermissionsUserId200>
+        | PutConnectorsConnectorIdPermissionsUserId200),
+  options?: RequestHandlerOptions
+) => {
+  return http.put(
+    '*/connectors/:connectorId/permissions/:userId',
+    async (info: Parameters<Parameters<typeof http.put>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPutConnectorsConnectorIdPermissionsUserIdResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getDeleteConnectorsConnectorIdPermissionsUserIdMockHandler = (
+  overrideResponse?:
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+  options?: RequestHandlerOptions
+) => {
+  return http.delete(
+    '*/connectors/:connectorId/permissions/:userId',
+    async (info: Parameters<Parameters<typeof http.delete>[1]>[0]) => {
+      if (typeof overrideResponse === 'function') {
+        await overrideResponse(info);
+      }
+
+      return new HttpResponse(null, { status: 204 });
+    },
+    options
+  );
+};
 export const getConnectorsMock = () => [
   getGetConnectorsMockHandler(),
   getPostConnectorsMockHandler(),
@@ -1305,4 +1385,7 @@ export const getConnectorsMock = () => [
   getDeleteConnectorsConnectorIdMaintenanceWindowMockHandler(),
   getGetConnectorsMaintenanceWindowsMockHandler(),
   getPostSyncMockHandler(),
+  getGetConnectorsConnectorIdPermissionsMockHandler(),
+  getPutConnectorsConnectorIdPermissionsUserIdMockHandler(),
+  getDeleteConnectorsConnectorIdPermissionsUserIdMockHandler(),
 ];

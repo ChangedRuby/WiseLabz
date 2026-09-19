@@ -20,6 +20,10 @@ import type {
   DocVersion,
   DocVersionMeta,
   GenerateResult,
+  GetDocsShareLinks200Item,
+  GetShareTokenDocsDocId200,
+  GetShareTokenTree200,
+  PostDocsShareLinks201,
   TemplateSchema,
 } from '../../model';
 
@@ -246,6 +250,15 @@ export const getPostDocsTopologyResponseMock = (
   content: faker.string.alpha({ length: { min: 10, max: 20 } }),
   ...overrideResponse,
 });
+
+export const getGetDocsShareLinksResponseMock = (): GetDocsShareLinks200Item[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({}));
+
+export const getPostDocsShareLinksResponseMock = (): PostDocsShareLinks201 => ({});
+
+export const getGetShareTokenTreeResponseMock = (): GetShareTokenTree200 => ({});
+
+export const getGetShareTokenDocsDocIdResponseMock = (): GetShareTokenDocsDocId200 => ({});
 
 export const getGetDocsMockHandler = (
   overrideResponse?:
@@ -583,6 +596,121 @@ export const getPostDocsTopologyMockHandler = (
     options
   );
 };
+
+export const getGetDocsShareLinksMockHandler = (
+  overrideResponse?:
+    | GetDocsShareLinks200Item[]
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<GetDocsShareLinks200Item[]> | GetDocsShareLinks200Item[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/docs/share-links',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetDocsShareLinksResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPostDocsShareLinksMockHandler = (
+  overrideResponse?:
+    | PostDocsShareLinks201
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<PostDocsShareLinks201> | PostDocsShareLinks201),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/docs/share-links',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostDocsShareLinksResponseMock(),
+        { status: 201 }
+      );
+    },
+    options
+  );
+};
+
+export const getDeleteDocsShareLinksIdMockHandler = (
+  overrideResponse?:
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+  options?: RequestHandlerOptions
+) => {
+  return http.delete(
+    '*/docs/share-links/:id',
+    async (info: Parameters<Parameters<typeof http.delete>[1]>[0]) => {
+      if (typeof overrideResponse === 'function') {
+        await overrideResponse(info);
+      }
+
+      return new HttpResponse(null, { status: 204 });
+    },
+    options
+  );
+};
+
+export const getGetShareTokenTreeMockHandler = (
+  overrideResponse?:
+    | GetShareTokenTree200
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<GetShareTokenTree200> | GetShareTokenTree200),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/share/:token/tree',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetShareTokenTreeResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getGetShareTokenDocsDocIdMockHandler = (
+  overrideResponse?:
+    | GetShareTokenDocsDocId200
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<GetShareTokenDocsDocId200> | GetShareTokenDocsDocId200),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/share/:token/docs/:docId',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetShareTokenDocsDocIdResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
 export const getDocsMock = () => [
   getGetDocsMockHandler(),
   getGetDocsTreeMockHandler(),
@@ -599,4 +727,9 @@ export const getDocsMock = () => [
   getGetDocsTemplateSchemaMockHandler(),
   getPostDocsGenerateMockHandler(),
   getPostDocsTopologyMockHandler(),
+  getGetDocsShareLinksMockHandler(),
+  getPostDocsShareLinksMockHandler(),
+  getDeleteDocsShareLinksIdMockHandler(),
+  getGetShareTokenTreeMockHandler(),
+  getGetShareTokenDocsDocIdMockHandler(),
 ];

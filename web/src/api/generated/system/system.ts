@@ -34,8 +34,10 @@ import type {
   GetSystemAuditParams,
   GetSystemBackupRunsParams,
   Health,
+  PostWsTicket200,
   RetentionSettings,
   SystemInfo,
+  UnauthorizedResponse,
 } from '../../model';
 
 import { customInstance } from '../../axios-instance';
@@ -1660,6 +1662,114 @@ export function useGetHealth<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetHealthQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md).
+ * @summary Mint a one-time WebSocket ticket for the authenticated caller
+ */
+export const postWsTicket = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<PostWsTicket200>({ url: `/ws/ticket`, method: 'POST', signal }, options);
+};
+
+export const getPostWsTicketQueryKey = () => {
+  return ['POST', `/ws/ticket`] as const;
+};
+
+export const getPostWsTicketQueryOptions = <
+  TData = Awaited<ReturnType<typeof postWsTicket>>,
+  TError = ErrorType<UnauthorizedResponse>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPostWsTicketQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postWsTicket>>> = ({ signal }) =>
+    postWsTicket(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postWsTicket>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostWsTicketQueryResult = NonNullable<Awaited<ReturnType<typeof postWsTicket>>>;
+export type PostWsTicketQueryError = ErrorType<UnauthorizedResponse>;
+
+export function usePostWsTicket<
+  TData = Awaited<ReturnType<typeof postWsTicket>>,
+  TError = ErrorType<UnauthorizedResponse>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postWsTicket>>,
+          TError,
+          Awaited<ReturnType<typeof postWsTicket>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostWsTicket<
+  TData = Awaited<ReturnType<typeof postWsTicket>>,
+  TError = ErrorType<UnauthorizedResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postWsTicket>>,
+          TError,
+          Awaited<ReturnType<typeof postWsTicket>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostWsTicket<
+  TData = Awaited<ReturnType<typeof postWsTicket>>,
+  TError = ErrorType<UnauthorizedResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Mint a one-time WebSocket ticket for the authenticated caller
+ */
+
+export function usePostWsTicket<
+  TData = Awaited<ReturnType<typeof postWsTicket>>,
+  TError = ErrorType<UnauthorizedResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostWsTicketQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

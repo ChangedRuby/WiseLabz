@@ -10,6 +10,10 @@ info:
 servers:
   - url: /api
     description: Same-origin API (Vite proxies /api to the Go backend in dev)
+  - url: /api/v1
+    description: >
+      Versioned alias of the same API. Every path is served identically under
+      /api and /api/v1; /api is kept for existing clients.
 
 tags:
   - name: auth
@@ -2436,6 +2440,145 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+
+  /connectors/{connectorId}/permissions:
+    get:
+      tags: [connectors]
+      summary: List per-connector access grants (instance-admin only)
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /connectors/{connectorId}/permissions/{userId}:
+    put:
+      tags: [connectors]
+      summary: Grant or change a user's role on a connector (instance-admin only)
+      parameters:
+        - { $ref: '#/components/parameters/ConnectorId' }
+        - { $ref: '#/components/parameters/UserId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [viewer, operator] }
+      responses:
+        '200':
+          description: The resulting grant
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [connectors]
+      summary: Revoke a user's grant on a connector (instance-admin only)
+      parameters:
+        - { $ref: '#/components/parameters/ConnectorId' }
+        - { $ref: '#/components/parameters/UserId' }
+      responses:
+        '204': { description: Revoked }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /docs/share-links:
+    get:
+      tags: [docs]
+      summary: List the caller's read-only doc share links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      tags: [docs]
+      summary: Create a read-only share link for a doc or doc subtree
+      description: The response carries the raw token once; only its hash is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [docTreeRoot, expiresAt]
+              properties:
+                docTreeRoot: { type: string }
+                expiresAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /docs/share-links/{id}:
+    delete:
+      tags: [docs]
+      summary: Revoke a share link (creator or instance admin)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Revoked }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /share/{token}/tree:
+    get:
+      tags: [docs]
+      summary: Doc tree visible through a share link (unauthenticated)
+      security: []
+      parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Share link revoked or expired }
+  /share/{token}/docs/{docId}:
+    get:
+      tags: [docs]
+      summary: A doc visible through a share link (unauthenticated, read-only)
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/DocId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Share link revoked or expired }
+
+  /ws/ticket:
+    post:
+      tags: [system]
+      summary: Mint a one-time WebSocket ticket for the authenticated caller
+      description: Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket]
+                properties:
+                  ticket: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
 components:
   securitySchemes:

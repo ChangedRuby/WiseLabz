@@ -17,6 +17,10 @@ import type {
   DocVersion,
   DocVersionMeta,
   GenerateResult,
+  GetDocsShareLinks200Item,
+  GetShareTokenDocsDocId200,
+  GetShareTokenTree200,
+  PostDocsShareLinks201,
   TemplateSchema,
 } from '../../model';
 
@@ -243,3 +247,12 @@ export const getPostDocsTopologyResponseMock = (
   content: faker.string.alpha({ length: { min: 10, max: 20 } }),
   ...overrideResponse,
 });
+
+export const getGetDocsShareLinksResponseMock = (): GetDocsShareLinks200Item[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({}));
+
+export const getPostDocsShareLinksResponseMock = (): PostDocsShareLinks201 => ({});
+
+export const getGetShareTokenTreeResponseMock = (): GetShareTokenTree200 => ({});
+
+export const getGetShareTokenDocsDocIdResponseMock = (): GetShareTokenDocsDocId200 => ({});

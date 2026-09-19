@@ -17,8 +17,10 @@ import type {
   ConnectorBulkSyncResponse,
   ConnectorTypeSchema,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
+  GetConnectorsConnectorIdPermissions200Item,
   HealthCheckResult,
   MaintenanceWindow,
+  PutConnectorsConnectorIdPermissionsUserId200,
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
@@ -671,3 +673,10 @@ export const getPostSyncResponseMock = (
   ]),
   ...overrideResponse,
 });
+
+export const getGetConnectorsConnectorIdPermissionsResponseMock =
+  (): GetConnectorsConnectorIdPermissions200Item[] =>
+    Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({}));
+
+export const getPutConnectorsConnectorIdPermissionsUserIdResponseMock =
+  (): PutConnectorsConnectorIdPermissionsUserId200 => ({});

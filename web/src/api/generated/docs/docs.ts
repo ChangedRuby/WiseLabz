@@ -22,6 +22,7 @@ import type {
 import type {
   AiSuggestRef,
   AiSuggestRequest,
+  BadRequestResponse,
   Doc,
   DocLock,
   DocNode,
@@ -33,8 +34,13 @@ import type {
   ForbiddenResponse,
   GenerateResult,
   GetDocsParams,
+  GetDocsShareLinks200Item,
+  GetShareTokenDocsDocId200,
+  GetShareTokenTree200,
   NotFoundResponse,
   PostDocsGenerateBody,
+  PostDocsShareLinks201,
+  PostDocsShareLinksBody,
   TemplateSchema,
 } from '../../model';
 
@@ -1949,6 +1955,646 @@ export function usePostDocsTopology<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getPostDocsTopologyQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary List the caller's read-only doc share links
+ */
+export const getDocsShareLinks = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GetDocsShareLinks200Item[]>(
+    { url: `/docs/share-links`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetDocsShareLinksQueryKey = () => {
+  return [`/docs/share-links`] as const;
+};
+
+export const getGetDocsShareLinksQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDocsShareLinks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDocsShareLinks>>, TError, TData>>;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDocsShareLinksQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDocsShareLinks>>> = ({ signal }) =>
+    getDocsShareLinks(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDocsShareLinks>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetDocsShareLinksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDocsShareLinks>>
+>;
+export type GetDocsShareLinksQueryError = ErrorType<unknown>;
+
+export function useGetDocsShareLinks<
+  TData = Awaited<ReturnType<typeof getDocsShareLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDocsShareLinks>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDocsShareLinks>>,
+          TError,
+          Awaited<ReturnType<typeof getDocsShareLinks>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetDocsShareLinks<
+  TData = Awaited<ReturnType<typeof getDocsShareLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDocsShareLinks>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDocsShareLinks>>,
+          TError,
+          Awaited<ReturnType<typeof getDocsShareLinks>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetDocsShareLinks<
+  TData = Awaited<ReturnType<typeof getDocsShareLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDocsShareLinks>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List the caller's read-only doc share links
+ */
+
+export function useGetDocsShareLinks<
+  TData = Awaited<ReturnType<typeof getDocsShareLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDocsShareLinks>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetDocsShareLinksQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * The response carries the raw token once; only its hash is stored.
+ * @summary Create a read-only share link for a doc or doc subtree
+ */
+export const postDocsShareLinks = (
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<PostDocsShareLinks201>(
+    {
+      url: `/docs/share-links`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: postDocsShareLinksBody,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostDocsShareLinksQueryKey = (
+  postDocsShareLinksBody?: BodyType<PostDocsShareLinksBody>
+) => {
+  return ['POST', `/docs/share-links`, postDocsShareLinksBody] as const;
+};
+
+export const getPostDocsShareLinksQueryOptions = <
+  TData = Awaited<ReturnType<typeof postDocsShareLinks>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsShareLinks>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPostDocsShareLinksQueryKey(postDocsShareLinksBody);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof postDocsShareLinks>>> = ({ signal }) =>
+    postDocsShareLinks(postDocsShareLinksBody, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof postDocsShareLinks>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostDocsShareLinksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postDocsShareLinks>>
+>;
+export type PostDocsShareLinksQueryError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+export function usePostDocsShareLinks<
+  TData = Awaited<ReturnType<typeof postDocsShareLinks>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsShareLinks>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postDocsShareLinks>>,
+          TError,
+          Awaited<ReturnType<typeof postDocsShareLinks>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostDocsShareLinks<
+  TData = Awaited<ReturnType<typeof postDocsShareLinks>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof postDocsShareLinks>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postDocsShareLinks>>,
+          TError,
+          Awaited<ReturnType<typeof postDocsShareLinks>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostDocsShareLinks<
+  TData = Awaited<ReturnType<typeof postDocsShareLinks>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsShareLinks>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Create a read-only share link for a doc or doc subtree
+ */
+
+export function usePostDocsShareLinks<
+  TData = Awaited<ReturnType<typeof postDocsShareLinks>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  postDocsShareLinksBody: BodyType<PostDocsShareLinksBody>,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postDocsShareLinks>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostDocsShareLinksQueryOptions(postDocsShareLinksBody, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Revoke a share link (creator or instance admin)
+ */
+export const deleteDocsShareLinksId = (
+  id: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<void>(
+    { url: `/docs/share-links/${id}`, method: 'DELETE', signal },
+    options
+  );
+};
+
+export const getDeleteDocsShareLinksIdQueryKey = (id: string) => {
+  return ['DELETE', `/docs/share-links/${id}`] as const;
+};
+
+export const getDeleteDocsShareLinksIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getDeleteDocsShareLinksIdQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof deleteDocsShareLinksId>>> = ({ signal }) =>
+    deleteDocsShareLinksId(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type DeleteDocsShareLinksIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDocsShareLinksId>>
+>;
+export type DeleteDocsShareLinksIdQueryError = ErrorType<NotFoundResponse>;
+
+export function useDeleteDocsShareLinksId<
+  TData = Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteDocsShareLinksId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteDocsShareLinksId<
+  TData = Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+          TError,
+          Awaited<ReturnType<typeof deleteDocsShareLinksId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteDocsShareLinksId<
+  TData = Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Revoke a share link (creator or instance admin)
+ */
+
+export function useDeleteDocsShareLinksId<
+  TData = Awaited<ReturnType<typeof deleteDocsShareLinksId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof deleteDocsShareLinksId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getDeleteDocsShareLinksIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Doc tree visible through a share link (unauthenticated)
+ */
+export const getShareTokenTree = (
+  token: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GetShareTokenTree200>(
+    { url: `/share/${token}/tree`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetShareTokenTreeQueryKey = (token: string) => {
+  return [`/share/${token}/tree`] as const;
+};
+
+export const getGetShareTokenTreeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShareTokenTree>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetShareTokenTreeQueryKey(token);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getShareTokenTree>>> = ({ signal }) =>
+    getShareTokenTree(token, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: token !== null && token !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetShareTokenTreeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShareTokenTree>>
+>;
+export type GetShareTokenTreeQueryError = ErrorType<NotFoundResponse | void>;
+
+export function useGetShareTokenTree<
+  TData = Awaited<ReturnType<typeof getShareTokenTree>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getShareTokenTree>>,
+          TError,
+          Awaited<ReturnType<typeof getShareTokenTree>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetShareTokenTree<
+  TData = Awaited<ReturnType<typeof getShareTokenTree>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getShareTokenTree>>,
+          TError,
+          Awaited<ReturnType<typeof getShareTokenTree>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetShareTokenTree<
+  TData = Awaited<ReturnType<typeof getShareTokenTree>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Doc tree visible through a share link (unauthenticated)
+ */
+
+export function useGetShareTokenTree<
+  TData = Awaited<ReturnType<typeof getShareTokenTree>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getShareTokenTree>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetShareTokenTreeQueryOptions(token, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary A doc visible through a share link (unauthenticated, read-only)
+ */
+export const getShareTokenDocsDocId = (
+  token: string,
+  docId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GetShareTokenDocsDocId200>(
+    { url: `/share/${token}/docs/${docId}`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetShareTokenDocsDocIdQueryKey = (token: string, docId: string) => {
+  return [`/share/${token}/docs/${docId}`] as const;
+};
+
+export const getGetShareTokenDocsDocIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  docId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetShareTokenDocsDocIdQueryKey(token, docId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getShareTokenDocsDocId>>> = ({ signal }) =>
+    getShareTokenDocsDocId(token, docId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: token !== null && token !== undefined && docId !== null && docId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetShareTokenDocsDocIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShareTokenDocsDocId>>
+>;
+export type GetShareTokenDocsDocIdQueryError = ErrorType<NotFoundResponse | void>;
+
+export function useGetShareTokenDocsDocId<
+  TData = Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  docId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+          TError,
+          Awaited<ReturnType<typeof getShareTokenDocsDocId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetShareTokenDocsDocId<
+  TData = Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  docId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+          TError,
+          Awaited<ReturnType<typeof getShareTokenDocsDocId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetShareTokenDocsDocId<
+  TData = Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  docId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary A doc visible through a share link (unauthenticated, read-only)
+ */
+
+export function useGetShareTokenDocsDocId<
+  TData = Awaited<ReturnType<typeof getShareTokenDocsDocId>>,
+  TError = ErrorType<NotFoundResponse | void>,
+>(
+  token: string,
+  docId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getShareTokenDocsDocId>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetShareTokenDocsDocIdQueryOptions(token, docId, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

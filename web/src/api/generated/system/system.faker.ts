@@ -19,6 +19,7 @@ import type {
   BackupSchedule,
   DiagnosticsBundle,
   Health,
+  PostWsTicket200,
   RetentionSettings,
   SystemInfo,
 } from '../../model';
@@ -533,5 +534,12 @@ export const getGetHealthResponseMock = (
       ]),
     })
   ),
+  ...overrideResponse,
+});
+
+export const getPostWsTicketResponseMock = (
+  overrideResponse: Partial<Extract<PostWsTicket200, object>> = {}
+): PostWsTicket200 => ({
+  ticket: faker.string.alpha({ length: { min: 10, max: 20 } }),
   ...overrideResponse,
 });
