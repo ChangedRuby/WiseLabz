@@ -390,6 +390,20 @@ func (s *Store) ListAlerts(ctx context.Context, serviceID, severity, status, sin
 	return paginatedQuery(ctx, s.db, "alerts", alertColumns, where, args, "created_at DESC", limit, offset, scanAlert)
 }
 
+// UnsnoozeExpiredAlerts moves every snoozed alert whose snoozed_until has
+// passed back to pending in one statement and returns how many changed.
+func (s *Store) UnsnoozeExpiredAlerts(ctx context.Context) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE alerts SET status = 'pending'
+		WHERE status = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?
+	`, now)
+	if err != nil {
+		return 0, fmt.Errorf("unsnooze expired alerts: %w", err)
+	}
+	return rowsAffected(res), nil
+}
+
 // GetExpiredSnoozedAlerts returns alerts where snoozed_until has passed.
 func (s *Store) GetExpiredSnoozedAlerts(ctx context.Context) ([]AlertRecord, error) {
 	now := time.Now().UTC().Format(time.RFC3339)

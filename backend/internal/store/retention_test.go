@@ -244,3 +244,44 @@ func TestDeleteOldAuditRecords(t *testing.T) {
 		t.Fatalf("DeleteOldAuditRecords() second call deleted %d rows, want 0", n)
 	}
 }
+
+func TestDeleteOldSnapshotsBatches(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+	connectorID := createTestConnector(ctx, t, s)
+
+	base := time.Now().UTC().AddDate(0, 0, -365)
+	total := retentionBatchSize*2 + 50
+	for i := 0; i < total; i++ {
+		ts := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339)
+		if err := s.CreateSnapshot(ctx, &SnapshotRecord{ConnectorID: connectorID, Data: "{}", FetchedAt: ts}); err != nil {
+			t.Fatalf("CreateSnapshot(%d) error: %v", i, err)
+		}
+	}
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339)
+	n, err := s.DeleteOldSnapshots(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("DeleteOldSnapshots() error: %v", err)
+	}
+	if want := int64(total - 1); n != want {
+		t.Fatalf("DeleteOldSnapshots() deleted %d rows, want %d (all but latest)", n, want)
+	}
+}
+
+func TestDeleteOldSnapshotsStopsOnCancelledContext(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.DeleteOldSnapshots(ctx, time.Now().UTC().Format(time.RFC3339)); err == nil {
+		t.Fatal("DeleteOldSnapshots() with cancelled ctx returned nil error")
+	}
+}
+
+func TestUnsnoozeExpiredAlerts(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+	if n, err := s.UnsnoozeExpiredAlerts(ctx); err != nil || n != 0 {
+		t.Fatalf("UnsnoozeExpiredAlerts() on empty table = %d, %v; want 0, nil", n, err)
+	}
+}

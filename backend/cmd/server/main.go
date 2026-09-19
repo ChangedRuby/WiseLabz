@@ -332,17 +332,11 @@ func runAlertExpirer(ctx context.Context, s *store.Store, _ *notifications.Dispa
 		case <-ctx.Done():
 			return
 		default:
-			alerts, err := s.GetExpiredSnoozedAlerts(ctx)
+			n, err := s.UnsnoozeExpiredAlerts(ctx)
 			if err != nil {
-				logger.Error("Failed to get expired snoozed alerts", "error", err)
-			}
-			for _, a := range alerts {
-				if err := s.UpdateAlertStatus(ctx, a.ID, "pending", ""); err != nil {
-					logger.Error("Failed to un-snooze alert", "error", err, "alert_id", a.ID)
-				}
-			}
-			if len(alerts) > 0 {
-				logger.Info("Un-snoozed expired alerts", "count", len(alerts))
+				logger.Error("Failed to un-snooze expired alerts", "error", err)
+			} else if n > 0 {
+				logger.Info("Un-snoozed expired alerts", "count", n)
 			}
 		}
 		// Check every 60 seconds

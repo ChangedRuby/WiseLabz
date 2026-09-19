@@ -749,11 +749,14 @@ func runDocLockSweep(ctx context.Context, s *Store, hub *ws.Hub, logger *slog.Lo
 		return
 	}
 
+	if len(expired) == 0 {
+		return
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM doc_locks WHERE expires_at <= ?`, now); err != nil {
+		logger.Error("doc lock sweep: delete", "error", err)
+		return
+	}
 	for _, l := range expired {
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM doc_locks WHERE doc_id = ? AND expires_at <= ?`, l.DocID, now); err != nil {
-			logger.Error("doc lock sweep: delete", "doc_id", l.DocID, "error", err)
-			continue
-		}
 		if hub != nil {
 			hub.Broadcast(ws.EventDocLockExpired, map[string]any{"docId": l.DocID, "userId": l.UserID})
 		}
