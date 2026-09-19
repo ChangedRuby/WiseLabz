@@ -40,57 +40,26 @@ func NewHandler(s *store.Store, e *sync.Engine, cfg *config.Config, jwtSvc *auth
 }
 
 // List handles GET /api/connectors. Default deny: only connectors the
-// caller holds at least a viewer grant on are returned.
+// caller holds at least a viewer grant on are returned. The grant filter is
+// applied in the paginated query so pages and X-Total-Count are accurate.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	_, pageSize, offset := httputil.Paginate(r)
 	category := r.URL.Query().Get("category")
 
-	var connectors []store.ConnectorRecord
-	var err error
-
-	if category != "" {
-		connectors, _, err = h.Store.ListConnectorsByCategory(r.Context(), category, offset, pageSize)
-	} else {
-		connectors, _, err = h.Store.ListConnectors(r.Context(), offset, pageSize)
-	}
+	rows, total, err := h.Store.ListConnectorsForUser(r.Context(), auth.UserIDFromContext(r.Context()), category, offset, pageSize)
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	out, err := h.withMyRole(r.Context(), connectors)
-	if err != nil {
-		httputil.Errorf(w, err)
-		return
+	out := make([]connectorWithRole, 0, len(rows))
+	for _, c := range rows {
+		out = append(out, connectorWithRole{ConnectorRecord: c.ConnectorRecord, MyRole: c.Role})
 	}
 
 	// Spec: GET /connectors returns a bare Connector[] (see openapi.yaml).
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	httputil.JSON(w, http.StatusOK, out)
-}
-
-// withMyRole filters connectors down to the ones the caller has at least a
-// viewer grant on (default deny) and annotates each with the caller's role,
-// so the frontend doesn't need an N+1 permissions lookup per connector.
-func (h *Handler) withMyRole(ctx context.Context, connectors []store.ConnectorRecord) ([]connectorWithRole, error) {
-	userID := auth.UserIDFromContext(ctx)
-	grants, err := h.Store.ListUserConnectorGrants(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list user connector grants: %w", err)
-	}
-	roleByConnector := make(map[string]string, len(grants))
-	for _, g := range grants {
-		roleByConnector[g.ConnectorID] = g.Role
-	}
-
-	out := make([]connectorWithRole, 0, len(connectors))
-	for _, c := range connectors {
-		role := roleByConnector[c.ID]
-		if role == "" {
-			continue
-		}
-		out = append(out, connectorWithRole{ConnectorRecord: c, MyRole: role})
-	}
-	return out, nil
 }
 
 // connectorWithRole embeds a connector record with the requesting user's

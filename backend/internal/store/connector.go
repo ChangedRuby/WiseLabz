@@ -341,6 +341,56 @@ func (s *Store) ListConnectorsByCategory(ctx context.Context, category string, o
 	return paginatedQuery(ctx, s.db, "connectors", connectorColumns, "WHERE category = ?", []any{category}, "created_at DESC", limit, offset, scanConnector)
 }
 
+// ConnectorWithRole is a connector annotated with the requesting user's role.
+type ConnectorWithRole struct {
+	ConnectorRecord
+	Role string
+}
+
+// connectorListColumns is connectorColumns qualified for the grant join, with
+// config_data blanked: list views never need the (encrypted) credentials.
+var connectorListColumns = func() string {
+	cols := strings.Split(connectorColumns, ",")
+	for i, c := range cols {
+		c = strings.TrimSpace(c)
+		if c == "config_data" {
+			cols[i] = "'' AS config_data"
+		} else {
+			cols[i] = "c." + c
+		}
+	}
+	return strings.Join(cols, ", ") + ", r.role"
+}()
+
+// ListConnectorsForUser returns one page of the connectors the user holds a
+// grant on (optionally within a category), newest first, with the user's role
+// and the total number of visible connectors. ConfigData is left empty.
+func (s *Store) ListConnectorsForUser(ctx context.Context, userID, category string, offset, limit int) ([]ConnectorWithRole, int, error) {
+	where, args := "WHERE r.user_id = ?", []any{userID}
+	if category != "" {
+		where += " AND c.category = ?"
+		args = append(args, category)
+	}
+	return paginatedQuery(ctx, s.db, "connectors c JOIN user_connector_roles r ON r.connector_id = c.id",
+		connectorListColumns, where, args, "c.created_at DESC", limit, offset,
+		func(row rowScanner) (ConnectorWithRole, error) {
+			var out ConnectorWithRole
+			c, err := scanConnector(&roleScanner{row: row, role: &out.Role})
+			out.ConnectorRecord = c
+			return out, err
+		})
+}
+
+// roleScanner appends a trailing role column to a scanConnector scan.
+type roleScanner struct {
+	row  rowScanner
+	role *string
+}
+
+func (r *roleScanner) Scan(dest ...any) error {
+	return r.row.Scan(append(dest, r.role)...)
+}
+
 // ListAllConnectors returns all connectors (no pagination).
 func (s *Store) ListAllConnectors(ctx context.Context) ([]ConnectorRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+connectorColumns+`

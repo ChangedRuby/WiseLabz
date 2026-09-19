@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -643,4 +644,61 @@ func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
 			t.Fatalf("results = %+v, want one entry per connector in the batch", got.Results)
 		}
 	})
+}
+
+func TestConnectorsListPermissionPagination(t *testing.T) {
+	app := newTestApp(t)
+	userID, token := app.user(t, "viewer")
+	_, emptyToken := app.user(t, "operator")
+	for i := 0; i < 6; i++ {
+		category := "virtualization"
+		if i == 0 {
+			category = "networking"
+		}
+		c := &store.ConnectorRecord{ID: fmt.Sprintf("connector-%d", i), Name: "svc", Category: category, Type: "proxmox", URL: "https://example.com", ConfigData: `{"password":"secret"}`, CreatedAt: fmt.Sprintf("2026-01-01T00:00:0%dZ", i)}
+		if err := app.Store.CreateConnector(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			app.connectorGrant(t, userID, c.ID, "viewer")
+		}
+	}
+	for _, tt := range []struct {
+		name, query, token, total string
+		ids                       []string
+	}{
+		{"first", "?pageSize=2", token, "3", []string{"connector-4", "connector-2"}},
+		{"second", "?pageSize=2&page=2", token, "3", []string{"connector-0"}},
+		{"past end", "?pageSize=2&page=3", token, "3", []string{}},
+		{"category", "?category=virtualization&pageSize=1&page=2", token, "2", []string{"connector-2"}},
+		{"empty category", "?category=dns", token, "0", []string{}},
+		{"admin without grants", "?pageSize=2", emptyToken, "0", []string{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := app.req(t, http.MethodGet, "/api/connectors"+tt.query, nil, tt.token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body)
+			}
+			var got []struct {
+				store.ConnectorRecord
+				MyRole string `json:"myRole"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			ids := make([]string, 0, len(got))
+			for _, c := range got {
+				ids = append(ids, c.ID)
+				if c.MyRole != "viewer" || c.ConfigData != "" {
+					t.Errorf("role/config = %q/%q", c.MyRole, c.ConfigData)
+				}
+			}
+			if !reflect.DeepEqual(ids, tt.ids) {
+				t.Errorf("ids = %v, want %v", ids, tt.ids)
+			}
+			if total := rec.Header().Get("X-Total-Count"); total != tt.total {
+				t.Errorf("total = %q, want %q", total, tt.total)
+			}
+		})
+	}
 }
