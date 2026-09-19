@@ -167,6 +167,9 @@ func (d *Connector) Restart(ctx context.Context, _ map[string]any, entityRef str
 	if entityRef == "" {
 		return fmt.Errorf("docker restart requires a target container ID")
 	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 	return d.doPost(ctx, "/containers/"+entityRef+"/restart")
 }
 
@@ -177,6 +180,9 @@ func (d *Connector) Start(ctx context.Context, _ map[string]any, entityRef strin
 	if entityRef == "" {
 		return fmt.Errorf("docker start requires a target container ID")
 	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 	return d.doPost(ctx, "/containers/"+entityRef+"/start")
 }
 
@@ -184,6 +190,9 @@ func (d *Connector) Start(ctx context.Context, _ map[string]any, entityRef strin
 func (d *Connector) Stop(ctx context.Context, _ map[string]any, entityRef string) error {
 	if entityRef == "" {
 		return fmt.Errorf("docker stop requires a target container ID")
+	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
 	}
 	return d.doPost(ctx, "/containers/"+entityRef+"/stop")
 }
@@ -205,6 +214,9 @@ func (d *Connector) WritableFields() []connector.ConfigField {
 func (d *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
 	if entityRef == "" {
 		return fmt.Errorf("docker config-push requires a target container ID")
+	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
 	}
 	if fieldKey != "restartPolicy" {
 		return fmt.Errorf("unsupported field %q", fieldKey)
@@ -247,7 +259,7 @@ func (d *Connector) doPostBody(ctx context.Context, path string, body []byte) er
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -291,7 +303,7 @@ func (d *Connector) doRequest(ctx context.Context, path string) ([]byte, error) 
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -325,6 +337,9 @@ func newDockerClient(host string, config map[string]any) (*http.Client, string, 
 	switch {
 	case strings.HasPrefix(host, "unix://"):
 		socketPath := strings.TrimPrefix(host, "unix://")
+		if err := connector.ValidateUnixSocketPath(socketPath); err != nil {
+			return nil, "", err
+		}
 		transport := &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				var d net.Dialer
@@ -396,6 +411,7 @@ func buildDockerTLSConfig(config map[string]any) (*tls.Config, error) {
 		}
 	}
 	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
 		Certificates:       []tls.Certificate{cert},
 		InsecureSkipVerify: !verifyTLS,
 	}

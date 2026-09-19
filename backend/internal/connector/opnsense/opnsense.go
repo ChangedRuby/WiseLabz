@@ -45,7 +45,7 @@ func init() {
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				DialContext:     dialer.DialContext,
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
 			},
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -210,6 +210,9 @@ func (c *Connector) Restart(ctx context.Context, _ map[string]any, entityRef str
 	if entityRef == "" {
 		return fmt.Errorf("opnsense restart requires a target service name")
 	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 	raw, err := c.doRequest(ctx, "POST", "/api/core/service/restart/"+entityRef)
 	if err != nil {
 		return err
@@ -243,6 +246,9 @@ func (c *Connector) serviceAction(ctx context.Context, entityRef, action string)
 	if entityRef == "" {
 		return fmt.Errorf("opnsense %s requires a target service name", action)
 	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
+	}
 	raw, err := c.doRequest(ctx, "POST", "/api/core/service/"+action+"/"+entityRef)
 	if err != nil {
 		return err
@@ -271,6 +277,9 @@ func (c *Connector) WritableFields() []connector.ConfigField {
 func (c *Connector) ConfigPush(ctx context.Context, _ map[string]any, entityRef, fieldKey string, value any) error {
 	if entityRef == "" {
 		return fmt.Errorf("opnsense config-push requires a target rule UUID")
+	}
+	if err := connector.ValidateRefSegment(entityRef); err != nil {
+		return fmt.Errorf("invalid entityRef: %w", err)
 	}
 	if fieldKey != "enabled" {
 		return fmt.Errorf("unsupported field %q", fieldKey)
@@ -323,7 +332,7 @@ func (c *Connector) doRequestBody(ctx context.Context, method, path string, body
 		}
 	}()
 
-	data, err = io.ReadAll(resp.Body)
+	data, err = connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

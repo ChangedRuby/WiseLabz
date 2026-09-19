@@ -41,3 +41,16 @@ func TestCORSUnlistedOriginGetsNoHeaders(t *testing.T) {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty for unlisted origin", got)
 	}
 }
+
+func TestCORSPreflightDisallowedOriginForbidden(t *testing.T) {
+	h := CORS("https://app.example.com")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}

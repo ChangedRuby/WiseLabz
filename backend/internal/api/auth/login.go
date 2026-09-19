@@ -205,7 +205,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid password")
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid password: "+err.Error())
 		return
 	}
 

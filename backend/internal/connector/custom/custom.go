@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,7 +25,7 @@ func init() {
 		Fields: []connector.SchemaField{
 			{Key: "url", Label: "Endpoint URL", Type: "text", Required: true, Placeholder: "https://api.example.com/status"},
 			{Key: "method", Label: "HTTP Method", Type: "select", Required: false, Default: "GET"},
-			{Key: "headers", Label: "Headers (JSON)", Type: "text", Required: false, Placeholder: `{"Authorization": "Bearer token"}`},
+			{Key: "headers", Label: "Headers (JSON)", Type: "secret", Required: false, Placeholder: `{"Authorization": "Bearer token"}`},
 		},
 	}, func(_ map[string]any) (connector.Connector, error) {
 		return &Connector{client: newGuardedClient()}, nil
@@ -129,7 +128,7 @@ func (c *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := connector.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
