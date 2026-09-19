@@ -329,6 +329,25 @@ func (h *Handler) GetAIConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// encryptAIKey encrypts an AI provider API key with the instance encryption
+// key. On failure it logs (encryptLogMsg for the encrypt step), writes a 500
+// response and returns ok=false.
+func (h *Handler) encryptAIKey(w http.ResponseWriter, plaintext, encryptLogMsg string) (string, bool) {
+	key, err := crypto.DecodeKey(h.Config.Encryption.Key)
+	if err != nil {
+		slog.Error("Failed to load encryption key", "error", err)
+		httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+		return "", false
+	}
+	encrypted, err := crypto.Encrypt(plaintext, key)
+	if err != nil {
+		slog.Error(encryptLogMsg, "error", err)
+		httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+		return "", false
+	}
+	return encrypted, true
+}
+
 // UpdateAIConfig handles PUT /api/ai/config.
 func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 	req, ok := httputil.DecodeJSON[struct {
@@ -363,16 +382,8 @@ func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 		args = append(args, *req.Model)
 	}
 	if req.APIKey != nil {
-		key, err := crypto.DecodeKey(h.Config.Encryption.Key)
-		if err != nil {
-			slog.Error("Failed to load encryption key", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
-			return
-		}
-		encrypted, err := crypto.Encrypt(*req.APIKey, key)
-		if err != nil {
-			slog.Error("Failed to encrypt API key", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+		encrypted, ok := h.encryptAIKey(w, *req.APIKey, "Failed to encrypt API key")
+		if !ok {
 			return
 		}
 		parts = append(parts, "api_key_encrypted = ?")
@@ -395,16 +406,8 @@ func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 		args = append(args, *req.EmbedModel)
 	}
 	if req.EmbedAPIKey != nil {
-		key, err := crypto.DecodeKey(h.Config.Encryption.Key)
-		if err != nil {
-			slog.Error("Failed to load encryption key", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
-			return
-		}
-		encrypted, err := crypto.Encrypt(*req.EmbedAPIKey, key)
-		if err != nil {
-			slog.Error("Failed to encrypt embed API key", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "internal_error", "Failed to encrypt API key")
+		encrypted, ok := h.encryptAIKey(w, *req.EmbedAPIKey, "Failed to encrypt embed API key")
+		if !ok {
 			return
 		}
 		parts = append(parts, "embed_api_key_encrypted = ?")

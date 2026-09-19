@@ -2,6 +2,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -187,25 +188,31 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A role demotion or disable must take effect immediately, not just once
-	// the caller's still-valid access token expires.
+	h.revokeAfterUserUpdate(r.Context(), userID, updates)
+
+	user, _ := h.Store.GetUserByID(r.Context(), userID)
+	httputil.JSON(w, http.StatusOK, sanitizeUser(user))
+}
+
+// revokeAfterUserUpdate applies the credential fallout of a user update.
+// A role change or disable must take effect immediately, not just once the
+// caller's still-valid access token expires; a disable also revokes API keys.
+// Failures are logged, not returned.
+func (h *Handler) revokeAfterUserUpdate(ctx context.Context, userID string, updates map[string]any) {
 	if _, ok := updates["instance_admin_role"]; ok {
-		if err := h.Store.DeleteUserSessions(r.Context(), userID); err != nil {
+		if err := h.Store.DeleteUserSessions(ctx, userID); err != nil {
 			h.logError("failed to delete user sessions after role change", err)
 		}
 	} else if disabled, ok := updates["disabled"].(bool); ok && disabled {
-		if err := h.Store.DeleteUserSessions(r.Context(), userID); err != nil {
+		if err := h.Store.DeleteUserSessions(ctx, userID); err != nil {
 			h.logError("failed to delete user sessions after disable", err)
 		}
 	}
 	if disabled, ok := updates["disabled"].(bool); ok && disabled {
-		if err := h.Store.RevokeAllAPIKeysForUser(r.Context(), userID); err != nil {
+		if err := h.Store.RevokeAllAPIKeysForUser(ctx, userID); err != nil {
 			h.logError("failed to revoke api keys after disable", err)
 		}
 	}
-
-	user, _ := h.Store.GetUserByID(r.Context(), userID)
-	httputil.JSON(w, http.StatusOK, sanitizeUser(user))
 }
 
 // DeleteUser handles DELETE /api/users/{id}.
