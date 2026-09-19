@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -492,7 +493,7 @@ func dialSSHStdio(ctx context.Context, addr string, cfg *ssh.ClientConfig) (net.
 	// ssh.NewClientConn takes no ctx; closing the conn aborts a blocked handshake.
 	handshakeDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
-		_ = rawConn.Close()
+		closeQuietly("rawConn", rawConn)
 		close(handshakeDone)
 	})
 	if cfg.Timeout > 0 {
@@ -503,12 +504,12 @@ func dialSSHStdio(ctx context.Context, addr string, cfg *ssh.ClientConfig) (net.
 		// ctx fired; the AfterFunc closed the conn.
 		<-handshakeDone
 		if err == nil {
-			_ = sshConn.Close()
+			closeQuietly("sshConn", sshConn)
 		}
 		return nil, fmt.Errorf("ssh dial %q: %w", addr, ctx.Err())
 	}
 	if err != nil {
-		_ = rawConn.Close()
+		closeQuietly("rawConn", rawConn)
 		return nil, fmt.Errorf("ssh dial %q: %w", addr, err)
 	}
 	_ = rawConn.SetDeadline(time.Time{})
@@ -516,25 +517,25 @@ func dialSSHStdio(ctx context.Context, addr string, cfg *ssh.ClientConfig) (net.
 
 	session, err := sshClient.NewSession()
 	if err != nil {
-		_ = sshClient.Close()
+		closeQuietly("sshClient", sshClient)
 		return nil, fmt.Errorf("open ssh session: %w", err)
 	}
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		_ = session.Close()
-		_ = sshClient.Close()
+		closeQuietly("session", session)
+		closeQuietly("sshClient", sshClient)
 		return nil, fmt.Errorf("open ssh stdin pipe: %w", err)
 	}
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		_ = session.Close()
-		_ = sshClient.Close()
+		closeQuietly("session", session)
+		closeQuietly("sshClient", sshClient)
 		return nil, fmt.Errorf("open ssh stdout pipe: %w", err)
 	}
 	session.Stderr = io.Discard
 	if err := session.Start("docker system dial-stdio"); err != nil {
-		_ = session.Close()
-		_ = sshClient.Close()
+		closeQuietly("session", session)
+		closeQuietly("sshClient", sshClient)
 		return nil, fmt.Errorf("start docker system dial-stdio: %w", err)
 	}
 
@@ -767,4 +768,12 @@ func buildNetworkTable(raw []byte) string {
 		}
 	}
 	return b.String()
+}
+
+// closeQuietly closes c on a cleanup path where the caller is already
+// returning a more relevant error; a Close failure is logged at debug only.
+func closeQuietly(name string, c io.Closer) {
+	if err := c.Close(); err != nil {
+		slog.Debug("docker connector: close failed", "resource", name, "error", err)
+	}
 }

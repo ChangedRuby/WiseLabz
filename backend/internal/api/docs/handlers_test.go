@@ -483,3 +483,14 @@ func TestTemplateSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestAISuggestInvalidJSON(t *testing.T) {
+	h := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/docs/d1/ai-suggest", strings.NewReader("{not json"))
+	req.SetPathValue("id", "d1")
+	rr := httptest.NewRecorder()
+	h.AISuggest(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+}

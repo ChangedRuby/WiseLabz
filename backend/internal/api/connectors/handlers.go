@@ -1126,7 +1126,7 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 
 	jobID := uuid.New().String()
 	go func() {
-		if _, err := h.SyncEngine.RunSyncFields(context.Background(), id, jobID, req.Fields); err != nil {
+		if _, err := h.SyncEngine.RunSyncFields(h.SyncEngine.BaseContext(), id, jobID, req.Fields); err != nil {
 			slog.Error("sync failed", "connector", logsafe.Sanitize(id), "job", jobID, "error", logsafe.Sanitize(err.Error()))
 		}
 	}()
@@ -1149,7 +1149,7 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncAll(w http.ResponseWriter, r *http.Request) {
 	jobID := uuid.New().String()
 	go func() {
-		if _, err := h.SyncEngine.RunSyncAll(context.Background(), jobID); err != nil {
+		if _, err := h.SyncEngine.RunSyncAll(h.SyncEngine.BaseContext(), jobID); err != nil {
 			slog.Error("global sync failed", "job", jobID, "error", err)
 		}
 	}()
@@ -1377,7 +1377,7 @@ func (h *Handler) BulkSync(w http.ResponseWriter, r *http.Request) {
 	for _, id := range allowedIDs {
 		jobID := uuid.New().String()
 		go func(connectorID, jobID string) {
-			if _, err := h.SyncEngine.RunSyncFields(context.Background(), connectorID, jobID, nil); err != nil {
+			if _, err := h.SyncEngine.RunSyncFields(h.SyncEngine.BaseContext(), connectorID, jobID, nil); err != nil {
 				slog.Error("bulk sync failed", "connector", logsafe.Sanitize(connectorID), "job", jobID, "error", logsafe.Sanitize(err.Error()))
 			}
 		}(id, jobID)

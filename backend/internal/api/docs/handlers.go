@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -290,13 +292,15 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		if trigger == "" {
 			trigger = "manual"
 		}
-		_ = h.Store.CreateDocVersion(r.Context(), &store.DocVersionRecord{
+		if err := h.Store.CreateDocVersion(r.Context(), &store.DocVersionRecord{
 			DocID:   id,
 			Rev:     d.CurrentVersion,
 			Content: req.Content,
 			Author:  userID,
 			Trigger: trigger,
-		})
+		}); err != nil {
+			slog.Error("failed to record doc version", "docId", id, "rev", d.CurrentVersion, "error", err)
+		}
 	}
 
 	if d != nil {
@@ -603,6 +607,9 @@ func (h *Handler) TemplateSchema(w http.ResponseWriter, _ *http.Request) {
 	httputil.JSON(w, http.StatusOK, schema)
 }
 
+// aiSuggestTimeout bounds detached AI suggestion calls.
+const aiSuggestTimeout = 2 * time.Minute
+
 // AISuggest handles POST /api/docs/{id}/ai-suggest.
 // Batched (non-streaming) suggestion: the full result is delivered over the
 // doc.ai_suggestion WS event, correlated by the returned requestId.
@@ -613,7 +620,10 @@ func (h *Handler) AISuggest(w http.ResponseWriter, r *http.Request) {
 		Prompt    string `json:"prompt"`
 		Selection string `json:"selection"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+		return
+	}
 
 	d, err := h.Store.GetDoc(r.Context(), docID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -650,8 +660,12 @@ func (h *Handler) AISuggest(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 	requestID := uuid.New().String()
 
+	// The suggestion is delivered over WS after the 202 returns, so it must
+	// outlive the request; bound it so a hung provider can't leak the goroutine.
+	aiCtx, cancelAI := context.WithTimeout(context.WithoutCancel(r.Context()), aiSuggestTimeout)
 	go func() {
-		content, err := provider.Suggest(context.Background(), &ai.SuggestRequest{
+		defer cancelAI()
+		content, err := provider.Suggest(aiCtx, &ai.SuggestRequest{
 			SystemPrompt: "You maintain internal infrastructure documentation. Suggest an improved version of the document based on the request.",
 			UserPrompt:   prompt,
 			DocContent:   d.Content,

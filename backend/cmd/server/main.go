@@ -185,6 +185,8 @@ func main() {
 		}
 	}
 
+	syncEngine.SetBaseContext(ctx)
+
 	// Start scheduler for quality, sync, and backup jobs. The retention job
 	// itself is registered by api.NewRouter (via the system handler's
 	// InitRetentionJob), same reasoning as the backup job below.

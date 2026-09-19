@@ -283,10 +283,12 @@ func WriteElevationError(w http.ResponseWriter, err error) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(elevErr.status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"code":    elevErr.code,
 		"message": elevErr.msg,
-	})
+	}); err != nil {
+		slog.Debug("failed to write elevation error response", "error", err)
+	}
 }
 
 func recordElevationAudit(ctx context.Context, recorder AuditRecorder, event, action string, detail any) {

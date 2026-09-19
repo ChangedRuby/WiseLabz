@@ -110,11 +110,15 @@ type Engine struct {
 	// to decrypt/re-encrypt secret-bearing connector config fields via
 	// store.ParseConnectorConfig/MarshalConnectorConfig.
 	encKey string
+	// baseCtx parents detached (request-triggered) syncs so they outlive the
+	// HTTP request but are cancelled on server shutdown. Defaults to
+	// context.Background() until SetBaseContext is called.
+	baseCtx context.Context
 }
 
 // NewEngine creates a new sync engine.
 func NewEngine(s *store.Store, h *ws.Hub, notifier AlertNotifier, qualityChecker QualityChecker, encKey string) *Engine {
-	return &Engine{store: s, hub: h, notifier: notifier, qualityChecker: qualityChecker, encKey: encKey}
+	return &Engine{store: s, hub: h, notifier: notifier, qualityChecker: qualityChecker, encKey: encKey, baseCtx: context.Background()}
 }
 
 // SetDocRegenerator wires a DocRegenerator into the engine after
@@ -123,6 +127,22 @@ func NewEngine(s *store.Store, h *ws.Hub, notifier AlertNotifier, qualityChecker
 // simply skips sync-triggered doc regeneration.
 func (e *Engine) SetDocRegenerator(dr DocRegenerator) {
 	e.docRegenerator = dr
+}
+
+// SetBaseContext sets the context that detached syncs derive from. main wires
+// the signal-aware server context here so shutdown cancels in-flight syncs.
+func (e *Engine) SetBaseContext(ctx context.Context) {
+	e.baseCtx = ctx
+}
+
+// BaseContext returns the context detached syncs should run under: it survives
+// the triggering HTTP request and is cancelled on shutdown. Each run is still
+// bounded by syncTimeout inside runSyncFields.
+func (e *Engine) BaseContext() context.Context {
+	if e.baseCtx == nil {
+		return context.Background()
+	}
+	return e.baseCtx
 }
 
 // RunResult holds the outcome of a sync run.

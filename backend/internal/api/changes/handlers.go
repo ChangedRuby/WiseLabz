@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -35,10 +36,15 @@ func NewHandler(s *store.Store, settingsH *settings.Handler, aiRegistry *ai.Regi
 	return &Handler{Store: s, Settings: settingsH, AI: aiRegistry, WSHub: hub}
 }
 
+// aiSuggestTimeout bounds detached AI suggestion calls.
+const aiSuggestTimeout = 2 * time.Minute
+
 // diffToSpec converts the stored []sync.DiffPatch JSON into the spec's Diff{format,hunks} shape.
 func diffToSpec(raw string) map[string]any {
 	var patches []sync.DiffPatch
-	_ = json.Unmarshal([]byte(raw), &patches)
+	if err := json.Unmarshal([]byte(raw), &patches); err != nil {
+		slog.Warn("changes: invalid stored diff patches", "error", err)
+	}
 
 	hunks := make([]map[string]any, 0, len(patches))
 	for _, p := range patches {
@@ -74,7 +80,9 @@ func (h *Handler) changeDetail(ctx context.Context, id string) (map[string]any, 
 	}
 
 	var affectedDocIDs []string
-	_ = json.Unmarshal([]byte(c.AffectedDocIDs), &affectedDocIDs)
+	if err := json.Unmarshal([]byte(c.AffectedDocIDs), &affectedDocIDs); err != nil {
+		slog.Warn("changes: invalid stored affected doc ids", "changeId", c.ID, "error", err)
+	}
 	if affectedDocIDs == nil {
 		affectedDocIDs = []string{}
 	}
@@ -387,7 +395,9 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var affectedDocIDs []string
-	_ = json.Unmarshal([]byte(c.AffectedDocIDs), &affectedDocIDs)
+	if err := json.Unmarshal([]byte(c.AffectedDocIDs), &affectedDocIDs); err != nil {
+		slog.Warn("changes: invalid stored affected doc ids", "changeId", c.ID, "error", err)
+	}
 	docID := ""
 	if len(affectedDocIDs) > 0 {
 		docID = affectedDocIDs[0]
@@ -396,8 +406,12 @@ func (h *Handler) AIUpdate(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 	requestID := uuid.New().String()
 
+	// The suggestion is delivered over WS after the 202 returns, so it must
+	// outlive the request; bound it so a hung provider can't leak the goroutine.
+	aiCtx, cancelAI := context.WithTimeout(context.WithoutCancel(r.Context()), aiSuggestTimeout)
 	go func() {
-		result, err := ai.SuggestWithFallback(context.Background(), h.AI, cfg.Providers, &ai.SuggestRequest{
+		defer cancelAI()
+		result, err := ai.SuggestWithFallback(aiCtx, h.AI, cfg.Providers, &ai.SuggestRequest{
 			SystemPrompt: "Summarize this infrastructure change and suggest an updated documentation snippet. " + untrustedDataNotice,
 			UserPrompt:   changePromptData(c.Summary, c.Diff),
 		})
