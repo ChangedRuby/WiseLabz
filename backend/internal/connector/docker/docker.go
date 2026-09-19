@@ -469,8 +469,8 @@ func newSSHDockerClient(host string, config map[string]any) (*http.Client, strin
 		Timeout:         30 * time.Second,
 	}
 	transport := &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return dialSSHStdio(addr, sshConfig)
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialSSHStdio(ctx, addr, sshConfig)
 		},
 		// Each request gets its own SSH connection that the transport closes
 		// as soon as the response is consumed, so nothing outlives the client.
@@ -481,12 +481,38 @@ func newSSHDockerClient(host string, config map[string]any) (*http.Client, strin
 
 // dialSSHStdio opens an SSH connection and starts "docker system dial-stdio"
 // on it, returning the session's pipes as a net.Conn. Closing the conn tears
-// down the remote process, session and SSH client.
-func dialSSHStdio(addr string, cfg *ssh.ClientConfig) (net.Conn, error) {
-	sshClient, err := ssh.Dial("tcp", addr, cfg)
+// down the remote process, session and SSH client. ctx cancels the TCP dial
+// and the SSH handshake; cfg.Timeout still bounds the TCP dial.
+func dialSSHStdio(ctx context.Context, addr string, cfg *ssh.ClientConfig) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: cfg.Timeout}
+	rawConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("ssh dial %q: %w", addr, err)
 	}
+	// ssh.NewClientConn takes no ctx; closing the conn aborts a blocked handshake.
+	handshakeDone := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = rawConn.Close()
+		close(handshakeDone)
+	})
+	if cfg.Timeout > 0 {
+		_ = rawConn.SetDeadline(time.Now().Add(cfg.Timeout))
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(rawConn, addr, cfg)
+	if !stop() {
+		// ctx fired; the AfterFunc closed the conn.
+		<-handshakeDone
+		if err == nil {
+			_ = sshConn.Close()
+		}
+		return nil, fmt.Errorf("ssh dial %q: %w", addr, ctx.Err())
+	}
+	if err != nil {
+		_ = rawConn.Close()
+		return nil, fmt.Errorf("ssh dial %q: %w", addr, err)
+	}
+	_ = rawConn.SetDeadline(time.Time{})
+	sshClient := ssh.NewClient(sshConn, chans, reqs)
 
 	session, err := sshClient.NewSession()
 	if err != nil {
@@ -537,7 +563,9 @@ func sshAuthMethods(config map[string]any) ([]ssh.AuthMethod, error) {
 }
 
 // sshStdioConn adapts an SSH session's stdin/stdout pipes to a net.Conn for
-// use as an http.Transport connection.
+// use as an http.Transport connection. Deadlines are not supported (the
+// SetDeadline methods are no-ops); http.Client cancels a request by closing
+// the conn, which tears down the session.
 type sshStdioConn struct {
 	stdin   io.WriteCloser
 	stdout  io.Reader

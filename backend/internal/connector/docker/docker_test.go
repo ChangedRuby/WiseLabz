@@ -701,3 +701,34 @@ func TestDockerWritableFields(t *testing.T) {
 		t.Errorf("WritableFields() = %+v, want one field \"restartPolicy\"", fields)
 	}
 }
+
+// TestDialSSHStdioHonorsContextCancel proves a stalled SSH handshake is
+// aborted by ctx cancellation instead of waiting out the dial timeout.
+func TestDialSSHStdioHonorsContextCancel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = io.Copy(io.Discard, conn) // accept, never speak SSH
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	cfg := &ssh.ClientConfig{User: "u", HostKeyCallback: ssh.InsecureIgnoreHostKey(), Timeout: 30 * time.Second}
+
+	start := time.Now()
+	_, err = dialSSHStdio(ctx, ln.Addr().String(), cfg)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dialSSHStdio() error = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("dialSSHStdio() took %v after cancel", elapsed)
+	}
+}
