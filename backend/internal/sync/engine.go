@@ -17,6 +17,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
+	"github.com/google/uuid"
 )
 
 // repeatDriftWindow is how far back to look for a prior change with the
@@ -82,7 +83,7 @@ func computeNextRun(scheduleSeconds *int, retryCount int, success bool, now time
 
 // AlertNotifier dispatches notifications for a newly created alert.
 type AlertNotifier interface {
-	NotifyAlertCreated(ctx context.Context, alertID, title, message string)
+	NotifyAlertsCreated(ctx context.Context, alerts []store.AlertRecord)
 }
 
 // QualityChecker evaluates documentation quality after a sync attempt.
@@ -493,25 +494,10 @@ func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, f
 		Data:        string(snData),
 		FetchedAt:   sn.FetchedAt.Format(time.RFC3339),
 	}
-	if err := e.store.CreateSnapshot(ctx, snRec); err != nil {
-		slog.Error("sync save snapshot failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
-		if e.hub != nil {
-			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
-				"serviceId": connectorID,
-				"jobId":     jobID,
-				"phase":     "error",
-				"percent":   0,
-				"message":   err.Error(),
-			})
-		}
-		finish("error", err)
-		return markError(result, start, fmt.Errorf("save snapshot: %w", err))
-	}
-	result.SnapshotID = snRec.ID
 
 	broadcast("generating", 85)
 
-	// Under an active maintenance window, the snapshot above is still saved
+	// Under an active maintenance window, the snapshot is still saved
 	// (so sync history isn't lost) but drift alerting/change-record creation
 	// is suppressed — this is the shared path for both manual "sync now" and
 	// scheduled runs, so this is the one place that check needs to live.
@@ -520,93 +506,88 @@ func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, f
 		slog.Error("get active maintenance window failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 	}
 
-	// Diff against previous snapshot
-	if prevErr == nil && maintenance == nil {
-		var prevSnap connector.ServiceSnapshot
-		if err := json.Unmarshal([]byte(prevSn.Data), &prevSnap); err != nil {
-			slog.Error("sync: previous snapshot unparseable, skipping diff", "connector", logsafe.Sanitize(connectorID), "snapshot", prevSn.ID, "error", logsafe.Sanitize(err.Error()))
-		} else {
-			diffResults := Compare(&prevSnap, sn)
-			for _, d := range diffResults {
-				diffJSON, _ := json.Marshal(d.Patches)
-				relatedJSON, _ := json.Marshal(d.RelatedServiceIDs)
-				patternID := changePatternID(connectorID, d.Type, d.Summary)
-
-				severity := d.Severity
-				summary := d.Summary
-				if repeatCount, err := e.store.CountRecentChangesByPattern(ctx, connectorID, patternID,
-					time.Now().Add(-repeatDriftWindow).UTC().Format(time.RFC3339), ""); err != nil {
-					slog.Error("count recent changes by pattern failed", "error", logsafe.Sanitize(err.Error()))
-				} else if repeatCount > 0 {
-					// Same drift recurring within the window: likely a
-					// misconfiguration loop rather than a one-off — flag it
-					// as unusual by raising severity and noting the repeat.
-					summary = fmt.Sprintf("%s (recurring — seen %d time(s) in the last hour)", d.Summary, repeatCount)
-					switch severity {
-					case "info":
-						severity = "warning"
-					case "warning":
-						severity = "critical"
-					}
+	var changes []*store.ChangeRecord
+	var alerts []*store.AlertRecord
+	err = e.store.WithinTransaction(ctx, func(tx *store.Store) error {
+		if err := tx.CreateSnapshot(ctx, snRec); err != nil {
+			return err
+		}
+		if prevErr == nil && maintenance == nil {
+			var prevSnap connector.ServiceSnapshot
+			if err := json.Unmarshal([]byte(prevSn.Data), &prevSnap); err != nil {
+				slog.Error("sync: previous snapshot unparseable, skipping diff", "connector", logsafe.Sanitize(connectorID), "snapshot", prevSn.ID, "error", logsafe.Sanitize(err.Error()))
+			} else {
+				diffResults := Compare(&prevSnap, sn)
+				counts, err := tx.CountRecentChangePatterns(ctx, connectorID, time.Now().Add(-repeatDriftWindow).UTC().Format(time.RFC3339))
+				if err != nil {
+					return err
 				}
+				for _, d := range diffResults {
+					diffJSON, _ := json.Marshal(d.Patches)
+					relatedJSON, _ := json.Marshal(d.RelatedServiceIDs)
+					patternID := changePatternID(connectorID, d.Type, d.Summary)
 
-				change := &store.ChangeRecord{
-					ServiceID:         connectorID,
-					ChangeType:        d.Type,
-					Severity:          severity,
-					Summary:           summary,
-					Diff:              string(diffJSON),
-					AffectedDocIDs:    "[]",
-					RelatedServiceIDs: string(relatedJSON),
-					PatternID:         patternID,
-				}
-				if err := e.store.CreateChange(ctx, change); err != nil {
-					slog.Error("failed to create change", "error", logsafe.Sanitize(err.Error()))
-					continue
-				}
-				result.ChangesCount++
-
-				if e.hub != nil {
-					e.hub.Broadcast(ws.EventChangeDetected, map[string]any{
-						"changeId":      change.ID,
-						"serviceId":     connectorID,
-						"changeType":    d.Type,
-						"severity":      severity,
-						"summary":       summary,
-						"willTriggerAi": false,
-					})
-				}
-
-				// Create alert for non-info changes
-				if severity != "info" {
-					alert := &store.AlertRecord{
-						ChangeID:    change.ID,
-						ServiceID:   connectorID,
-						Severity:    severity,
-						Title:       summary,
-						Description: d.Detail,
-					}
-					if err := e.store.CreateAlert(ctx, alert); err != nil {
-						slog.Error("failed to create alert", "error", logsafe.Sanitize(err.Error()))
-						continue
-					}
-					result.AlertsCount++
-
-					if e.notifier != nil {
-						e.notifier.NotifyAlertCreated(ctx, alert.ID, alert.Title, alert.Description)
+					severity := d.Severity
+					summary := d.Summary
+					if repeatCount := counts[patternID]; repeatCount > 0 {
+						// Same drift recurring within the window: likely a
+						// misconfiguration loop rather than a one-off — flag it
+						// as unusual by raising severity and noting the repeat.
+						summary = fmt.Sprintf("%s (recurring — seen %d time(s) in the last hour)", d.Summary, repeatCount)
+						switch severity {
+						case "info":
+							severity = "warning"
+						case "warning":
+							severity = "critical"
+						}
 					}
 
-					if e.hub != nil {
-						e.hub.Broadcast(ws.EventAlertCreated, map[string]any{
-							"alertId":   alert.ID,
-							"serviceId": connectorID,
-							"severity":  severity,
-							"title":     summary,
-						})
+					change := &store.ChangeRecord{
+						ID:                uuid.NewString(),
+						ServiceID:         connectorID,
+						ChangeType:        d.Type,
+						Severity:          severity,
+						Summary:           summary,
+						Diff:              string(diffJSON),
+						AffectedDocIDs:    "[]",
+						RelatedServiceIDs: string(relatedJSON),
+						PatternID:         patternID,
+					}
+					changes = append(changes, change)
+					counts[patternID]++
+					if severity != "info" {
+						alerts = append(alerts, &store.AlertRecord{ChangeID: change.ID, ServiceID: connectorID, Severity: severity, Title: summary, Description: d.Detail})
 					}
 				}
 			}
 		}
+		if err := tx.CreateChanges(ctx, changes); err != nil {
+			return err
+		}
+		return tx.CreateAlerts(ctx, alerts)
+	})
+	if err != nil {
+		wrapped := fmt.Errorf("save sync results: %w", err)
+		finish("error", wrapped)
+		return markError(result, start, wrapped)
+	}
+	result.SnapshotID = snRec.ID
+	result.ChangesCount = len(changes)
+	result.AlertsCount = len(alerts)
+	if e.hub != nil {
+		for _, change := range changes {
+			e.hub.Broadcast(ws.EventChangeDetected, map[string]any{"changeId": change.ID, "serviceId": connectorID, "changeType": change.ChangeType, "severity": change.Severity, "summary": change.Summary, "willTriggerAi": false})
+		}
+		for _, alert := range alerts {
+			e.hub.Broadcast(ws.EventAlertCreated, map[string]any{"alertId": alert.ID, "serviceId": connectorID, "severity": alert.Severity, "title": alert.Title})
+		}
+	}
+	if e.notifier != nil && len(alerts) > 0 {
+		batch := make([]store.AlertRecord, len(alerts))
+		for i, alert := range alerts {
+			batch[i] = *alert
+		}
+		e.notifier.NotifyAlertsCreated(ctx, batch)
 	}
 
 	// Update connector status

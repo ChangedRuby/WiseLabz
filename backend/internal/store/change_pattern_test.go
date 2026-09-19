@@ -113,3 +113,33 @@ func TestCountRecentChangesByPattern(t *testing.T) {
 		t.Errorf("CountRecentChangesByPattern(empty pattern) = (%d, %v), want (0, nil)", count, err)
 	}
 }
+
+func TestCountRecentChangePatterns(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+	serviceID := seedConnectorForChanges(t, s)
+	otherID := seedConnectorForChanges(t, s)
+	now := time.Now().UTC()
+	records := []*ChangeRecord{
+		{ServiceID: serviceID, PatternID: "a", DetectedAt: now.Format(time.RFC3339)},
+		{ServiceID: serviceID, PatternID: "a", DetectedAt: now.Format(time.RFC3339)},
+		{ServiceID: serviceID, PatternID: "b", DetectedAt: now.Format(time.RFC3339)},
+		{ServiceID: serviceID, PatternID: "a", DetectedAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
+		{ServiceID: otherID, PatternID: "a", DetectedAt: now.Format(time.RFC3339)},
+		{ServiceID: serviceID, PatternID: "", DetectedAt: now.Format(time.RFC3339)},
+	}
+	for _, record := range records {
+		record.ChangeType = "modified"
+		record.Severity = "info"
+	}
+	if err := s.CreateChanges(ctx, records); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := s.CountRecentChangePatterns(ctx, serviceID, now.Add(-time.Hour).Format(time.RFC3339))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 2 || counts["a"] != 2 || counts["b"] != 1 {
+		t.Fatalf("unexpected grouped counts: %v", counts)
+	}
+}

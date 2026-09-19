@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,31 +82,43 @@ type AlertRecord struct {
 
 // CreateChange inserts a new infrastructure change record.
 func (s *Store) CreateChange(ctx context.Context, c *ChangeRecord) error {
-	if c.ID == "" {
-		c.ID = uuid.New().String()
-	}
-	if c.DetectedAt == "" {
-		c.DetectedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	if c.Status == "" {
-		c.Status = "new"
-	}
-	if c.Diff == "" {
-		c.Diff = "{}"
-	}
-	if c.AffectedDocIDs == "" {
-		c.AffectedDocIDs = "[]"
-	}
-	if c.RelatedServiceIDs == "" {
-		c.RelatedServiceIDs = "[]"
-	}
+	return s.CreateChanges(ctx, []*ChangeRecord{c})
+}
 
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO changes (id, service_id, change_type, severity, summary, diff, status, detected_at, affected_doc_ids, related_service_ids, pattern_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, c.ID, c.ServiceID, c.ChangeType, c.Severity, c.Summary, c.Diff, c.Status, c.DetectedAt, c.AffectedDocIDs, c.RelatedServiceIDs, c.PatternID)
-	if err != nil {
-		return fmt.Errorf("create change: %w", err)
+// CreateChanges inserts bounded batches; use WithinTransaction for atomic multi-batch writes.
+func (s *Store) CreateChanges(ctx context.Context, records []*ChangeRecord) error {
+	// Stay below SQLite's portable 999-parameter limit.
+	const batchSize = 999 / 11
+	for start := 0; start < len(records); start += batchSize {
+		end := min(start+batchSize, len(records))
+		values := make([]string, 0, end-start)
+		args := make([]any, 0, (end-start)*11)
+		for _, c := range records[start:end] {
+			if c.ID == "" {
+				c.ID = uuid.New().String()
+			}
+			if c.DetectedAt == "" {
+				c.DetectedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if c.Status == "" {
+				c.Status = "new"
+			}
+			if c.Diff == "" {
+				c.Diff = "{}"
+			}
+			if c.AffectedDocIDs == "" {
+				c.AffectedDocIDs = "[]"
+			}
+			if c.RelatedServiceIDs == "" {
+				c.RelatedServiceIDs = "[]"
+			}
+
+			values = append(values, "("+placeholders(11)+")")
+			args = append(args, c.ID, c.ServiceID, c.ChangeType, c.Severity, c.Summary, c.Diff, c.Status, c.DetectedAt, c.AffectedDocIDs, c.RelatedServiceIDs, c.PatternID)
+		}
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO changes (id, service_id, change_type, severity, summary, diff, status, detected_at, affected_doc_ids, related_service_ids, pattern_id) VALUES "+strings.Join(values, ","), args...); err != nil {
+			return fmt.Errorf("create changes: %w", err)
+		}
 	}
 	return nil
 }
@@ -260,23 +273,34 @@ func (s *Store) CountChangesNew(ctx context.Context) (int, error) {
 
 // CreateAlert inserts a new alert record.
 func (s *Store) CreateAlert(ctx context.Context, a *AlertRecord) error {
-	if a.ID == "" {
-		a.ID = uuid.New().String()
-	}
-	if a.CreatedAt == "" {
-		a.CreatedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	if a.Status == "" {
-		a.Status = "pending"
-	}
+	return s.CreateAlerts(ctx, []*AlertRecord{a})
+}
 
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO alerts (id, change_id, service_id, severity, title, description, status, snoozed_until, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, a.ID, nilToStr(a.ChangeID), a.ServiceID, a.Severity, a.Title, a.Description,
-		a.Status, nilToStr(a.SnoozedUntil), a.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("create alert: %w", err)
+// CreateAlerts inserts bounded batches; use WithinTransaction for atomic multi-batch writes.
+func (s *Store) CreateAlerts(ctx context.Context, records []*AlertRecord) error {
+	// Stay below SQLite's portable 999-parameter limit.
+	const batchSize = 999 / 9
+	for start := 0; start < len(records); start += batchSize {
+		end := min(start+batchSize, len(records))
+		values := make([]string, 0, end-start)
+		args := make([]any, 0, (end-start)*9)
+		for _, a := range records[start:end] {
+			if a.ID == "" {
+				a.ID = uuid.New().String()
+			}
+			if a.CreatedAt == "" {
+				a.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if a.Status == "" {
+				a.Status = "pending"
+			}
+
+			values = append(values, "("+placeholders(9)+")")
+			args = append(args, a.ID, nilToStr(a.ChangeID), a.ServiceID, a.Severity, a.Title, a.Description, a.Status, nilToStr(a.SnoozedUntil), a.CreatedAt)
+		}
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO alerts (id, change_id, service_id, severity, title, description, status, snoozed_until, created_at) VALUES "+strings.Join(values, ","), args...); err != nil {
+			return fmt.Errorf("create alerts: %w", err)
+		}
 	}
 	return nil
 }
@@ -511,4 +535,23 @@ func (s *Store) CountConnectorsByStatus(ctx context.Context) (map[string]int, er
 		return nil, fmt.Errorf("iterate connector status counts: %w", err)
 	}
 	return counts, nil
+}
+
+// CountRecentChangePatterns counts every recent pattern for one service in one query.
+func (s *Store) CountRecentChangePatterns(ctx context.Context, serviceID, since string) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT pattern_id, COUNT(*) FROM changes WHERE service_id = ? AND detected_at >= ? AND pattern_id != '' GROUP BY pattern_id`, serviceID, since)
+	if err != nil {
+		return nil, fmt.Errorf("count recent change patterns: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	counts := make(map[string]int)
+	for rows.Next() {
+		var pattern string
+		var count int
+		if err := rows.Scan(&pattern, &count); err != nil {
+			return nil, err
+		}
+		counts[pattern] = count
+	}
+	return counts, rows.Err()
 }

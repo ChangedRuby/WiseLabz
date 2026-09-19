@@ -1146,3 +1146,51 @@ func TestRunDigestSweep_DailyDigest(t *testing.T) {
 		t.Errorf("expected in_app status sent, got %s", inApp.Status)
 	}
 }
+
+func TestNotifyAlertsCreatedBatch(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	user := &store.User{Username: "batch-active", Email: "batch@example.com"}
+	if err := s.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	disabled := &store.User{Username: "batch-disabled", Disabled: true}
+	if err := s.CreateUser(ctx, disabled); err != nil {
+		t.Fatal(err)
+	}
+	setChannelAndRoutingConfig(t, s, "smtp", "", `[{"eventType":"alert.created","channel":"smtp","enabled":true,"minSeverity":"critical","connectorId":"service-batch"}]`)
+	// No alert rows are needed: the batch already supplies routing metadata.
+	NewDispatcher(s, nil).NotifyAlertsCreated(ctx, []store.AlertRecord{
+		{ID: "batch-warning", ServiceID: "service-batch", Severity: "warning", Title: "Warning", Description: "first"},
+		{ID: "batch-critical", ServiceID: "service-batch", Severity: "critical", Title: "Critical", Description: "second"},
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var count int
+		if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries`).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected two in-app deliveries and one SMTP delivery, got %d", count)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	notifs, total, err := s.ListNotifications(ctx, user.ID, false, 0, 10)
+	if err != nil || total != 2 {
+		t.Fatalf("notifications: total=%d, err=%v", total, err)
+	}
+	for _, n := range notifs {
+		deliveries := deliveriesFor(t, s, n.ID)
+		_, smtp := findDelivery(deliveries, "smtp")
+		if smtp != (n.AlertID == "batch-critical") {
+			t.Fatalf("incorrect routing for %s: %+v", n.AlertID, deliveries)
+		}
+	}
+	_, total, err = s.ListNotifications(ctx, disabled.ID, false, 0, 10)
+	if err != nil || total != 0 {
+		t.Fatalf("disabled user: notifications=%d, err=%v", total, err)
+	}
+}

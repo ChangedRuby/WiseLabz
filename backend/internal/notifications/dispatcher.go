@@ -74,6 +74,27 @@ func (d *Dispatcher) NotifyAlertCreated(ctx context.Context, alertID, title, mes
 	go d.notifyAlertCreated(users, channels, routes, alertID, severity, connectorID, title, message)
 }
 
+// NotifyAlertsCreated reuses users, channels, and routing for a committed sync batch.
+// Alert metadata is supplied by the caller, avoiding a lookup for every alert.
+func (d *Dispatcher) NotifyAlertsCreated(ctx context.Context, alerts []store.AlertRecord) {
+	if len(alerts) == 0 {
+		return
+	}
+	users, _, err := d.store.ListUsers(ctx, 0, maxNotifyUsers)
+	if err != nil {
+		slog.Error("failed to list users for alert notifications", "error", err)
+		return
+	}
+	channels := d.loadChannels(ctx)
+	routes := d.loadRouting(ctx)
+	batch := append([]store.AlertRecord(nil), alerts...)
+	go func() {
+		for _, alert := range batch {
+			d.notifyAlertCreated(users, channels, routes, alert.ID, alert.Severity, alert.ServiceID, alert.Title, alert.Description)
+		}
+	}()
+}
+
 func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCfg, routes []routeCfg, alertID, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
