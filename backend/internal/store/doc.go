@@ -235,9 +235,10 @@ func (s *Store) ListDocsByService(ctx context.Context, serviceID string) ([]DocR
 }
 
 // ListDocsGroupedByService returns every service doc grouped by connector ID.
+// Content is deliberately not loaded (Content is empty): callers render titles.
 func (s *Store) ListDocsGroupedByService(ctx context.Context) (map[string][]DocRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, kind, service_id, content, current_version, created_at, updated_at
+		SELECT `+docSummaryColumns+`
 		FROM docs WHERE service_id IS NOT NULL ORDER BY service_id, updated_at DESC
 	`)
 	if err != nil {
@@ -249,7 +250,7 @@ func (s *Store) ListDocsGroupedByService(ctx context.Context) (map[string][]DocR
 	for rows.Next() {
 		var d DocRecord
 		var svcID sql.NullString
-		if err := rows.Scan(&d.ID, &d.Title, &d.Kind, &svcID, &d.Content, &d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Title, &d.Kind, &svcID, &d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		d.ServiceID = svcID.String
@@ -261,8 +262,21 @@ func (s *Store) ListDocsGroupedByService(ctx context.Context) (map[string][]DocR
 	return docsByService, nil
 }
 
-// docColumns is the shared column list for the ListAllDocs SELECT.
+// docColumns is the full column list, including the (potentially large) content.
 const docColumns = `id, title, kind, service_id, content, current_version, created_at, updated_at`
+
+// docSummaryColumns omits content for list/tree views that never render it.
+const docSummaryColumns = `id, title, kind, service_id, current_version, created_at, updated_at`
+
+func scanDocSummary(row rowScanner) (DocRecord, error) {
+	var d DocRecord
+	var svcID sql.NullString
+	if err := row.Scan(&d.ID, &d.Title, &d.Kind, &svcID, &d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return DocRecord{}, err
+	}
+	d.ServiceID = svcID.String
+	return d, nil
+}
 
 func scanDoc(row rowScanner) (DocRecord, error) {
 	var d DocRecord
@@ -275,16 +289,29 @@ func scanDoc(row rowScanner) (DocRecord, error) {
 	return d, nil
 }
 
-// ListAllDocs returns a paginated, optionally search-filtered list of all docs.
+// ListAllDocs returns a paginated, optionally search-filtered list of all docs
+// without their content (Content is empty). Use ListAllDocsWithContent when the
+// body is needed.
 func (s *Store) ListAllDocs(ctx context.Context, search string, offset, limit int) ([]DocRecord, int, error) {
+	where, args := docSearchWhere(search)
+	return paginatedQuery(ctx, s.db, "docs", docSummaryColumns, where, args, "updated_at DESC", limit, offset, scanDocSummary)
+}
+
+// ListAllDocsWithContent is like ListAllDocs but also loads each doc's content
+// (e.g. for backup export).
+func (s *Store) ListAllDocsWithContent(ctx context.Context, search string, offset, limit int) ([]DocRecord, int, error) {
+	where, args := docSearchWhere(search)
+	return paginatedQuery(ctx, s.db, "docs", docColumns, where, args, "updated_at DESC", limit, offset, scanDoc)
+}
+
+func docSearchWhere(search string) (string, []any) {
 	where := "WHERE 1=1"
 	var args []any
 	if search != "" {
 		where += " AND title LIKE ?"
 		args = append(args, "%"+search+"%")
 	}
-
-	return paginatedQuery(ctx, s.db, "docs", docColumns, where, args, "updated_at DESC", limit, offset, scanDoc)
+	return where, args
 }
 
 // --- Doc versions ---

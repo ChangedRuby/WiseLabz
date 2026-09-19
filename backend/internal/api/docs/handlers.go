@@ -64,7 +64,7 @@ func (h *Handler) syncDocEmbeddings(ctx context.Context, docID, content string) 
 // Tree handles GET /api/docs/tree.
 // Returns docs grouped by service (lab root + per-connector children).
 func (h *Handler) Tree(w http.ResponseWriter, r *http.Request) {
-	connectors, err := h.Store.ListAllConnectors(r.Context())
+	connectors, err := h.Store.ListConnectorNames(r.Context())
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

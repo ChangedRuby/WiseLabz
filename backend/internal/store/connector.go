@@ -404,6 +404,36 @@ func (s *Store) ListAllConnectors(ctx context.Context) ([]ConnectorRecord, error
 	return scanConnectorRows(rows)
 }
 
+// ConnectorName is the id/name pair of a connector, for views that only render
+// labels and must not load config_data.
+type ConnectorName struct {
+	ID   string
+	Name string
+}
+
+// ListConnectorNames returns every connector's id and name (newest first, same
+// order as ListAllConnectors) without loading its config.
+func (s *Store) ListConnectorNames(ctx context.Context) ([]ConnectorName, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM connectors ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list connector names: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	out := []ConnectorName{}
+	for rows.Next() {
+		var c ConnectorName
+		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate connector names: %w", err)
+	}
+	return out, nil
+}
+
 // ListDueConnectors returns enabled connectors with a schedule whose next run
 // is due (next_run_at <= now, or unset — e.g. right after schedule was first
 // configured). Ordered soonest-first. Never returns a nil slice.

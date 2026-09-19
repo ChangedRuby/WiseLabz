@@ -181,6 +181,37 @@ func TestListDocsGroupedByService(t *testing.T) {
 	if len(got[serviceA]) != 1 || len(got[serviceB]) != 1 {
 		t.Fatalf("grouped docs = %+v, want one doc per service", got)
 	}
+	if got[serviceA][0].Content != "" || got[serviceA][0].Title != serviceA {
+		t.Fatalf("grouped doc = %+v, want title set and content omitted", got[serviceA][0])
+	}
+}
+
+func TestListAllDocsOmitsContentUnlessRequested(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateDoc(ctx, &DocRecord{Title: "Runbook", Kind: "lab", Content: "body"}); err != nil {
+		t.Fatalf("CreateDoc() error: %v", err)
+	}
+	docs, total, err := s.ListAllDocs(ctx, "Run", 0, 10)
+	if err != nil || total != 1 || len(docs) != 1 {
+		t.Fatalf("ListAllDocs() = %v, %d, %v", docs, total, err)
+	}
+	if docs[0].Content != "" || docs[0].Title != "Runbook" || docs[0].CurrentVersion == 0 {
+		t.Fatalf("ListAllDocs() doc = %+v, want summary without content", docs[0])
+	}
+	full, _, err := s.ListAllDocsWithContent(ctx, "", 0, 10)
+	if err != nil || len(full) != 1 || full[0].Content != "body" {
+		t.Fatalf("ListAllDocsWithContent() = %v, %v, want content loaded", full, err)
+	}
+}
+
+func TestListConnectorNames(t *testing.T) {
+	s := newDocTestStore(t)
+	id := mustCreateMaintenanceConnector(t, s)
+	names, err := s.ListConnectorNames(context.Background())
+	if err != nil || len(names) != 1 || names[0].ID != id || names[0].Name == "" {
+		t.Fatalf("ListConnectorNames() = %+v, %v", names, err)
+	}
 }
 
 func TestTemplateVersions(t *testing.T) {

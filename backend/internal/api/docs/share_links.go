@@ -27,7 +27,7 @@ type shareLinkNode struct {
 }
 
 func (h *Handler) resolveShareLinkNode(w http.ResponseWriter, r *http.Request, docTreeRoot string) (shareLinkNode, bool) {
-	connectors, err := h.Store.ListAllConnectors(r.Context())
+	connectors, err := h.Store.ListConnectorNames(r.Context())
 	if err != nil {
 		httputil.Errorf(w, err)
 		return shareLinkNode{}, false
@@ -288,7 +288,7 @@ func (h *Handler) ShareLinkTree(w http.ResponseWriter, r *http.Request) {
 	for _, id := range node.connectorIDs {
 		allowed[id] = true
 	}
-	connectors, err := h.Store.ListAllConnectors(r.Context())
+	connectors, err := h.Store.ListConnectorNames(r.Context())
 	if err != nil {
 		httputil.Errorf(w, err)
 		return

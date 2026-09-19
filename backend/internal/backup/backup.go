@@ -264,7 +264,7 @@ func Import(ctx context.Context, s *store.Store, b *Bundle) (Result, error) {
 func exportDocs(ctx context.Context, s *store.Store) ([]store.DocRecord, error) {
 	docs := []store.DocRecord{}
 	for offset := 0; ; offset += exportPageSize {
-		page, total, err := s.ListAllDocs(ctx, "", offset, exportPageSize)
+		page, total, err := s.ListAllDocsWithContent(ctx, "", offset, exportPageSize)
 		if err != nil {
 			return nil, err
 		}
