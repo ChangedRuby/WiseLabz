@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/WiseLabz/wiselabz/internal/storeerr"
 )
 
 // ErrorResponse is the standard error envelope returned by all API endpoints.
@@ -46,6 +48,28 @@ func Error(w http.ResponseWriter, status int, code, message string) {
 func Errorf(w http.ResponseWriter, err error) {
 	slog.Error("internal server error", "error", err)
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
+}
+
+// HandleStoreError maps a store sentinel error to a structured HTTP response:
+// ErrNotFound -> 404, ErrConflict/ErrVersionConflict -> 409, ErrUnauthorized
+// -> 401, ErrForbidden -> 403. Anything else falls through to Errorf (500).
+// Handlers that need a resource-specific message should keep their own
+// errors.Is check; this is for the generic case.
+func HandleStoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, storeerr.ErrNotFound):
+		Error(w, http.StatusNotFound, "not_found", "Resource not found")
+	case errors.Is(err, storeerr.ErrVersionConflict):
+		Error(w, http.StatusConflict, "version_conflict", "Version conflict")
+	case errors.Is(err, storeerr.ErrConflict):
+		Error(w, http.StatusConflict, "conflict", "Resource already exists")
+	case errors.Is(err, storeerr.ErrUnauthorized):
+		Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
+	case errors.Is(err, storeerr.ErrForbidden):
+		Error(w, http.StatusForbidden, "forbidden", "Forbidden")
+	default:
+		Errorf(w, err)
+	}
 }
 
 // MaxJSONBodyBytes caps JSON request bodies read via DecodeJSON.

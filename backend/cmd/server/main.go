@@ -20,7 +20,6 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/api"
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/config"
-	"github.com/WiseLabz/wiselabz/internal/crypto"
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/quality"
@@ -34,6 +33,9 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--healthcheck" {
 		runHealthcheck()
+	}
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		os.Exit(runConfigCommand(os.Args[2:], os.Stdout, os.Stderr))
 	}
 
 	// Load configuration
@@ -53,18 +55,8 @@ func main() {
 		"db_driver", cfg.DB.Driver,
 	)
 
-	if len(cfg.Auth.Secret) < 32 {
-		logger.Error("WISELABZ_AUTH_SECRET is missing or too short: refusing to start without a strong JWT signing secret (min 32 chars)")
-		os.Exit(1)
-	}
-
-	if _, err := crypto.DecodeKey(cfg.Encryption.Key); err != nil {
-		logger.Error("WISELABZ_ENCRYPTION_KEY is missing or invalid: refusing to start without a valid base64-encoded 32-byte encryption key (e.g. `openssl rand -base64 32`)", "error", err)
-		os.Exit(1)
-	}
-
-	if cfg.Server.Origin == "" {
-		logger.Error("WISELABZ_SERVER_ORIGIN is missing: refusing to start without an explicit allowed CORS origin")
+	if err := cfg.Validate(); err != nil {
+		logger.Error("Invalid configuration (run `server config validate` to check)", "error", err)
 		os.Exit(1)
 	}
 

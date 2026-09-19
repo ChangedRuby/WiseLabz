@@ -1,12 +1,13 @@
 package store
 
-import "errors"
+import "github.com/WiseLabz/wiselabz/internal/storeerr"
 
-// Sentinel errors returned by repository methods.
+// Sentinel errors returned by repository methods. They are aliases of the
+// values in storeerr so the HTTP layer can map them without importing store.
 var (
-	ErrNotFound        = errors.New("resource not found")
-	ErrConflict        = errors.New("resource already exists")
-	ErrVersionConflict = errors.New("version conflict")
-	ErrUnauthorized    = errors.New("unauthorized")
-	ErrForbidden       = errors.New("forbidden")
+	ErrNotFound        = storeerr.ErrNotFound
+	ErrConflict        = storeerr.ErrConflict
+	ErrVersionConflict = storeerr.ErrVersionConflict
+	ErrUnauthorized    = storeerr.ErrUnauthorized
+	ErrForbidden       = storeerr.ErrForbidden
 )
