@@ -412,3 +412,70 @@ func TestRunMigrationsUnsupportedDriver(t *testing.T) {
 		t.Error("expected error for unsupported driver, got nil")
 	}
 }
+
+// TestRunMigrationsPreservesRowsWithForeignKeys upgrades a populated database
+// (opened the way production does, with foreign_keys=ON) across the
+// DROP TABLE rebuild migrations and checks that no ON DELETE CASCADE / SET NULL
+// action wiped or nulled child rows (#302).
+func TestRunMigrationsPreservesRowsWithForeignKeys(t *testing.T) {
+	db, err := OpenDB("sqlite", "file:"+t.TempDir()+"/upgrade.db")
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	m, err := newMigrator(db, "sqlite")
+	if err != nil {
+		t.Fatalf("newMigrator: %v", err)
+	}
+	// Last version before the first rebuild migration (000022).
+	if err := m.Migrate(21); err != nil {
+		t.Fatalf("migrate to 21: %v", err)
+	}
+
+	seed := []string{
+		`INSERT INTO users (id, username, role, created_at) VALUES ('u1', 'alice', 'operator', 'now')`,
+		`INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at) VALUES ('s1', 'u1', 'h', 'now', 'now')`,
+		`INSERT INTO connectors (id, name, category, type, url, created_at, updated_at) VALUES ('c1', 'pve', 'virtualization', 'proxmox', 'http://x', 'now', 'now')`,
+		`INSERT INTO service_snapshots (id, connector_id, data, fetched_at) VALUES ('n1', 'c1', '{}', 'now')`,
+		`INSERT INTO sync_runs (id, connector_id, started_at, status) VALUES ('r1', 'c1', 'now', 'success')`,
+		`INSERT INTO docs (id, title, kind, service_id, created_at, updated_at) VALUES ('d1', 'doc', 'service', 'c1', 'now', 'now')`,
+		`INSERT INTO quality_findings (id, connector_id, doc_id, check_type, severity, title, first_detected_at, last_seen_at) VALUES ('q1', 'c1', 'd1', 'stale', 'info', 't', 'now', 'now')`,
+	}
+	for _, q := range seed {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	if err := RunMigrations(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	for table, want := range map[string]int{
+		"users": 1, "sessions": 1, "connectors": 1, "service_snapshots": 1,
+		"sync_runs": 1, "docs": 1, "quality_findings": 1, "user_connector_roles": 1,
+	} {
+		var got int
+		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&got); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if got != want {
+			t.Errorf("%s rows = %d, want %d", table, got, want)
+		}
+	}
+	var serviceID sql.NullString
+	if err := db.QueryRow("SELECT service_id FROM docs WHERE id = 'd1'").Scan(&serviceID); err != nil || !serviceID.Valid {
+		t.Errorf("docs.service_id = %v, %v; want it preserved", serviceID, err)
+	}
+	var docID sql.NullString
+	if err := db.QueryRow("SELECT doc_id FROM quality_findings WHERE id = 'q1'").Scan(&docID); err != nil || !docID.Valid {
+		t.Errorf("quality_findings.doc_id = %v, %v; want it preserved", docID, err)
+	}
+
+	var fk int
+	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fk); err != nil || fk != 1 {
+		t.Errorf("foreign_keys after migrate = %d, %v; want 1", fk, err)
+	}
+}

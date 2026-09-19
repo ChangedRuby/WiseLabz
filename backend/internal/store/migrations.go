@@ -32,11 +32,61 @@ func RunMigrations(db *sql.DB, driver string, logger *slog.Logger) error {
 		return err
 	}
 
+	if driver == "sqlite" {
+		return runSQLiteWithForeignKeysOff(db, func() error {
+			if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+				return fmt.Errorf("run migrations: %w", err)
+			}
+			return nil
+		})
+	}
+
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	return nil
+}
+
+// runSQLiteWithForeignKeysOff runs fn with foreign key enforcement disabled,
+// then verifies no dangling references were introduced and re-enables it.
+//
+// Table-rebuild migrations DROP a parent table, which SQLite treats as an
+// implicit DELETE that fires ON DELETE CASCADE / SET NULL on child rows.
+// PRAGMA foreign_keys is a no-op inside a transaction and golang-migrate wraps
+// each migration in one, so it must be toggled here, before the migration
+// transaction begins. OpenDB pins the SQLite pool to a single
+// connection, so the pragma applies to the connection the migrations run on.
+func runSQLiteWithForeignKeysOff(db *sql.DB, fn func() error) (err error) {
+	var enabled int
+	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&enabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if enabled == 0 {
+		return fn()
+	}
+	if _, err := db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("disable foreign keys: %w", err)
+	}
+	defer func() {
+		if _, rerr := db.Exec("PRAGMA foreign_keys = ON"); rerr != nil && err == nil {
+			err = fmt.Errorf("re-enable foreign keys: %w", rerr)
+		}
+	}()
+
+	if err := fn(); err != nil {
+		return err
+	}
+
+	rows, err := db.Query("PRAGMA foreign_key_check")
+	if err != nil {
+		return fmt.Errorf("foreign key check: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	if rows.Next() {
+		return errors.New("foreign key check failed after migrations: dangling references found")
+	}
+	return rows.Err()
 }
 
 // RunMigrationsDown rolls back the most recently applied migration for the
