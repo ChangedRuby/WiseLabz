@@ -210,7 +210,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// Get connector record
 	rec, err := e.store.GetConnector(ctx, connectorID)
 	if err != nil {
-		slog.Error("sync get connector failed", "connector", connectorID, "error", err)
+		slog.Error("sync get connector failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		if e.hub != nil {
 			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
@@ -267,7 +267,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 			ChangesCount: result.ChangesCount,
 			AlertsCount:  result.AlertsCount,
 		}); err != nil {
-			slog.Error("record sync run failed", "connector", connectorID, "error", err)
+			slog.Error("record sync run failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		}
 
 		// Skipped (disabled connector) runs aren't real attempts: leave the
@@ -290,16 +290,16 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 			updates["next_run_at"] = nil
 		}
 		if err := e.store.UpdateConnector(ctx, connectorID, updates); err != nil {
-			slog.Error("update connector schedule failed", "connector", connectorID, "error", err)
+			slog.Error("update connector schedule failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		}
 		if e.qualityChecker != nil {
 			if err := e.qualityChecker.RunForConnector(ctx, connectorID); err != nil {
-				slog.Error("quality check failed", "connector", connectorID, "error", err)
+				slog.Error("quality check failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 			}
 		}
 		if e.docRegenerator != nil {
 			if err := e.docRegenerator.RegenerateForConnector(ctx, connectorID); err != nil {
-				slog.Error("doc regeneration failed", "connector", connectorID, "error", err)
+				slog.Error("doc regeneration failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 			}
 		}
 	}
@@ -315,7 +315,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// so connector factories see url + verify_tls alongside their custom fields.
 	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, e.encKey)
 	if err != nil {
-		slog.Error("sync parse config failed", "connector", connectorID, "error", err)
+		slog.Error("sync parse config failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		if e.hub != nil {
 			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
@@ -337,7 +337,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// Get connector implementation
 	conn, err := connector.Get(rec.Type, cfg)
 	if err != nil {
-		slog.Error("sync get connector impl failed", "connector", connectorID, "error", err)
+		slog.Error("sync get connector impl failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		if e.hub != nil {
 			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
@@ -428,7 +428,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// Post-fetch transform/enrich pipeline: normalize field names, filter
 	// PII, merge/derive data — registered per connector category.
 	if err := runTransformers(ctx, rec.Category, sn); err != nil {
-		slog.Error("sync transform failed", "connector", connectorID, "error", err)
+		slog.Error("sync transform failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 	}
 
 	broadcast("diffing", 60)
@@ -436,7 +436,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// Get previous snapshot for diff
 	prevSn, prevErr := e.store.GetLatestSnapshot(ctx, connectorID)
 	if prevErr != nil && !errors.Is(prevErr, store.ErrNotFound) {
-		slog.Error("sync: previous snapshot unreadable, skipping diff", "connector", connectorID, "error", prevErr)
+		slog.Error("sync: previous snapshot unreadable, skipping diff", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(prevErr.Error()))
 		wrapped := fmt.Errorf("get latest snapshot: %w", prevErr)
 		if e.hub != nil {
 			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
@@ -459,7 +459,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 		FetchedAt:   sn.FetchedAt.Format(time.RFC3339),
 	}
 	if err := e.store.CreateSnapshot(ctx, snRec); err != nil {
-		slog.Error("sync save snapshot failed", "connector", connectorID, "error", err)
+		slog.Error("sync save snapshot failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		if e.hub != nil {
 			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
@@ -482,14 +482,14 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 	// scheduled runs, so this is the one place that check needs to live.
 	maintenance, err := e.store.GetActiveMaintenanceWindow(ctx, connectorID)
 	if err != nil {
-		slog.Error("get active maintenance window failed", "connector", connectorID, "error", err)
+		slog.Error("get active maintenance window failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 	}
 
 	// Diff against previous snapshot
 	if prevErr == nil && maintenance == nil {
 		var prevSnap connector.ServiceSnapshot
 		if err := json.Unmarshal([]byte(prevSn.Data), &prevSnap); err != nil {
-			slog.Error("sync: previous snapshot unparseable, skipping diff", "connector", connectorID, "snapshot", prevSn.ID, "error", err)
+			slog.Error("sync: previous snapshot unparseable, skipping diff", "connector", logsafe.Sanitize(connectorID), "snapshot", prevSn.ID, "error", logsafe.Sanitize(err.Error()))
 		} else {
 			diffResults := Compare(&prevSnap, sn)
 			for _, d := range diffResults {
@@ -501,7 +501,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 				summary := d.Summary
 				if repeatCount, err := e.store.CountRecentChangesByPattern(ctx, connectorID, patternID,
 					time.Now().Add(-repeatDriftWindow).UTC().Format(time.RFC3339), ""); err != nil {
-					slog.Error("count recent changes by pattern failed", "error", err)
+					slog.Error("count recent changes by pattern failed", "error", logsafe.Sanitize(err.Error()))
 				} else if repeatCount > 0 {
 					// Same drift recurring within the window: likely a
 					// misconfiguration loop rather than a one-off — flag it
@@ -526,7 +526,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 					PatternID:         patternID,
 				}
 				if err := e.store.CreateChange(ctx, change); err != nil {
-					slog.Error("failed to create change", "error", err)
+					slog.Error("failed to create change", "error", logsafe.Sanitize(err.Error()))
 					continue
 				}
 				result.ChangesCount++
@@ -552,7 +552,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 						Description: d.Detail,
 					}
 					if err := e.store.CreateAlert(ctx, alert); err != nil {
-						slog.Error("failed to create alert", "error", err)
+						slog.Error("failed to create alert", "error", logsafe.Sanitize(err.Error()))
 						continue
 					}
 					result.AlertsCount++
@@ -614,7 +614,7 @@ func (e *Engine) RunSyncAll(ctx context.Context, jobID string) ([]RunResult, err
 			defer func() { <-sem }()
 			result, err := e.RunSync(ctx, connectorID, jobID)
 			if err != nil {
-				slog.Error("sync failed", "connector", connectorID, "error", err)
+				slog.Error("sync failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 				return
 			}
 			slots[i] = result

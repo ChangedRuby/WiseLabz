@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
@@ -218,13 +219,52 @@ func (h *Handler) Providers(w http.ResponseWriter, r *http.Request) {
 
 // --- OIDC helpers ---
 
-// oidcRedirectURL builds the callback URL for the request's scheme and host.
+// validHostPort reports whether s is a syntactically plain host[:port] with no
+// slashes, userinfo, whitespace or other URL metacharacters.
+func validHostPort(s string) bool {
+	if s == "" || len(s) > 255 {
+		return false
+	}
+	if strings.ContainsAny(s, "/\\@?#% \t\r\n") {
+		return false
+	}
+	u, err := url.Parse("http://" + s)
+	if err != nil || u.Host != s || u.Hostname() == "" {
+		return false
+	}
+	return u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
+}
+
+// oidcRedirectURL builds the callback URL. r.Host is attacker-influenceable,
+// so configured Server.Origin entries take precedence: a matching origin is
+// used as-is, a single configured origin is used unconditionally, and only
+// otherwise is r.Host used (if syntactically valid).
 func (h *Handler) oidcRedirectURL(r *http.Request) string {
+	var origins []*url.URL
+	for _, o := range strings.Split(h.Config.Server.Origin, ",") {
+		u, err := url.Parse(strings.TrimSpace(o))
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			continue
+		}
+		origins = append(origins, u)
+	}
+	for _, u := range origins {
+		if strings.EqualFold(u.Host, r.Host) {
+			return u.Scheme + "://" + u.Host + "/auth/callback"
+		}
+	}
+	if len(origins) == 1 {
+		return origins[0].Scheme + "://" + origins[0].Host + "/auth/callback"
+	}
 	scheme := "http"
 	if httputil.IsSecureRequest(r, h.Config.Server.TrustedProxies) {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s/auth/callback", scheme, r.Host)
+	host := r.Host
+	if !validHostPort(host) {
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s://%s/auth/callback", scheme, host)
 }
 
 func (h *Handler) findOIDCProvider(id string) *config.OIDCProvider {
