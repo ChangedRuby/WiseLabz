@@ -94,6 +94,10 @@ func cosineSimilarity(a, b []float32) float64 {
 // this doc. Called eagerly whenever a doc is generated or saved so retrieval
 // is always current.
 func SyncDocEmbeddings(ctx context.Context, s *store.Store, embedder ai.Embedder, model, docID, content string) error {
+	// Invalidate after the write (and on failure, harmlessly) so retrieval
+	// never keeps serving vectors decoded from the replaced rows.
+	defer sharedVectorCache.invalidateDoc(docID)
+
 	sections := SplitSections(content)
 	if len(sections) == 0 {
 		return s.DeleteDocSectionEmbeddings(ctx, docID)
@@ -153,6 +157,7 @@ func Retrieve(ctx context.Context, s *store.Store, embedder ai.Embedder, questio
 	}
 	queryVector := vectors[0]
 
+	gen := sharedVectorCache.generation()
 	rows, err := s.ListDocSectionEmbeddings(ctx, userID, scopeDocID)
 	if err != nil {
 		return nil, err
@@ -160,11 +165,17 @@ func Retrieve(ctx context.Context, s *store.Store, embedder ai.Embedder, questio
 
 	matches := make([]Match, 0, len(rows))
 	for _, row := range rows {
+		key := vectorKey{row.DocID, row.SectionKey}
+		vec, ok := sharedVectorCache.get(key)
+		if !ok {
+			vec = unpackVector(row.Vector)
+			sharedVectorCache.put(key, vec, gen)
+		}
 		matches = append(matches, Match{
 			DocID:      row.DocID,
 			SectionKey: row.SectionKey,
 			Content:    row.Content,
-			Score:      cosineSimilarity(queryVector, unpackVector(row.Vector)),
+			Score:      cosineSimilarity(queryVector, vec),
 		})
 	}
 	sort.Slice(matches, func(i, j int) bool { return matches[i].Score > matches[j].Score })
