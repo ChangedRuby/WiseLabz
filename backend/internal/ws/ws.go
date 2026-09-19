@@ -52,7 +52,8 @@ type Client struct {
 	role   string
 	// sessionHash is the hash of the refresh token the connection was ticketed
 	// under ("" when it was not issued from a cookie session, e.g. API key).
-	sessionHash string
+	sessionHash      string
+	consecutiveDrops int // Protected by hub.mu.
 }
 
 // Revalidator reports whether a connection's identity is still acceptable:
@@ -213,18 +214,7 @@ func (h *Hub) Run() {
 			slog.Info("WebSocket client disconnected", "user_id", logsafe.Sanitize(client.userID), "total_clients", count)
 
 		case msg := <-h.broadcast:
-			h.mu.RLock()
-			for client := range h.clients {
-				if msg.userID == "" || msg.userID == client.userID {
-					select {
-					case client.send <- msg.data:
-					default:
-						// Client's send buffer is full — drop message
-						slog.Warn("WebSocket client send buffer full, dropping message", "user_id", logsafe.Sanitize(client.userID))
-					}
-				}
-			}
-			h.mu.RUnlock()
+			h.deliver(msg)
 
 		case <-ticker.C:
 			// Heartbeat
@@ -234,36 +224,66 @@ func (h *Hub) Run() {
 					"timestamp": time.Now().UTC().Format(time.RFC3339),
 				},
 			})
-			h.mu.RLock()
-			for client := range h.clients {
-				select {
-				case client.send <- heartbeat:
-				default:
-				}
-			}
-			h.mu.RUnlock()
+			h.deliver(broadcastMsg{data: heartbeat})
 		}
 	}
 }
 
-// Broadcast sends a message to all connected clients.
+// maxConsecutiveDrops allows short bursts before evicting a stalled client.
+const maxConsecutiveDrops = 10
+
+// deliver applies the same backpressure policy to events and heartbeats.
+func (h *Hub) deliver(msg broadcastMsg) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for client := range h.clients {
+		if msg.userID != "" && msg.userID != client.userID {
+			continue
+		}
+		select {
+		case client.send <- msg.data:
+			client.consecutiveDrops = 0
+		default:
+			client.consecutiveDrops++
+			if client.consecutiveDrops >= maxConsecutiveDrops {
+				delete(h.clients, client)
+				close(client.send)
+				// Closing the socket also interrupts a blocked write immediately.
+				if client.conn != nil {
+					client.conn.Close() //nolint:errcheck
+				}
+				slog.Warn("disconnecting slow WebSocket client", "user_id", logsafe.Sanitize(client.userID))
+			}
+		}
+	}
+}
+
+// Broadcast queues a message for all clients, dropping it if the hub queue is full.
 func (h *Hub) Broadcast(eventType string, payload any) {
 	data, err := json.Marshal(Envelope{Type: eventType, Payload: payload})
 	if err != nil {
 		slog.Error("failed to marshal WS broadcast", "error", err)
 		return
 	}
-	h.broadcast <- broadcastMsg{data: data}
+	select {
+	case h.broadcast <- broadcastMsg{data: data}:
+	default:
+		slog.Warn("WebSocket broadcast queue full, dropping message")
+	}
 }
 
-// BroadcastToUser sends a message to a specific user's connections.
+// BroadcastToUser queues a message for a user's connections, dropping it if the hub queue is full.
 func (h *Hub) BroadcastToUser(userID, eventType string, payload any) {
 	data, err := json.Marshal(Envelope{Type: eventType, Payload: payload})
 	if err != nil {
 		slog.Error("failed to marshal WS broadcast", "error", err)
 		return
 	}
-	h.broadcast <- broadcastMsg{data: data, userID: userID}
+	select {
+	case h.broadcast <- broadcastMsg{data: data, userID: userID}:
+	default:
+		slog.Warn("WebSocket broadcast queue full, dropping message", "user_id", logsafe.Sanitize(userID))
+	}
 }
 
 // ClientCount returns the number of connected clients.

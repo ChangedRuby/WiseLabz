@@ -463,3 +463,100 @@ func TestRevalidationClosesConnection(t *testing.T) {
 		t.Fatal("connection not closed after revalidation failure")
 	}
 }
+
+func TestBroadcastFullQueueDoesNotBlock(t *testing.T) {
+	for _, targeted := range []bool{false, true} {
+		hub := NewHub()
+		for i := 0; i < cap(hub.broadcast); i++ {
+			hub.broadcast <- broadcastMsg{}
+		}
+		done := make(chan struct{})
+		go func() {
+			if targeted {
+				hub.BroadcastToUser("user", EventAlertCreated, nil)
+			} else {
+				hub.Broadcast(EventSyncComplete, nil)
+			}
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			<-hub.broadcast // Release the blocked call on the old implementation.
+			<-done
+			t.Errorf("broadcast blocked with targeted=%v", targeted)
+		}
+	}
+}
+
+func TestSlowClientEviction(t *testing.T) {
+	hub := NewHub()
+	connections := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := hub.upgrader.Upgrade(w, r, nil)
+		if err == nil {
+			connections <- conn
+		}
+	}))
+	defer server.Close()
+	peer, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close() //nolint:errcheck
+	conn := <-connections
+	defer conn.Close() //nolint:errcheck
+	// No write pump: deterministically model a client whose queue cannot drain.
+	slow := &Client{conn: conn, send: make(chan []byte, 1), userID: "slow"}
+	healthy := &Client{send: make(chan []byte, 1), userID: "healthy"}
+	hub.clients[slow] = true
+	hub.clients[healthy] = true
+	slow.send <- []byte("queued")
+	msg := broadcastMsg{data: []byte("event")}
+	for i := 0; i < maxConsecutiveDrops-1; i++ {
+		hub.deliver(msg)
+		<-healthy.send
+	}
+	if hub.ClientCount() != 2 {
+		t.Fatal("client evicted before drop threshold")
+	}
+	// A successful delivery resets the streak.
+	<-slow.send
+	hub.deliver(msg)
+	<-healthy.send
+	for i := 0; i < maxConsecutiveDrops-1; i++ {
+		hub.deliver(msg)
+		<-healthy.send
+	}
+	if hub.ClientCount() != 2 {
+		t.Fatal("successful send did not reset drop streak")
+	}
+	// Traffic for another user neither increments nor resets the streak.
+	hub.deliver(broadcastMsg{data: msg.data, userID: "healthy"})
+	<-healthy.send
+	hub.deliver(msg)
+	<-healthy.send
+	if hub.ClientCount() != 1 {
+		t.Fatal("slow client was not evicted")
+	}
+	<-slow.send
+	if _, ok := <-slow.send; ok {
+		t.Fatal("evicted client's queue remains open")
+	}
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	if _, _, err := peer.ReadMessage(); err == nil {
+		t.Fatal("evicted client's socket remains open")
+	} else if timeout, ok := err.(interface{ Timeout() bool }); ok && timeout.Timeout() {
+		t.Fatal("socket timed out instead of closing")
+	}
+	// The read pump may unregister an already evicted client; it must be safe.
+	go hub.Run()
+	hub.unregister <- slow
+	hub.BroadcastToUser("healthy", EventSystemNotice, nil)
+	select {
+	case <-healthy.send:
+	case <-time.After(time.Second):
+		t.Fatal("hub stopped delivering after eviction and unregister")
+	}
+	hub.unregister <- healthy
+}
