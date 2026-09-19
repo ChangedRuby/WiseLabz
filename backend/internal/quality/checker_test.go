@@ -477,3 +477,91 @@ func TestManualResolveReopensWhileConditionPersists(t *testing.T) {
 		t.Fatalf("reopened finding = %+v, previous ID %s", open, first.ID)
 	}
 }
+
+// snapshotChangingNotifier simulates a sync completing between rule evaluations.
+type snapshotChangingNotifier struct {
+	change func()
+}
+
+func (n snapshotChangingNotifier) NotifyFindingCreated(context.Context, string, string, string) {
+	n.change()
+}
+
+func TestComplianceRulesShareSnapshotWithinRun(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	conn := createConnector(t, s, "owner")
+	createComplianceSnapshot(t, s, conn.ID, false)
+	createComplianceRule(t, s, "proxmox", "First rule")
+	createComplianceRule(t, s, "proxmox", "Second rule")
+	changed := false
+	notifier := snapshotChangingNotifier{change: func() {
+		if !changed {
+			createComplianceSnapshot(t, s, conn.ID, true)
+			changed = true
+		}
+	}}
+	checker := NewChecker(s, nil, notifier, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
+	if err := checker.RunForConnector(ctx, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := findings(t, s, conn.ID, "compliance", "open"); len(got) != 2 {
+		t.Fatalf("open findings = %d, want both rules evaluated against the same snapshot", len(got))
+	}
+	if err := checker.RunForConnector(ctx, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := findings(t, s, conn.ID, "compliance", "open"); len(got) != 0 {
+		t.Fatalf("open findings = %d, want next run to use the newer snapshot", len(got))
+	}
+}
+
+func TestComplianceSnapshotUnavailablePreservesFindings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want int
+	}{
+		{name: "missing", want: 2},
+		{name: "malformed", data: "{", want: 2},
+		{name: "empty", data: `{"entities":[]}`, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := newTestStore(t)
+			conn := createConnector(t, s, "owner")
+			rules := []*store.ComplianceRuleRecord{
+				createComplianceRule(t, s, "proxmox", "First rule"),
+				createComplianceRule(t, s, "proxmox", "Second rule"),
+			}
+			for _, rule := range rules {
+				if err := s.UpsertQualityFinding(ctx, &store.QualityFindingRecord{
+					ID: rule.ID, ConnectorID: conn.ID, RuleID: rule.ID,
+					CheckType: "compliance", Severity: "critical", Title: rule.Title,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.data != "" {
+				if err := s.CreateSnapshot(ctx, &store.SnapshotRecord{ConnectorID: conn.ID, Data: tc.data}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			checker := NewChecker(s, nil, nil, RotationConfig{MaxAgeDays: 90, WarnDays: 14})
+			if err := checker.RunForConnector(ctx, conn.ID); err != nil {
+				t.Fatal(err)
+			}
+			if got := findings(t, s, conn.ID, "compliance", "open"); len(got) != tc.want {
+				t.Fatalf("open findings after connector check = %d, want %d", len(got), tc.want)
+			}
+			for _, rule := range rules {
+				if err := checker.EvaluateRule(ctx, rule.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := findings(t, s, conn.ID, "compliance", "open"); len(got) != tc.want {
+				t.Fatalf("open findings after rule check = %d, want %d", len(got), tc.want)
+			}
+		})
+	}
+}

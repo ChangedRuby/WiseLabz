@@ -131,7 +131,12 @@ func (c *Checker) EvaluateRule(ctx context.Context, ruleID string) error {
 		if conn.Type != rule.ConnectorType {
 			continue
 		}
-		finding, err := c.evaluateComplianceRule(ctx, conn.ID, rule)
+		snapshot, err := c.loadComplianceSnapshot(ctx, conn.ID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("connector %s: %w", conn.ID, err))
+			continue
+		}
+		finding, err := c.evaluateComplianceRule(ctx, conn.ID, rule, snapshot)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("connector %s: %w", conn.ID, err))
 			continue
@@ -160,6 +165,9 @@ func (c *Checker) checkCompliance(ctx context.Context, connectorID string) ([]*s
 	}
 	findings := make([]*store.QualityFindingRecord, 0)
 	var errs []error
+	var snapshot *compliance.Snapshot
+	var snapshotErr error
+	snapshotLoaded := false
 	for i := range records {
 		if !records[i].Enabled || records[i].ConnectorType != conn.Type {
 			continue
@@ -169,7 +177,15 @@ func (c *Checker) checkCompliance(ctx context.Context, connectorID string) ([]*s
 			errs = append(errs, fmt.Errorf("rule %s: %w", records[i].ID, err))
 			continue
 		}
-		finding, err := c.evaluateComplianceRule(ctx, connectorID, rule)
+		if !snapshotLoaded {
+			snapshot, snapshotErr = c.loadComplianceSnapshot(ctx, connectorID)
+			snapshotLoaded = true
+		}
+		if snapshotErr != nil {
+			errs = append(errs, fmt.Errorf("rule %s: %w", records[i].ID, snapshotErr))
+			continue
+		}
+		finding, err := c.evaluateComplianceRule(ctx, connectorID, rule, snapshot)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("rule %s: %w", records[i].ID, err))
 			continue
@@ -193,7 +209,7 @@ func complianceRule(record *store.ComplianceRuleRecord) (compliance.Rule, error)
 	}, nil
 }
 
-func (c *Checker) evaluateComplianceRule(ctx context.Context, connectorID string, rule compliance.Rule) (*store.QualityFindingRecord, error) {
+func (c *Checker) loadComplianceSnapshot(ctx context.Context, connectorID string) (*compliance.Snapshot, error) {
 	record, err := c.store.GetLatestSnapshot(ctx, connectorID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
@@ -210,7 +226,15 @@ func (c *Checker) evaluateComplianceRule(ctx context.Context, connectorID string
 	for i, entity := range snapshot.Entities {
 		entities[i] = compliance.Entity{Kind: entity.Kind, Name: entity.Name, Attributes: entity.Attributes}
 	}
-	matches := compliance.Evaluate(rule, compliance.Snapshot{Entities: entities})
+	return &compliance.Snapshot{Entities: entities}, nil
+}
+
+func (c *Checker) evaluateComplianceRule(ctx context.Context, connectorID string, rule compliance.Rule, snapshot *compliance.Snapshot) (*store.QualityFindingRecord, error) {
+	// Missing or malformed snapshots must not resolve existing findings.
+	if snapshot == nil {
+		return nil, nil
+	}
+	matches := compliance.Evaluate(rule, *snapshot)
 	if len(matches) == 0 {
 		return nil, c.store.ResolveQualityFindingForRule(ctx, connectorID, rule.ID)
 	}
