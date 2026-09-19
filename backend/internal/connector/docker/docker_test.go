@@ -314,39 +314,45 @@ func startSSHDockerServer(t *testing.T, user, password string) (addr, hostPublic
 	t.Cleanup(func() { _ = listener.Close() })
 
 	go func() {
-		nConn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		sshConn, chans, reqs, err := ssh.NewServerConn(nConn, config)
-		if err != nil {
-			return
-		}
-		defer sshConn.Close() //nolint:errcheck
-		go ssh.DiscardRequests(reqs)
-		for newChan := range chans {
-			if newChan.ChannelType() != "session" {
-				_ = newChan.Reject(ssh.UnknownChannelType, "unsupported")
-				continue
-			}
-			channel, requests, err := newChan.Accept()
+		for {
+			nConn, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			go func() {
-				for req := range requests {
-					if req.Type == "exec" {
-						_ = req.Reply(true, nil)
-						go serveOneHTTPExchange(channel)
-					} else {
-						_ = req.Reply(false, nil)
-					}
-				}
-			}()
+			go serveSSHDockerConn(nConn, config)
 		}
 	}()
 
 	return listener.Addr().String(), hostPublicKeyText
+}
+
+func serveSSHDockerConn(nConn net.Conn, config *ssh.ServerConfig) {
+	sshConn, chans, reqs, err := ssh.NewServerConn(nConn, config)
+	if err != nil {
+		return
+	}
+	defer sshConn.Close() //nolint:errcheck
+	go ssh.DiscardRequests(reqs)
+	for newChan := range chans {
+		if newChan.ChannelType() != "session" {
+			_ = newChan.Reject(ssh.UnknownChannelType, "unsupported")
+			continue
+		}
+		channel, requests, err := newChan.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			for req := range requests {
+				if req.Type == "exec" {
+					_ = req.Reply(true, nil)
+					go serveOneHTTPExchange(channel)
+				} else {
+					_ = req.Reply(false, nil)
+				}
+			}
+		}()
+	}
 }
 
 func serveOneHTTPExchange(channel ssh.Channel) {
@@ -400,14 +406,38 @@ func TestNewSSHDockerClientDialsAndExecutesDialStdio(t *testing.T) {
 	}
 }
 
+func TestNewSSHDockerClientSupportsSequentialRequests(t *testing.T) {
+	addr, hostKey := startSSHDockerServer(t, "testuser", "testpass")
+	client, baseURL, err := newSSHDockerClient("ssh://testuser@"+addr, map[string]any{
+		"ssh_password": "testpass",
+		"ssh_host_key": hostKey,
+	})
+	if err != nil {
+		t.Fatalf("newSSHDockerClient() error = %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		resp, err := client.Get(baseURL + "/version")
+		if err != nil {
+			t.Fatalf("request %d failed: %v", i, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+}
+
 func TestNewSSHDockerClientRejectsWrongCredentials(t *testing.T) {
 	addr, hostKey := startSSHDockerServer(t, "testuser", "testpass")
 
-	if _, _, err := newSSHDockerClient("ssh://testuser@"+addr, map[string]any{
+	client, baseURL, err := newSSHDockerClient("ssh://testuser@"+addr, map[string]any{
 		"ssh_password": "wrongpass",
 		"ssh_host_key": hostKey,
-	}); err == nil {
-		t.Fatal("newSSHDockerClient() error = nil, want auth failure")
+	})
+	if err != nil {
+		t.Fatalf("newSSHDockerClient() error = %v", err)
+	}
+	if resp, err := client.Get(baseURL + "/version"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("request error = nil, want auth failure")
 	}
 }
 
@@ -425,11 +455,16 @@ func TestNewSSHDockerClientRejectsWrongHostKey(t *testing.T) {
 	addr, _ := startSSHDockerServer(t, "testuser", "testpass")
 	_, otherHostKey := startSSHDockerServer(t, "testuser", "testpass")
 
-	if _, _, err := newSSHDockerClient("ssh://testuser@"+addr, map[string]any{
+	client, baseURL, err := newSSHDockerClient("ssh://testuser@"+addr, map[string]any{
 		"ssh_password": "testpass",
 		"ssh_host_key": otherHostKey,
-	}); err == nil {
-		t.Fatal("newSSHDockerClient() error = nil, want rejection for mismatched host key")
+	})
+	if err != nil {
+		t.Fatalf("newSSHDockerClient() error = %v", err)
+	}
+	if resp, err := client.Get(baseURL + "/version"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("request error = nil, want rejection for mismatched host key")
 	}
 }
 

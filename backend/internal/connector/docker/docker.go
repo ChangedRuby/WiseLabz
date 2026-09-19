@@ -428,12 +428,9 @@ func buildDockerTLSConfig(config map[string]any) (*tls.Config, error) {
 // newSSHDockerClient connects to an ssh:// Docker host by opening an SSH
 // session and running "docker system dial-stdio" on the remote end, the
 // same mechanism the Docker CLI itself uses for SSH contexts. The session's
-// stdin/stdout pipe is wrapped as a net.Conn and reused as the single
-// underlying connection for all Engine API requests.
-//
-// ponytail: one dial-stdio process per connector instance, no connection
-// pooling — fine since Fetch only issues serial requests; add pooling if
-// concurrent Docker connector requests are ever needed.
+// stdin/stdout pipe is wrapped as a net.Conn. The SSH connection is dialed
+// lazily per HTTP request and closed by the transport afterwards, so
+// discarding the client never leaks a connection, session or remote process.
 func newSSHDockerClient(host string, config map[string]any) (*http.Client, string, error) {
 	u, err := url.Parse(host)
 	if err != nil {
@@ -465,50 +462,57 @@ func newSSHDockerClient(host string, config map[string]any) (*http.Client, strin
 		return nil, "", fmt.Errorf("parse ssh_host_key: %w", err)
 	}
 
-	sshClient, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
+	sshConfig := &ssh.ClientConfig{
 		User:            user,
 		Auth:            auth,
 		HostKeyCallback: ssh.FixedHostKey(hostPublicKey),
 		Timeout:         30 * time.Second,
-	})
+	}
+	transport := &http.Transport{
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			return dialSSHStdio(addr, sshConfig)
+		},
+		// Each request gets its own SSH connection that the transport closes
+		// as soon as the response is consumed, so nothing outlives the client.
+		DisableKeepAlives: true,
+	}
+	return &http.Client{Timeout: 30 * time.Second, Transport: transport}, "http://docker", nil
+}
+
+// dialSSHStdio opens an SSH connection and starts "docker system dial-stdio"
+// on it, returning the session's pipes as a net.Conn. Closing the conn tears
+// down the remote process, session and SSH client.
+func dialSSHStdio(addr string, cfg *ssh.ClientConfig) (net.Conn, error) {
+	sshClient, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
-		return nil, "", fmt.Errorf("ssh dial %q: %w", addr, err)
+		return nil, fmt.Errorf("ssh dial %q: %w", addr, err)
 	}
 
 	session, err := sshClient.NewSession()
 	if err != nil {
 		_ = sshClient.Close()
-		return nil, "", fmt.Errorf("open ssh session: %w", err)
+		return nil, fmt.Errorf("open ssh session: %w", err)
 	}
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
-		return nil, "", fmt.Errorf("open ssh stdin pipe: %w", err)
+		return nil, fmt.Errorf("open ssh stdin pipe: %w", err)
 	}
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
-		return nil, "", fmt.Errorf("open ssh stdout pipe: %w", err)
+		return nil, fmt.Errorf("open ssh stdout pipe: %w", err)
 	}
 	session.Stderr = io.Discard
 	if err := session.Start("docker system dial-stdio"); err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
-		return nil, "", fmt.Errorf("start docker system dial-stdio: %w", err)
+		return nil, fmt.Errorf("start docker system dial-stdio: %w", err)
 	}
 
-	conn := &sshStdioConn{stdin: stdin, stdout: stdout, session: session, client: sshClient}
-	transport := &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			if !conn.claim() {
-				return nil, errors.New("ssh docker connection already in use")
-			}
-			return conn, nil
-		},
-	}
-	return &http.Client{Timeout: 30 * time.Second, Transport: transport}, "http://docker", nil
+	return &sshStdioConn{stdin: stdin, stdout: stdout, session: session, client: sshClient}, nil
 }
 
 func sshAuthMethods(config map[string]any) ([]ssh.AuthMethod, error) {
@@ -533,23 +537,12 @@ func sshAuthMethods(config map[string]any) ([]ssh.AuthMethod, error) {
 }
 
 // sshStdioConn adapts an SSH session's stdin/stdout pipes to a net.Conn for
-// use as an http.Transport connection. claim() lets the transport detect
-// reuse beyond the single supported connection instead of silently
-// corrupting the stream.
+// use as an http.Transport connection.
 type sshStdioConn struct {
 	stdin   io.WriteCloser
 	stdout  io.Reader
 	session *ssh.Session
 	client  *ssh.Client
-	claimed bool
-}
-
-func (c *sshStdioConn) claim() bool {
-	if c.claimed {
-		return false
-	}
-	c.claimed = true
-	return true
 }
 
 func (c *sshStdioConn) Read(b []byte) (int, error)  { return c.stdout.Read(b) }
