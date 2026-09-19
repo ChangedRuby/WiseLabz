@@ -573,3 +573,31 @@ func TestDocLockReleaseOnlyByHolder(t *testing.T) {
 		t.Fatalf("GetDocLock() after holder release error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestListAllDocsSearchCaseInsensitiveAndEscaped(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	for _, title := range []string{"Runbook", "100% done", "a_b", "axb", `back\slash`} {
+		if err := s.CreateDoc(ctx, &DocRecord{Title: title, Kind: "lab"}); err != nil {
+			t.Fatalf("CreateDoc(%q) error: %v", title, err)
+		}
+	}
+	tests := []struct {
+		search string
+		want   int
+	}{
+		{"runbook", 1},
+		{"RUNBOOK", 1},
+		{"%", 1},
+		{"_", 1},
+		{"a_b", 1},
+		{`\`, 1},
+		{"", 5},
+	}
+	for _, tt := range tests {
+		_, total, err := s.ListAllDocs(ctx, tt.search, 0, 10)
+		if err != nil || total != tt.want {
+			t.Errorf("ListAllDocs(%q) total = %d, err = %v, want %d", tt.search, total, err, tt.want)
+		}
+	}
+}

@@ -198,11 +198,5 @@ func (h *Handler) saveLayoutWidgets(ctx context.Context, userID, widgets string)
 		INSERT INTO dashboard_layouts (user_id, widgets) VALUES (?, ?)
 		ON CONFLICT(user_id) DO UPDATE SET widgets = ?
 	`, userID, widgets, widgets)
-	if err != nil {
-		// SQLite doesn't support ON CONFLICT — use INSERT OR REPLACE
-		_, err = h.Store.DB().ExecContext(ctx, `
-			INSERT OR REPLACE INTO dashboard_layouts (user_id, widgets) VALUES (?, ?)
-		`, userID, widgets)
-	}
 	return err
 }

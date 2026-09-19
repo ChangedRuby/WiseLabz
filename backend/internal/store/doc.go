@@ -304,12 +304,17 @@ func (s *Store) ListAllDocsWithContent(ctx context.Context, search string, offse
 	return paginatedQuery(ctx, s.db, "docs", docColumns, where, args, "updated_at DESC", limit, offset, scanDoc)
 }
 
+// likeEscaper escapes LIKE wildcards and the escape character itself.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func escapeLike(s string) string { return likeEscaper.Replace(s) }
+
 func docSearchWhere(search string) (string, []any) {
 	where := "WHERE 1=1"
 	var args []any
 	if search != "" {
-		where += " AND title LIKE ?"
-		args = append(args, "%"+search+"%")
+		where += ` AND LOWER(title) LIKE LOWER(?) ESCAPE '\'`
+		args = append(args, "%"+escapeLike(search)+"%")
 	}
 	return where, args
 }
