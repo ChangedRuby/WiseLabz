@@ -29,6 +29,10 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DB.Driver != "sqlite" {
 		t.Errorf("db.driver = %q, want sqlite", cfg.DB.Driver)
 	}
+	if cfg.DB.MaxOpenConns != 20 || cfg.DB.MaxIdleConns != 5 ||
+		cfg.DB.ConnMaxLifetime() != 30*time.Minute || cfg.DB.ConnMaxIdleTime() != 5*time.Minute {
+		t.Errorf("unexpected db pool defaults: %+v", cfg.DB)
+	}
 	if cfg.Auth.AccessTokenTTL != 900 {
 		t.Errorf("auth.access_token_ttl = %d, want 900", cfg.Auth.AccessTokenTTL)
 	}
@@ -200,6 +204,10 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 	env := map[string]string{
 		"WISELABZ_DB_DRIVER":                       "postgres",
 		"WISELABZ_DB_DSN":                          "postgres://x",
+		"WISELABZ_DB_MAX_OPEN_CONNS":               "7",
+		"WISELABZ_DB_MAX_IDLE_CONNS":               "3",
+		"WISELABZ_DB_CONN_MAX_LIFETIME_SECONDS":    "60",
+		"WISELABZ_DB_CONN_MAX_IDLE_TIME_SECONDS":   "30",
 		"WISELABZ_SERVER_HOST":                     "127.0.0.1",
 		"WISELABZ_SERVER_PORT":                     "9090",
 		"WISELABZ_SERVER_ORIGIN":                   "https://example.com",
@@ -252,7 +260,7 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 	}
 
 	want := Config{
-		DB:         Database{Driver: "postgres", DSN: "postgres://x"},
+		DB:         Database{Driver: "postgres", DSN: "postgres://x", MaxOpenConns: 7, MaxIdleConns: 3, ConnMaxLifetimeSeconds: 60, ConnMaxIdleTimeSeconds: 30},
 		Server:     Server{Host: "127.0.0.1", Port: 9090, Origin: "https://example.com", TrustedProxies: "10.0.0.0/8", Embed: true, ReadTimeoutSeconds: 5, WriteTimeoutSeconds: 6, ShutdownTimeoutSeconds: 7},
 		Encryption: EncryptionSettings{Key: "env-key"},
 		Auth:       AuthSettings{Secret: "env-secret", AccessTokenTTL: 60, RefreshTokenTTL: 120, StepUpForDestructive: false},

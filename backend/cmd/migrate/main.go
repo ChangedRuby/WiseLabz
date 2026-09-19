@@ -24,7 +24,12 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	db, err := store.OpenDB(cfg.DB.Driver, cfg.DB.DSN)
+	db, err := store.OpenDB(cfg.DB.Driver, cfg.DB.DSN, store.PoolConfig{
+		MaxOpenConns:    cfg.DB.MaxOpenConns,
+		MaxIdleConns:    cfg.DB.MaxIdleConns,
+		ConnMaxLifetime: cfg.DB.ConnMaxLifetime(),
+		ConnMaxIdleTime: cfg.DB.ConnMaxIdleTime(),
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
 		os.Exit(1)

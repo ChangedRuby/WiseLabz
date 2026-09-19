@@ -49,3 +49,16 @@ func TestRewritePlaceholders(t *testing.T) {
 		})
 	}
 }
+
+func TestRewritePlaceholdersCached(t *testing.T) {
+	q := "SELECT * FROM cache_probe WHERE a = ? AND b = ?"
+	want := "SELECT * FROM cache_probe WHERE a = $1 AND b = $2"
+	for i := 0; i < 2; i++ {
+		if got := rewritePlaceholders(q); got != want {
+			t.Fatalf("call %d: got %q, want %q", i, got, want)
+		}
+	}
+	if v, ok := placeholderCache.Load(q); !ok || v.(string) != want {
+		t.Errorf("expected rewritten query to be cached, got %v %v", v, ok)
+	}
+}

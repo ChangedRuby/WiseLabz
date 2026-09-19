@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOpenDBEnablesSQLiteForeignKeys(t *testing.T) {
@@ -66,5 +67,17 @@ func TestOpenDBSetsSQLiteDurabilityPragmas(t *testing.T) {
 	}
 	if err := db.QueryRow("PRAGMA synchronous").Scan(&sync); err != nil || sync != 1 {
 		t.Fatalf("synchronous = %d, %v, want 1 (NORMAL)", sync, err)
+	}
+}
+
+func TestPoolConfigWithDefaults(t *testing.T) {
+	got := PoolConfig{}.withDefaults()
+	if got.MaxOpenConns != 20 || got.MaxIdleConns != 5 ||
+		got.ConnMaxLifetime != 30*time.Minute || got.ConnMaxIdleTime != 5*time.Minute {
+		t.Errorf("unexpected defaults: %+v", got)
+	}
+	got = PoolConfig{MaxOpenConns: 3, MaxIdleConns: 10}.withDefaults()
+	if got.MaxIdleConns != 3 {
+		t.Errorf("idle conns should be capped at open conns, got %d", got.MaxIdleConns)
 	}
 }

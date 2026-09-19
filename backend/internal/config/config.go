@@ -31,6 +31,22 @@ type Config struct {
 type Database struct {
 	Driver string `mapstructure:"driver"` // "sqlite3" or "postgres"
 	DSN    string `mapstructure:"dsn"`
+
+	// Connection pool settings (Postgres only; SQLite is pinned to one connection).
+	MaxOpenConns           int `mapstructure:"max_open_conns"`
+	MaxIdleConns           int `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeSeconds int `mapstructure:"conn_max_lifetime_seconds"`
+	ConnMaxIdleTimeSeconds int `mapstructure:"conn_max_idle_time_seconds"`
+}
+
+// ConnMaxLifetime returns the maximum connection lifetime.
+func (d Database) ConnMaxLifetime() time.Duration {
+	return time.Duration(d.ConnMaxLifetimeSeconds) * time.Second
+}
+
+// ConnMaxIdleTime returns the maximum time a connection may sit idle.
+func (d Database) ConnMaxIdleTime() time.Duration {
+	return time.Duration(d.ConnMaxIdleTimeSeconds) * time.Second
 }
 
 // Server holds HTTP server settings.
@@ -202,8 +218,12 @@ func Load() (*Config, error) {
 	v.SetDefault("server.embed", false)
 	v.SetDefault("db.driver", "sqlite")
 	v.SetDefault("db.dsn", "file:/data/wiselabz.db?cache=shared")
-	v.SetDefault("auth.access_token_ttl", 900)     // 15 minutes
-	v.SetDefault("auth.refresh_token_ttl", 604800) // 7 days
+	v.SetDefault("db.max_open_conns", 20)
+	v.SetDefault("db.max_idle_conns", 5)
+	v.SetDefault("db.conn_max_lifetime_seconds", 1800) // 30 minutes
+	v.SetDefault("db.conn_max_idle_time_seconds", 300) // 5 minutes
+	v.SetDefault("auth.access_token_ttl", 900)         // 15 minutes
+	v.SetDefault("auth.refresh_token_ttl", 604800)     // 7 days
 	v.SetDefault("auth.step_up_for_destructive", true)
 	v.SetDefault("ai.enabled", false)
 	v.SetDefault("ai.mode", "suggest_only")

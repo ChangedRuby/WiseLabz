@@ -69,7 +69,12 @@ func main() {
 	}
 
 	// Open database
-	db, err := store.OpenDB(cfg.DB.Driver, cfg.DB.DSN)
+	db, err := store.OpenDB(cfg.DB.Driver, cfg.DB.DSN, store.PoolConfig{
+		MaxOpenConns:    cfg.DB.MaxOpenConns,
+		MaxIdleConns:    cfg.DB.MaxIdleConns,
+		ConnMaxLifetime: cfg.DB.ConnMaxLifetime(),
+		ConnMaxIdleTime: cfg.DB.ConnMaxIdleTime(),
+	})
 	if err != nil {
 		logger.Error("Failed to open database", "error", err)
 		os.Exit(1)
