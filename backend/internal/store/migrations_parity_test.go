@@ -109,6 +109,9 @@ func TestMigrationSchemaParity(t *testing.T) {
 		t.Fatalf("sqlite migrations: %v", err)
 	}
 
+	assertShareLinkRetentionIndexes(t, pg, "postgres", true)
+	assertShareLinkRetentionIndexes(t, sqliteDB, "sqlite", true)
+
 	got, want := postgresSchemaColumns(t, pg), sqliteSchemaColumns(t, sqliteDB)
 	if !reflect.DeepEqual(got, want) {
 		gs, ws := map[string]bool{}, map[string]bool{}

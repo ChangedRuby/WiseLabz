@@ -122,7 +122,17 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
-	// Roll back the newest migration (hot_query_indexes) first; it must drop
+	assertShareLinkRetentionIndexes(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() share_link_retention_indexes error: %v", err)
+	}
+	assertShareLinkRetentionIndexes(t, db, "sqlite", false)
+	var preservedIndex string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_alerts_status_created'").Scan(&preservedIndex); err != nil {
+		t.Fatalf("hot query index missing after share link rollback: %v", err)
+	}
+
+	// Roll back the next migration (hot_query_indexes); it must drop
 	// only its indexes.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() hot_query_indexes error: %v", err)
@@ -187,7 +197,12 @@ func TestRunMigrationsDown(t *testing.T) {
 	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
 		t.Fatal("users.digest_cadence missing after reapply")
 	}
-	// Four down calls strip the reapplied migrations (hot indexes, snapshot
+	assertShareLinkRetentionIndexes(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, share link indexes error: %v", err)
+	}
+	assertShareLinkRetentionIndexes(t, db, "sqlite", false)
+	// Four more down calls strip the reapplied migrations (hot indexes, snapshot
 	// index, digest prefs, compliance_rules) back off, returning to the same "compliance_rules and
 	// user_digest_prefs absent" state as before the reapply.
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
@@ -331,9 +346,12 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertShareLinkRetentionIndexes(t, db, "postgres", true)
 	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() error: %v", err)
 	}
+
+	assertShareLinkRetentionIndexes(t, db, "postgres", false)
 
 	var count int
 	for _, table := range tablesCreatedByMigrations {
@@ -344,15 +362,10 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if !hasColumn(t, db, "postgres", "changes", "narration") {
 		t.Error("changes.narration should still exist from an earlier migration")
 	}
-	// Only the newest migration (hot_query_indexes) is rolled back: its indexes
-	// must be gone while snapshot_fetched_at_index and ai_config_providers from
-	// earlier migrations stay.
+	// Only share_link_retention_indexes is rolled back; earlier indexes remain.
 	var name string
-	err = db.QueryRow(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_alerts_status_created'`).Scan(&name)
-	if err == nil {
-		t.Error("idx_alerts_status_created should not exist after rolling back its migration")
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("query pg_indexes for idx_alerts_status_created: %v", err)
+	if err := db.QueryRow(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_alerts_status_created'`).Scan(&name); err != nil {
+		t.Errorf("hot query index missing after share link rollback: %v", err)
 	}
 	if err := db.QueryRow(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_snapshots_fetched_at'`).Scan(&name); err != nil {
 		t.Errorf("idx_snapshots_fetched_at should still exist after rolling back only the last migration: %v", err)
@@ -360,6 +373,10 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'ai_config_providers'`).Scan(&name); err != nil {
 		t.Errorf("ai_config_providers should still exist after rolling back only the last migration: %v", err)
 	}
+	if err := RunMigrations(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrations() after share link rollback: %v", err)
+	}
+	assertShareLinkRetentionIndexes(t, db, "postgres", true)
 }
 
 func TestSessionAuthProviderMigration(t *testing.T) {
@@ -540,5 +557,25 @@ func TestGetMigrationStatus(t *testing.T) {
 	}
 	if st.Current != st.Latest || st.Dirty || st.Pending() {
 		t.Errorf("after migrate = %+v, want current == latest, clean", st)
+	}
+}
+
+func assertShareLinkRetentionIndexes(t *testing.T, db *sql.DB, driver string, present bool) {
+	t.Helper()
+	for _, column := range []string{"expires_at", "revoked_at"} {
+		name := "idx_share_links_" + column
+		query := "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='share_links' AND name=?"
+		if driver == "postgres" {
+			query = "SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='share_links' AND indexname=$1"
+		}
+		var definition string
+		err := db.QueryRow(query, name).Scan(&definition)
+		if !present {
+			if !errors.Is(err, sql.ErrNoRows) {
+				t.Errorf("%s should be absent, got %q, %v", name, definition, err)
+			}
+		} else if err != nil || !strings.Contains(definition, "("+column+")") {
+			t.Errorf("%s should index share_links(%s), got %q, %v", name, column, definition, err)
+		}
 	}
 }
