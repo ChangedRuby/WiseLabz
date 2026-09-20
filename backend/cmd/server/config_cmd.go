@@ -8,7 +8,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/config"
 )
 
-const configUsage = "Usage: server config <validate|print --redacted>\n"
+const configUsage = "Usage: server config <validate|print --redacted|schema>\n"
 
 // runConfigCommand implements `server config ...` and returns the process exit code.
 func runConfigCommand(args []string, stdout, stderr io.Writer) int {
@@ -17,6 +17,23 @@ func runConfigCommand(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "schema":
+		if len(args) != 1 {
+			_, _ = fmt.Fprint(stderr, configUsage)
+			return 2
+		}
+		schema, err := config.Schema()
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "Failed to generate config schema: %v\n", err)
+			return 1
+		}
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(schema); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Failed to print config schema: %v\n", err)
+			return 1
+		}
+		return 0
 	case "validate":
 		cfg, err := config.Load()
 		if err != nil {

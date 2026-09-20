@@ -83,7 +83,15 @@ services:
     #   WISELABZ_SERVICES_0_TOKEN_SECRET
 ```
 
-For a full list of configuration keys, see `config.example.yaml`.
+For a full list of configuration keys, see [deploy/config.example.yaml](deploy/config.example.yaml).
+Run `server config schema` to print a JSON Schema generated from the server's `Config`
+struct (for example, `server config schema > config.schema.json`). Each scalar key has
+an `x-env` annotation naming its `WISELABZ_*` override. OIDC providers (`auth.oidc`)
+are file-only collections, marked `x-config-file-only`; their item fields have no env
+annotation. The schema describes key names and types, includes secret field names,
+and never loads or prints configured values. It does not replace semantic validation:
+use `server config validate` to check deployment settings and `server config print
+--redacted` to inspect them with secrets masked.
 
 ## Supported services
 

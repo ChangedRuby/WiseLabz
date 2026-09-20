@@ -32,32 +32,45 @@ func TestPaginateClampsOverflowingPage(t *testing.T) {
 
 func TestHandleStoreError(t *testing.T) {
 	cases := []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantCode   string
+		name        string
+		err         error
+		wantStatus  int
+		wantCode    string
+		wantMessage string
 	}{
-		{"not found", storeerr.ErrNotFound, http.StatusNotFound, "not_found"},
-		{"wrapped not found", fmt.Errorf("get: %w", storeerr.ErrNotFound), http.StatusNotFound, "not_found"},
-		{"conflict", storeerr.ErrConflict, http.StatusConflict, "conflict"},
-		{"version conflict", storeerr.ErrVersionConflict, http.StatusConflict, "version_conflict"},
-		{"unauthorized", storeerr.ErrUnauthorized, http.StatusUnauthorized, "unauthorized"},
-		{"forbidden", storeerr.ErrForbidden, http.StatusForbidden, "forbidden"},
-		{"unknown", errors.New("boom"), http.StatusInternalServerError, "internal_error"},
+		{"not found", storeerr.ErrNotFound, http.StatusNotFound, "not_found", "Resource not found"},
+		{"wrapped not found", fmt.Errorf("get: %w", storeerr.ErrNotFound), http.StatusNotFound, "not_found", "Resource not found"},
+		{"conflict", storeerr.ErrConflict, http.StatusConflict, "conflict", "Resource already exists"},
+		{"version conflict", storeerr.ErrVersionConflict, http.StatusConflict, "version_conflict", "Version conflict"},
+		{"unauthorized", storeerr.ErrUnauthorized, http.StatusUnauthorized, "unauthorized", "Unauthorized"},
+		{"forbidden", storeerr.ErrForbidden, http.StatusForbidden, "forbidden", "Forbidden"},
+		{"unknown", errors.New("boom"), http.StatusInternalServerError, "internal_error", "An internal error occurred"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			HandleStoreError(rec, tc.err)
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
-			}
-			var body ErrorResponse
-			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			if body.Code != tc.wantCode {
-				t.Errorf("code = %q, want %q", body.Code, tc.wantCode)
+			// Both direct and wrapped store errors must retain the exact envelope.
+			for _, err := range []error{tc.err, fmt.Errorf("store operation: %w", tc.err)} {
+				rec := httptest.NewRecorder()
+				HandleStoreError(rec, err)
+				if rec.Code != tc.wantStatus {
+					t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
+				}
+				var body ErrorResponse
+				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if body.Message != tc.wantMessage {
+					t.Errorf("message = %q, want %q", body.Message, tc.wantMessage)
+				}
+				if rec.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+					t.Errorf("unexpected content type: %v", rec.Header())
+				}
+				if body.Details != nil {
+					t.Errorf("unexpected details: %v", body.Details)
+				}
+				if body.Code != tc.wantCode {
+					t.Errorf("code = %q, want %q", body.Code, tc.wantCode)
+				}
 			}
 		})
 	}

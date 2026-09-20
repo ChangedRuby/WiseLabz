@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -65,5 +67,32 @@ func TestConfigUnknown(t *testing.T) {
 	}
 	if code := runConfigCommand([]string{"bogus"}, &out, &errOut); code != 2 {
 		t.Errorf("bogus: code = %d", code)
+	}
+}
+
+func TestConfigSchema(t *testing.T) {
+	t.Chdir(t.TempDir())
+	// Schema generation must not load even malformed config or secret values.
+	if err := os.WriteFile("config.yaml", []byte("invalid: ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WISELABZ_AUTH_SECRET", "schema-must-not-read-this-secret")
+	var out, errOut bytes.Buffer
+	if code := runConfigCommand([]string{"schema"}, &out, &errOut); code != 0 {
+		t.Fatalf("code = %d (stderr: %s)", code, errOut.String())
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(out.Bytes(), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema["$schema"] != "https://json-schema.org/draft/2020-12/schema" {
+		t.Fatalf("missing JSON Schema dialect: %v", schema)
+	}
+	if !strings.Contains(out.String(), "WISELABZ_AUTH_SECRET") || strings.Contains(out.String(), "schema-must-not-read-this-secret") {
+		t.Fatal("schema must contain secret field metadata without configured values")
+	}
+	out.Reset()
+	if code := runConfigCommand([]string{"schema", "extra"}, &out, &errOut); code != 2 || out.Len() != 0 {
+		t.Fatalf("extra argument: code = %d, stdout = %s", code, out.String())
 	}
 }
