@@ -16,7 +16,17 @@ import (
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Details any    `json:"details,omitempty"`
+	// Details carries field-level validation failures as []FieldError; see
+	// ErrorWithDetails. Omitted for errors that are not field-specific.
+	Details any `json:"details,omitempty"`
+}
+
+// FieldError is a single field-level validation failure. Handlers emit a
+// slice of these as the details array of an error response, so clients can
+// map a rejection back onto the form field that caused it.
+type FieldError struct {
+	Field string `json:"field"`
+	Msg   string `json:"msg"`
 }
 
 // JSON writes a JSON response with the given status code and body.
@@ -40,6 +50,16 @@ func Error(w http.ResponseWriter, status int, code, message string) {
 	JSON(w, status, ErrorResponse{
 		Code:    code,
 		Message: message,
+	})
+}
+
+// ErrorWithDetails writes a structured error response carrying field-level
+// validation failures in the details array.
+func ErrorWithDetails(w http.ResponseWriter, status int, code, message string, fields []FieldError) {
+	JSON(w, status, ErrorResponse{
+		Code:    code,
+		Message: message,
+		Details: fields,
 	})
 }
 

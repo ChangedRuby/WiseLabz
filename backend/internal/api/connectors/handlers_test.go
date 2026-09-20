@@ -101,7 +101,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	t.Run("no fields to update", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/connectors/"+id, strings.NewReader(`{}`))
+		req := httptest.NewRequest(http.MethodPut, "/api/connectors/"+id, strings.NewReader(`{}`))
 		req.SetPathValue("id", id)
 		rr := httptest.NewRecorder()
 		h.Update(rr, req)
@@ -111,7 +111,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("not found", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/connectors/missing", strings.NewReader(`{"name":"x"}`))
+		req := httptest.NewRequest(http.MethodPut, "/api/connectors/missing", strings.NewReader(`{"name":"x"}`))
 		req.SetPathValue("id", "missing")
 		rr := httptest.NewRecorder()
 		h.Update(rr, req)
@@ -121,7 +121,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("happy path", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/connectors/"+id, strings.NewReader(`{"name":"Renamed"}`))
+		req := httptest.NewRequest(http.MethodPut, "/api/connectors/"+id, strings.NewReader(`{"name":"Renamed"}`))
 		req.SetPathValue("id", id)
 		rr := httptest.NewRecorder()
 		h.Update(rr, req)
@@ -491,7 +491,7 @@ func TestUpdateEndpointChangeRequiresInstanceAdmin(t *testing.T) {
 	id, _ := created["id"].(string)
 
 	patch := func(admin bool, body string) int {
-		req := httptest.NewRequest(http.MethodPatch, "/api/connectors/"+id, strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/connectors/"+id, strings.NewReader(body))
 		req.SetPathValue("id", id)
 		req = req.WithContext(auth.ContextWithUser(req.Context(), "u1", admin))
 		rr := httptest.NewRecorder()

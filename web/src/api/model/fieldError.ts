@@ -7,4 +7,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ErrorDetails = { [key: string]: unknown };
+export interface FieldError {
+  /** Request body field the failure applies to */
+  field: string;
+  /** Human-readable reason the field was rejected */
+  msg: string;
+}

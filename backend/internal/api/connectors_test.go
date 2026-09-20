@@ -167,7 +167,7 @@ func TestConnectorsUpdateScheduleSeconds(t *testing.T) {
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	t.Run("absent leaves schedule unchanged", func(t *testing.T) {
-		rec := app.req(t, http.MethodPatch, "/api/connectors/"+conn.ID, map[string]any{"name": "svc2"}, opToken)
+		rec := app.req(t, http.MethodPut, "/api/connectors/"+conn.ID, map[string]any{"name": "svc2"}, opToken)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
 		}

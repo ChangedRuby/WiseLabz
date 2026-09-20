@@ -19,8 +19,7 @@ import (
 var (
 	// routerOnly: served by the router but deliberately absent from the spec.
 	routerOnly = map[string]string{
-		"GET /ws":               "WebSocket upgrade, not a REST operation; documented in docs/WS_CONTRACT.md",
-		"PATCH /connectors/{p}": "legacy alias of PUT for clients predating the spec (see router.go)",
+		"GET /ws": "WebSocket upgrade, not a REST operation; documented in docs/WS_CONTRACT.md",
 	}
 	// specOnly: documented in the spec but not implemented by the router.
 	specOnly = map[string]string{}

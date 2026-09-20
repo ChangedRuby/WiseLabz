@@ -215,7 +215,7 @@ export const getPostConnectorsQueryKey = (connectorCreate?: BodyType<ConnectorCr
 
 export const getPostConnectorsQueryOptions = <
   TData = Awaited<ReturnType<typeof postConnectors>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   connectorCreate: BodyType<ConnectorCreate>,
   options?: {
@@ -238,11 +238,11 @@ export const getPostConnectorsQueryOptions = <
 };
 
 export type PostConnectorsQueryResult = NonNullable<Awaited<ReturnType<typeof postConnectors>>>;
-export type PostConnectorsQueryError = ErrorType<ForbiddenResponse>;
+export type PostConnectorsQueryError = ErrorType<BadRequestResponse | ForbiddenResponse>;
 
 export function usePostConnectors<
   TData = Awaited<ReturnType<typeof postConnectors>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   connectorCreate: BodyType<ConnectorCreate>,
   options: {
@@ -261,7 +261,7 @@ export function usePostConnectors<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostConnectors<
   TData = Awaited<ReturnType<typeof postConnectors>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   connectorCreate: BodyType<ConnectorCreate>,
   options?: {
@@ -280,7 +280,7 @@ export function usePostConnectors<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostConnectors<
   TData = Awaited<ReturnType<typeof postConnectors>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   connectorCreate: BodyType<ConnectorCreate>,
   options?: {
@@ -295,7 +295,7 @@ export function usePostConnectors<
 
 export function usePostConnectors<
   TData = Awaited<ReturnType<typeof postConnectors>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   connectorCreate: BodyType<ConnectorCreate>,
   options?: {
@@ -597,7 +597,7 @@ export const getPutConnectorsConnectorIdQueryKey = (
 
 export const getPutConnectorsConnectorIdQueryOptions = <
   TData = Awaited<ReturnType<typeof putConnectorsConnectorId>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
   connectorUpdate: BodyType<ConnectorUpdate>,
@@ -630,11 +630,13 @@ export const getPutConnectorsConnectorIdQueryOptions = <
 export type PutConnectorsConnectorIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof putConnectorsConnectorId>>
 >;
-export type PutConnectorsConnectorIdQueryError = ErrorType<unknown>;
+export type PutConnectorsConnectorIdQueryError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
 
 export function usePutConnectorsConnectorId<
   TData = Awaited<ReturnType<typeof putConnectorsConnectorId>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
   connectorUpdate: BodyType<ConnectorUpdate>,
@@ -656,7 +658,7 @@ export function usePutConnectorsConnectorId<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePutConnectorsConnectorId<
   TData = Awaited<ReturnType<typeof putConnectorsConnectorId>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
   connectorUpdate: BodyType<ConnectorUpdate>,
@@ -678,7 +680,7 @@ export function usePutConnectorsConnectorId<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePutConnectorsConnectorId<
   TData = Awaited<ReturnType<typeof putConnectorsConnectorId>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
   connectorUpdate: BodyType<ConnectorUpdate>,
@@ -696,7 +698,7 @@ export function usePutConnectorsConnectorId<
 
 export function usePutConnectorsConnectorId<
   TData = Awaited<ReturnType<typeof putConnectorsConnectorId>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
 >(
   connectorId: string,
   connectorUpdate: BodyType<ConnectorUpdate>,

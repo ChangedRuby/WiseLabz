@@ -128,7 +128,7 @@ export * from './elevationRequest';
 export * from './elevationRequiredResponse';
 export * from './elevationToken';
 export * from './error';
-export * from './errorDetails';
+export * from './fieldError';
 export * from './forbiddenResponse';
 export * from './generateResult';
 export * from './getAlertsParams';

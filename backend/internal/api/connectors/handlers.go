@@ -80,12 +80,20 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Name == "" || req.Category == "" || req.Type == "" || req.URL == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "name, category, type, and url are required")
-		return
+	var fieldErrs []httputil.FieldError
+	for _, f := range []struct{ name, value string }{
+		{"name", req.Name},
+		{"category", req.Category},
+		{"type", req.Type},
+		{"url", req.URL},
+	} {
+		if f.value == "" {
+			fieldErrs = append(fieldErrs, httputil.FieldError{Field: f.name, Msg: "is required"})
+		}
 	}
-	if err := validateRotationFields(req.UserExpiresAt, req.RotationMaxAgeDays); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+	fieldErrs = append(fieldErrs, validateRotationFields(req.UserExpiresAt, req.RotationMaxAgeDays)...)
+	if len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "Request validation failed", fieldErrs)
 		return
 	}
 
@@ -173,7 +181,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, connectorWithRole{ConnectorRecord: *c, MyRole: role})
 }
 
-// Update handles PUT or PATCH /api/connectors/{id}.
+// Update handles PUT /api/connectors/{id}.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -198,9 +206,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updates, errMsg := parseScheduleUpdates(req.ScheduleSeconds, req.UserExpiresAt, req.RotationMaxAgeDays)
-	if errMsg != "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", errMsg)
+	updates, fieldErrs := parseScheduleUpdates(req.ScheduleSeconds, req.UserExpiresAt, req.RotationMaxAgeDays)
+	if len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "Request validation failed", fieldErrs)
 		return
 	}
 	// Repointing a connector makes the server send its stored credentials to
@@ -623,14 +631,14 @@ func (h *Handler) ConfigFields(w http.ResponseWriter, r *http.Request) {
 // parseScheduleUpdates decodes the raw-JSON scheduleSeconds, userExpiresAt and
 // rotationMaxAgeDays fields of an Update request into store column updates and
 // validates the rotation fields. An absent (nil) field is left out of the
-// result; an explicit JSON null is included as a clearing value. The returned message is client-safe for a 400 response and
-// empty on success.
-func parseScheduleUpdates(scheduleSeconds, userExpiresAtRaw, rotationMaxAgeDaysRaw json.RawMessage) (updates map[string]any, errMsg string) {
+// result; an explicit JSON null is included as a clearing value. The returned
+// field errors are client-safe for a 400 response and empty on success.
+func parseScheduleUpdates(scheduleSeconds, userExpiresAtRaw, rotationMaxAgeDaysRaw json.RawMessage) (updates map[string]any, fieldErrs []httputil.FieldError) {
 	updates = make(map[string]any)
 	if scheduleSeconds != nil {
 		var v *int
 		if err := json.Unmarshal(scheduleSeconds, &v); err != nil {
-			return nil, "Invalid scheduleSeconds"
+			return nil, []httputil.FieldError{{Field: "scheduleSeconds", Msg: "must be a number or null"}}
 		}
 		updates["schedule_seconds"] = v
 	}
@@ -638,7 +646,7 @@ func parseScheduleUpdates(scheduleSeconds, userExpiresAtRaw, rotationMaxAgeDaysR
 	if userExpiresAtRaw != nil {
 		var v *string
 		if err := json.Unmarshal(userExpiresAtRaw, &v); err != nil {
-			return nil, "Invalid userExpiresAt"
+			return nil, []httputil.FieldError{{Field: "userExpiresAt", Msg: "must be a string or null"}}
 		}
 		if v != nil {
 			userExpiresAt = *v
@@ -652,34 +660,37 @@ func parseScheduleUpdates(scheduleSeconds, userExpiresAtRaw, rotationMaxAgeDaysR
 	var rotationMaxAgeDays *int
 	if rotationMaxAgeDaysRaw != nil {
 		if err := json.Unmarshal(rotationMaxAgeDaysRaw, &rotationMaxAgeDays); err != nil {
-			return nil, "Invalid rotationMaxAgeDays"
+			return nil, []httputil.FieldError{{Field: "rotationMaxAgeDays", Msg: "must be a number or null"}}
 		}
 		updates["rotation_max_age_days"] = rotationMaxAgeDays
 	}
-	if err := validateRotationFields(userExpiresAt, rotationMaxAgeDays); err != nil {
-		return nil, err.Error()
+	if errs := validateRotationFields(userExpiresAt, rotationMaxAgeDays); len(errs) > 0 {
+		return nil, errs
 	}
-	return updates, ""
+	return updates, nil
+}
+
+// validateRotationFields checks the optional user-set credential rotation
+// overrides: userExpiresAt (if non-empty) must be an RFC3339 timestamp,
+// rotationMaxAgeDays (if set) must be a positive number of days. It returns
+// one FieldError per offending field, nil when both are acceptable.
+func validateRotationFields(userExpiresAt string, rotationMaxAgeDays *int) []httputil.FieldError {
+	var errs []httputil.FieldError
+	if userExpiresAt != "" {
+		if _, err := time.Parse(time.RFC3339, userExpiresAt); err != nil {
+			errs = append(errs, httputil.FieldError{Field: "userExpiresAt", Msg: "must be an RFC3339 timestamp"})
+		}
+	}
+	if rotationMaxAgeDays != nil && *rotationMaxAgeDays <= 0 {
+		errs = append(errs, httputil.FieldError{Field: "rotationMaxAgeDays", Msg: "must be a positive number of days"})
+	}
+	return errs
 }
 
 // validateConnectorConfig checks a connector config against its type's
 // schema (SchemaField pattern/length/enum rules), catching malformed values
 // at save time rather than on first fetch. Unknown types are left for
 // connector.Get to reject.
-// validateRotationFields checks the optional user-set credential rotation
-// overrides: userExpiresAt (if non-empty) must be an RFC3339 timestamp,
-// rotationMaxAgeDays (if set) must be a positive number of days.
-func validateRotationFields(userExpiresAt string, rotationMaxAgeDays *int) error {
-	if userExpiresAt != "" {
-		if _, err := time.Parse(time.RFC3339, userExpiresAt); err != nil {
-			return fmt.Errorf("userExpiresAt must be an RFC3339 timestamp")
-		}
-	}
-	if rotationMaxAgeDays != nil && *rotationMaxAgeDays <= 0 {
-		return fmt.Errorf("rotationMaxAgeDays must be a positive number of days")
-	}
-	return nil
-}
 
 func validateConnectorConfig(typ, url string, verifyTLS bool, config map[string]any) error {
 	schema, err := connector.GetTypeSchema(typ)

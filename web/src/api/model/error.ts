@@ -6,10 +6,11 @@
  *
  * OpenAPI spec version: 0.1.0
  */
-import type { ErrorDetails } from './errorDetails';
+import type { FieldError } from './fieldError';
 
 export interface Error {
   code: string;
   message: string;
-  details?: ErrorDetails;
+  /** Field-level validation failures, when the error is field-specific. */
+  details?: FieldError[];
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### ⚠ BREAKING CHANGES
+
+* **api:** `PATCH /connectors/{id}` has been removed. It was an undocumented
+  alias of `PUT /connectors/{id}`, kept for clients predating the OpenAPI
+  contract; use `PUT` instead. The generated frontend client has always been
+  PUT-only, so no shipped client is affected.
+* **api:** the `details` field of the `Error` envelope is now an array of
+  `{ field, msg }` objects instead of a free-form object. Nothing had ever
+  populated it, so no client can have depended on the previous shape.
+
 ## 0.3.0 (2026-09-14)
 
 ## What's Changed

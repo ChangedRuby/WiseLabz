@@ -415,6 +415,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Connector' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /connectors/schema:
     get:
@@ -524,6 +525,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Connector' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [connectors]
       summary: Remove a connector (operator, destructive)
@@ -2673,7 +2677,16 @@ components:
       properties:
         code: { type: string }
         message: { type: string }
-        details: { type: object, additionalProperties: true }
+        details:
+          type: array
+          description: Field-level validation failures, when the error is field-specific.
+          items: { $ref: '#/components/schemas/FieldError' }
+    FieldError:
+      type: object
+      required: [field, msg]
+      properties:
+        field: { type: string, description: Request body field the failure applies to }
+        msg: { type: string, description: Human-readable reason the field was rejected }
 
     # ── auth ──
     AuthProviders:
