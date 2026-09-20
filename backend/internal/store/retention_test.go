@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -284,4 +286,45 @@ func TestUnsnoozeExpiredAlerts(t *testing.T) {
 	if n, err := s.UnsnoozeExpiredAlerts(ctx); err != nil || n != 0 {
 		t.Fatalf("UnsnoozeExpiredAlerts() on empty table = %d, %v; want 0, nil", n, err)
 	}
+}
+
+// assertQueryPlanUsesIndex fails unless SQLite's planner reports a SEARCH
+// using the named index for the given query. An index nothing uses is pure
+// write overhead, so every index migration carries one of these.
+func assertQueryPlanUsesIndex(t *testing.T, s *Store, index, query string, args ...any) {
+	t.Helper()
+	rows, err := s.DB().QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN error: %v", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatalf("scan query plan: %v", err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate query plan: %v", err)
+	}
+	for _, detail := range plan {
+		if strings.Contains(detail, "SEARCH") && strings.Contains(detail, index) {
+			return
+		}
+	}
+	t.Errorf("query plan did not SEARCH using %s: %v", index, plan)
+}
+
+// TestDeleteStaleSessionsUsesIndex proves 000032's idx_sessions_last_seen
+// covers the retention sweep instead of leaving it to scan sessions (#299).
+func TestDeleteStaleSessionsUsesIndex(t *testing.T) {
+	skipOnPostgres(t, "EXPLAIN QUERY PLAN is SQLite-only")
+	s := newDocTestStore(t)
+	assertQueryPlanUsesIndex(t, s, "idx_sessions_last_seen", fmt.Sprintf(
+		`DELETE FROM sessions WHERE id IN (SELECT t.id FROM sessions t WHERE t.last_seen_at < ? LIMIT %d)`,
+		retentionBatchSize), time.Now().UTC().Format(time.RFC3339))
 }
