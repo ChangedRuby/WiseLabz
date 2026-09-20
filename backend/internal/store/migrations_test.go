@@ -122,7 +122,13 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertSessionLastSeenIndex(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() session_last_seen_index error: %v", err)
+	}
+	assertSessionLastSeenIndex(t, db, "sqlite", false)
 	assertShareLinkRetentionIndexes(t, db, "sqlite", true)
+
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() share_link_retention_indexes error: %v", err)
 	}
@@ -197,6 +203,11 @@ func TestRunMigrationsDown(t *testing.T) {
 	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
 		t.Fatal("users.digest_cadence missing after reapply")
 	}
+	assertSessionLastSeenIndex(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, session last seen index error: %v", err)
+	}
+	assertSessionLastSeenIndex(t, db, "sqlite", false)
 	assertShareLinkRetentionIndexes(t, db, "sqlite", true)
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, share link indexes error: %v", err)
@@ -346,6 +357,12 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertSessionLastSeenIndex(t, db, "postgres", true)
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() session_last_seen_index error: %v", err)
+	}
+	assertSessionLastSeenIndex(t, db, "postgres", false)
+
 	assertShareLinkRetentionIndexes(t, db, "postgres", true)
 	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() error: %v", err)
@@ -377,6 +394,7 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 		t.Fatalf("RunMigrations() after share link rollback: %v", err)
 	}
 	assertShareLinkRetentionIndexes(t, db, "postgres", true)
+	assertSessionLastSeenIndex(t, db, "postgres", true)
 }
 
 func TestSessionAuthProviderMigration(t *testing.T) {
@@ -577,5 +595,25 @@ func assertShareLinkRetentionIndexes(t *testing.T, db *sql.DB, driver string, pr
 		} else if err != nil || !strings.Contains(definition, "("+column+")") {
 			t.Errorf("%s should index share_links(%s), got %q, %v", name, column, definition, err)
 		}
+	}
+}
+
+// assertSessionLastSeenIndex checks 000032_session_last_seen_index's index
+// against the dialect's catalog, in both directions of the migration.
+func assertSessionLastSeenIndex(t *testing.T, db *sql.DB, driver string, present bool) {
+	t.Helper()
+	const name = "idx_sessions_last_seen"
+	query := "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='sessions' AND name=?"
+	if driver == "postgres" {
+		query = "SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='sessions' AND indexname=$1"
+	}
+	var definition string
+	err := db.QueryRow(query, name).Scan(&definition)
+	if !present {
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("%s should be absent, got %q, %v", name, definition, err)
+		}
+	} else if err != nil || !strings.Contains(definition, "(last_seen_at)") {
+		t.Errorf("%s should index sessions(last_seen_at), got %q, %v", name, definition, err)
 	}
 }

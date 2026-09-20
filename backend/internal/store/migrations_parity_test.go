@@ -111,6 +111,8 @@ func TestMigrationSchemaParity(t *testing.T) {
 
 	assertShareLinkRetentionIndexes(t, pg, "postgres", true)
 	assertShareLinkRetentionIndexes(t, sqliteDB, "sqlite", true)
+	assertSessionLastSeenIndex(t, pg, "postgres", true)
+	assertSessionLastSeenIndex(t, sqliteDB, "sqlite", true)
 
 	got, want := postgresSchemaColumns(t, pg), sqliteSchemaColumns(t, sqliteDB)
 	if !reflect.DeepEqual(got, want) {

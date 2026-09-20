@@ -46,69 +46,93 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookieState, nonce, ok := readOIDCFlowCookie(r, req.ProviderID)
-	clearOIDCFlowCookie(w, r, h.Config.Server.TrustedProxies, req.ProviderID)
-	if !ok || subtle.ConstantTimeCompare([]byte(cookieState), []byte(req.State)) != 1 {
-		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Invalid or expired state")
+	nonce, ok := h.verifyOIDCFlowState(w, r, req.ProviderID, req.State)
+	if !ok {
 		return
 	}
 
-	// Find the provider configuration
-	provCfg := h.findOIDCProvider(req.ProviderID)
-	if provCfg == nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_provider", "Unknown OIDC provider")
-		return
-	}
-	if !h.oidcProviderEnabled(r.Context(), req.ProviderID) {
-		httputil.Error(w, http.StatusForbidden, "oidc_error", "OIDC provider is disabled")
+	provCfg, prov, ok := h.resolveOIDCProvider(w, r, req.ProviderID)
+	if !ok {
 		return
 	}
 
-	// Initialize provider if needed
-	prov := h.getOrInitOIDCProvider(r.Context(), provCfg)
-	if prov == nil {
-		httputil.Error(w, http.StatusInternalServerError, "oidc_error", "Failed to initialize OIDC provider")
-		return
-	}
-
-	// Exchange code for claims
-	claims, err := prov.Exchange(r.Context(), req.Code, nonce, h.oidcRedirectURL(r))
-	if err != nil {
-		slog.Error("OIDC exchange failed", "error", err, "provider", logsafe.Sanitize(req.ProviderID))
-		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Failed to authenticate with provider")
-		return
-	}
-	if claims.Subject == "" || claims.Issuer == "" || !claims.EmailVerified {
-		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "OIDC identity requires a verified email")
-		return
-	}
-	if len(provCfg.EmailDomainAllowlist) > 0 && !emailDomainAllowed(claims.Email, provCfg.EmailDomainAllowlist) {
-		httputil.Error(w, http.StatusForbidden, "oidc_error", "OIDC email domain is not allowed")
+	claims, ok := h.exchangeOIDCCode(w, r, prov, provCfg, req.ProviderID, req.Code, nonce)
+	if !ok {
 		return
 	}
 	role := oidcRoleForGroups(claims.Groups, provCfg.GroupRoleMapping)
 
-	// Find or create user
+	user, isNewUser, ok := h.resolveOIDCUser(w, r, claims, role)
+	if !ok {
+		return
+	}
+
+	h.completeOIDCLogin(w, r, user, req.ProviderID, isNewUser)
+}
+
+// verifyOIDCFlowState reads back the flow cookie this browser was issued when
+// it started the login, clears it so it cannot be replayed, and constant-time
+// compares the cookie's state against the caller-supplied state. Returns the
+// nonce bound to this browser's attempt.
+func (h *Handler) verifyOIDCFlowState(w http.ResponseWriter, r *http.Request, providerID, state string) (string, bool) {
+	cookieState, nonce, ok := readOIDCFlowCookie(r, providerID)
+	clearOIDCFlowCookie(w, r, h.Config.Server.TrustedProxies, providerID)
+	if !ok || subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
+		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Invalid or expired state")
+		return "", false
+	}
+	return nonce, true
+}
+
+// resolveOIDCProvider finds the provider configuration, rejects it if an admin
+// has disabled it, and initializes the provider if needed.
+func (h *Handler) resolveOIDCProvider(w http.ResponseWriter, r *http.Request, providerID string) (*config.OIDCProvider, *auth.OIDCProvider, bool) {
+	provCfg := h.findOIDCProvider(providerID)
+	if provCfg == nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_provider", "Unknown OIDC provider")
+		return nil, nil, false
+	}
+	if !h.oidcProviderEnabled(r.Context(), providerID) {
+		httputil.Error(w, http.StatusForbidden, "oidc_error", "OIDC provider is disabled")
+		return nil, nil, false
+	}
+	prov := h.getOrInitOIDCProvider(r.Context(), provCfg)
+	if prov == nil {
+		httputil.Error(w, http.StatusInternalServerError, "oidc_error", "Failed to initialize OIDC provider")
+		return nil, nil, false
+	}
+	return provCfg, prov, true
+}
+
+// exchangeOIDCCode trades the authorization code for identity claims against
+// the pinned redirect URL, then enforces the verified-email requirement and
+// the provider's email domain allowlist.
+func (h *Handler) exchangeOIDCCode(w http.ResponseWriter, r *http.Request, prov *auth.OIDCProvider, provCfg *config.OIDCProvider, providerID, code, nonce string) (*auth.OIDCClaims, bool) {
+	claims, err := prov.Exchange(r.Context(), code, nonce, h.oidcRedirectURL(r))
+	if err != nil {
+		slog.Error("OIDC exchange failed", "error", err, "provider", logsafe.Sanitize(providerID))
+		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "Failed to authenticate with provider")
+		return nil, false
+	}
+	if claims.Subject == "" || claims.Issuer == "" || !claims.EmailVerified {
+		httputil.Error(w, http.StatusUnauthorized, "oidc_error", "OIDC identity requires a verified email")
+		return nil, false
+	}
+	if len(provCfg.EmailDomainAllowlist) > 0 && !emailDomainAllowed(claims.Email, provCfg.EmailDomainAllowlist) {
+		httputil.Error(w, http.StatusForbidden, "oidc_error", "OIDC email domain is not allowed")
+		return nil, false
+	}
+	return claims, true
+}
+
+// resolveOIDCUser finds or creates the local user for an OIDC identity,
+// rejects disabled accounts, and keeps the instance-admin role in sync with
+// the provider's group mapping.
+func (h *Handler) resolveOIDCUser(w http.ResponseWriter, r *http.Request, claims *auth.OIDCClaims, role string) (*store.User, bool, bool) {
 	user, err := h.Store.GetUserByOIDCIdentity(r.Context(), claims.Issuer, claims.Subject)
 	isNewUser := false
 	if errors.Is(err, store.ErrNotFound) {
-		// Create new OIDC user
-		displayName := claims.Name
-		if displayName == "" {
-			displayName = claims.PreferredName
-		}
-		if displayName == "" {
-			displayName = claims.Email
-		}
-		identityHash := sha256.Sum256([]byte(claims.Issuer + "\x00" + claims.Subject))
-		username := fmt.Sprintf("oidc_%x", identityHash[:])
-		user = &store.User{
-			Username:          username,
-			DisplayName:       displayName,
-			Email:             claims.Email,
-			InstanceAdminRole: role,
-			AuthSource:        "oidc",
-		}
+		user = newOIDCUser(claims, role)
 		created, err := h.Store.CreateOIDCUser(r.Context(), user, claims.Issuer, claims.Subject)
 		if errors.Is(err, store.ErrConflict) {
 			// Lost a race with a concurrent create for the same identity; use the row that won.
@@ -116,37 +140,61 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			httputil.Errorf(w, err)
-			return
+			return nil, false, false
 		}
 		isNewUser = created
 	} else if err != nil {
 		httputil.Errorf(w, err)
-		return
+		return nil, false, false
 	}
 	if user.Disabled {
 		httputil.Error(w, http.StatusForbidden, "forbidden", "Account is disabled")
-		return
+		return nil, false, false
 	}
 	if !isNewUser && user.AuthSource == "oidc" && user.InstanceAdminRole != role {
 		if err := h.Store.UpdateUser(r.Context(), user.ID, map[string]any{"instance_admin_role": role}); err != nil {
 			httputil.Errorf(w, err)
-			return
+			return nil, false, false
 		}
 		user.InstanceAdminRole = role
 	}
+	return user, isNewUser, true
+}
 
-	// Issue token pair
+// newOIDCUser builds the local record for a first-time OIDC identity. The
+// username is derived from a hash of issuer+subject so it is stable across
+// logins without leaking the provider's identifiers.
+func newOIDCUser(claims *auth.OIDCClaims, role string) *store.User {
+	displayName := claims.Name
+	if displayName == "" {
+		displayName = claims.PreferredName
+	}
+	if displayName == "" {
+		displayName = claims.Email
+	}
+	identityHash := sha256.Sum256([]byte(claims.Issuer + "\x00" + claims.Subject))
+	return &store.User{
+		Username:          fmt.Sprintf("oidc_%x", identityHash[:]),
+		DisplayName:       displayName,
+		Email:             claims.Email,
+		InstanceAdminRole: role,
+		AuthSource:        "oidc",
+	}
+}
+
+// completeOIDCLogin issues the token pair, records the refresh session and
+// writes the login response.
+func (h *Handler) completeOIDCLogin(w http.ResponseWriter, r *http.Request, user *store.User, providerID string, isNewUser bool) {
 	pair, err := h.JWT.IssuePair(user.ID, user.InstanceAdminRole == "admin")
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 
-	// Create session
 	session := &store.Session{
 		UserID:         user.ID,
 		TokenHash:      store.HashToken(pair.RefreshToken),
-		AuthProviderID: req.ProviderID,
+		AuthProviderID: providerID,
 		UserAgent:      r.UserAgent(),
 		IP:             httputil.ClientIP(r, h.Config.Server.TrustedProxies),
 	}
