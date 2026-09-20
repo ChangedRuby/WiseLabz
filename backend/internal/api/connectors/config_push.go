@@ -14,66 +14,35 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
 
+// configPushRequest is the POST /api/connectors/{id}/config-push body.
+type configPushRequest struct {
+	EntityRef string `json:"entityRef"`
+	FieldKey  string `json:"fieldKey"`
+	Value     any    `json:"value"`
+	// PreviousValue is the field's currently-displayed value, as the
+	// frontend read it from GET /{id}/data before the user edited it.
+	// The handler has no generic way to re-derive "the old value of
+	// fieldKey" from a rendered ServiceSnapshot, so the revert path
+	// (ADR 0003) re-pushes this rather than something inferred.
+	PreviousValue any `json:"previousValue"`
+}
+
 // ConfigPush handles POST /api/connectors/{id}/config-push. Per ADR 0003:
 // field-level partial update against a per-connector whitelist, snapshot
 // before write, verify-diff after, auto-revert-then-alert on mismatch.
 func (h *Handler) ConfigPush(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	req, ok := httputil.DecodeJSON[struct {
-		EntityRef string `json:"entityRef"`
-		FieldKey  string `json:"fieldKey"`
-		Value     any    `json:"value"`
-		// PreviousValue is the field's currently-displayed value, as the
-		// frontend read it from GET /{id}/data before the user edited it.
-		// The handler has no generic way to re-derive "the old value of
-		// fieldKey" from a rendered ServiceSnapshot, so the revert path
-		// (ADR 0003) re-pushes this rather than something inferred.
-		PreviousValue any `json:"previousValue"`
-	}](w, r)
+	req, ok := httputil.DecodeJSON[configPushRequest](w, r)
 	if !ok {
 		return
 	}
-	if err := connector.ValidateCompositeRef(req.EntityRef); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "invalid entityRef")
-		return
-	}
-	if req.FieldKey == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "fieldKey is required")
+	if !validateConfigPushRequest(w, &req) {
 		return
 	}
 
-	rec, err := h.Store.GetConnector(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
-		return
-	}
-	if err != nil {
-		httputil.Errorf(w, err)
-		return
-	}
-
-	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, h.Config.Encryption.Key)
-	if err != nil {
-		httputil.Errorf(w, fmt.Errorf("parse config: %w", err))
-		return
-	}
-	cfg["url"] = rec.URL
-	cfg["verify_tls"] = rec.VerifyTLS
-
-	conn, err := connector.Get(rec.Type, cfg)
-	if err != nil {
-		httputil.Errorf(w, err)
-		return
-	}
-
-	pusher, ok := conn.(connector.ConfigPusher)
+	conn, pusher, cfg, rec, ok := h.resolveConfigPusher(w, r, id, req.FieldKey)
 	if !ok {
-		httputil.Error(w, http.StatusBadRequest, "unsupported_operation", "connector does not support config-push")
-		return
-	}
-	if !isWritableField(pusher, req.FieldKey) {
-		httputil.Error(w, http.StatusBadRequest, "unsupported_field", fmt.Sprintf("field %q is not writable for this connector", req.FieldKey))
 		return
 	}
 
@@ -113,6 +82,60 @@ func (h *Handler) ConfigPush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.JSON(w, http.StatusOK, post)
+}
+
+// validateConfigPushRequest checks the body's addressing fields. It writes
+// the error response and reports false when the request is malformed.
+func validateConfigPushRequest(w http.ResponseWriter, req *configPushRequest) bool {
+	if err := connector.ValidateCompositeRef(req.EntityRef); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "invalid entityRef")
+		return false
+	}
+	if req.FieldKey == "" {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "fieldKey is required")
+		return false
+	}
+	return true
+}
+
+// resolveConfigPusher loads the connector record, builds its live config and
+// client, and confirms the client supports config-push for fieldKey. It
+// writes the error response and reports false when any of that fails.
+func (h *Handler) resolveConfigPusher(w http.ResponseWriter, r *http.Request, id, fieldKey string) (connector.Connector, connector.ConfigPusher, map[string]any, *store.ConnectorRecord, bool) {
+	rec, err := h.Store.GetConnector(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+		return nil, nil, nil, nil, false
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return nil, nil, nil, nil, false
+	}
+
+	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, h.Config.Encryption.Key)
+	if err != nil {
+		httputil.Errorf(w, fmt.Errorf("parse config: %w", err))
+		return nil, nil, nil, nil, false
+	}
+	cfg["url"] = rec.URL
+	cfg["verify_tls"] = rec.VerifyTLS
+
+	conn, err := connector.Get(rec.Type, cfg)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return nil, nil, nil, nil, false
+	}
+
+	pusher, ok := conn.(connector.ConfigPusher)
+	if !ok {
+		httputil.Error(w, http.StatusBadRequest, "unsupported_operation", "connector does not support config-push")
+		return nil, nil, nil, nil, false
+	}
+	if !isWritableField(pusher, fieldKey) {
+		httputil.Error(w, http.StatusBadRequest, "unsupported_field", fmt.Sprintf("field %q is not writable for this connector", fieldKey))
+		return nil, nil, nil, nil, false
+	}
+	return conn, pusher, cfg, rec, true
 }
 
 // isWritableField reports whether key is on the connector's config-push
