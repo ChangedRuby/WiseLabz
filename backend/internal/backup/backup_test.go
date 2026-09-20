@@ -153,6 +153,28 @@ func TestValidateBundleRejectsOrphanDocVersion(t *testing.T) {
 	}
 }
 
+func TestImportRejectsInvalidBundleBeforeWriting(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	b := &backup.Bundle{
+		Version: backup.BundleVersion + 1,
+		Connectors: []store.ConnectorRecord{{
+			Name: "must-not-import", Category: "virtualization", Type: "proxmox", URL: "https://pve.example.com",
+		}},
+	}
+
+	if _, err := backup.Import(ctx, s, b); err == nil {
+		t.Fatal("Import() error = nil, want invalid bundle error")
+	}
+	connectors, err := s.ListAllConnectors(ctx)
+	if err != nil {
+		t.Fatalf("ListAllConnectors() error = %v", err)
+	}
+	if len(connectors) != 0 {
+		t.Fatalf("connectors after rejected import = %d, want 0", len(connectors))
+	}
+}
+
 func TestImportIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	src := newTestStore(t)

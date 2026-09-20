@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/crypto"
+	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
@@ -217,14 +218,23 @@ func (d *Dispatcher) NotifyAlert(alertID, userID, eventType, title, message stri
 }
 
 func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, routes []routeCfg, alertID, userID, eventType, severity, connectorID, title, message string, skipExternal bool) {
+	notifID, ok := d.sendInApp(ctx, userID, alertID, eventType, title, message)
+	if !ok {
+		return
+	}
+	if skipExternal {
+		return
+	}
+	d.notifyExternalChannels(ctx, notifID, channels, routes, eventType, severity, connectorID, userID, title, message)
+}
 
+func (d *Dispatcher) sendInApp(ctx context.Context, userID, alertID, eventType, title, message string) (string, bool) {
 	notifID, err := d.createInApp(ctx, userID, alertID, eventType, title, message)
 	if err != nil {
 		slog.Error("failed to create in-app notification", "error", err)
-		return
+		return "", false
 	}
 	d.recordDelivery(ctx, notifID, "in_app", store.DeliveryStatusSent, "")
-
 	if d.hub != nil {
 		d.hub.BroadcastToUser(userID, eventType, map[string]any{
 			"alertId": alertID,
@@ -232,55 +242,14 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, rou
 			"message": message,
 		})
 	}
+	return notifID, true
+}
 
-	if skipExternal {
-		return
-	}
-
-	// Resolve connector once per notifyAlert call (not per channel) if needed for filters.
-	var connectorCategory string
-	if connectorID != "" {
-		if connector, err := d.store.GetConnector(ctx, connectorID); err != nil {
-			slog.Error("failed to fetch connector for notification", "error", err, "connectorID", connectorID)
-			// Treat as unknown category; routes with a category filter just won't match.
-		} else {
-			connectorCategory = connector.Category
-		}
-	}
-
-	// Helper to check if a channel should be gated by routing rules.
-	// Returns true if delivery should be skipped, false if it should proceed (or if no routing applies).
+func (d *Dispatcher) notifyExternalChannels(ctx context.Context, notifID string, channels []channelCfg, routes []routeCfg, eventType, severity, connectorID, userID, title, message string) {
+	connectorCategory := d.notificationConnectorCategory(ctx, connectorID)
 	shouldSkip := func(channel string) bool {
-		if len(routes) == 0 {
-			// No routing configured; proceed with normal channel-based delivery.
-			return false
-		}
-		route, foundRoute := findRoute(routes, eventType, channel)
-		if !foundRoute {
-			// Routing configured but no rule for this event/channel; skip.
-			return true
-		}
-		if !route.Enabled {
-			// Route exists but disabled; skip.
-			return true
-		}
-		if severityRank(severity) > severityRank(route.MinSeverity) {
-			// Event severity below minimum; skip.
-			return true
-		}
-		// Check connector category filter (AND semantics with ID filter if both present).
-		if route.ConnectorCategory != "" && route.ConnectorCategory != connectorCategory {
-			// Route has category filter and connector's category doesn't match; skip.
-			return true
-		}
-		// Check connector ID filter (AND semantics with category filter if both present).
-		if route.ConnectorID != "" && route.ConnectorID != connectorID {
-			// Route has ID filter and connector ID doesn't match; skip.
-			return true
-		}
-		return false
+		return shouldSkipRoute(routes, eventType, channel, severity, connectorCategory, connectorID)
 	}
-
 	if !shouldSkip("smtp") {
 		if _, enabled := findChannel(channels, "smtp"); enabled {
 			// ponytail: SMTP delivery is a stub — always "succeeds" and only logs. Real sending
@@ -291,24 +260,41 @@ func (d *Dispatcher) notifyAlert(ctx context.Context, channels []channelCfg, rou
 			d.recordDelivery(ctx, notifID, "smtp", store.DeliveryStatusSent, "")
 		}
 	}
-
-	if !shouldSkip("webhook") {
-		if cfg, enabled := findChannel(channels, "webhook"); enabled {
-			d.attemptChannel(ctx, notifID, "webhook", cfg, webhookPayload(title, message))
+	for _, delivery := range []struct {
+		channel string
+		payload any
+	}{{"webhook", webhookPayload(title, message)}, {"discord", discordPayload(title, message)}, {"slack", slackPayload(title, message)}} {
+		if !shouldSkip(delivery.channel) {
+			if cfg, enabled := findChannel(channels, delivery.channel); enabled {
+				d.attemptChannel(ctx, notifID, delivery.channel, cfg, delivery.payload)
+			}
 		}
 	}
+}
 
-	if !shouldSkip("discord") {
-		if cfg, enabled := findChannel(channels, "discord"); enabled {
-			d.attemptChannel(ctx, notifID, "discord", cfg, discordPayload(title, message))
+func (d *Dispatcher) notificationConnectorCategory(ctx context.Context, connectorID string) string {
+	if connectorID != "" {
+		if connector, err := d.store.GetConnector(ctx, connectorID); err != nil {
+			slog.Error("failed to fetch connector for notification", "error", err, "connectorID", logsafe.Sanitize(connectorID))
+			// Treat as unknown category; routes with a category filter just won't match.
+		} else {
+			return connector.Category
 		}
 	}
+	return ""
+}
 
-	if !shouldSkip("slack") {
-		if cfg, enabled := findChannel(channels, "slack"); enabled {
-			d.attemptChannel(ctx, notifID, "slack", cfg, slackPayload(title, message))
-		}
+func shouldSkipRoute(routes []routeCfg, eventType, channel, severity, connectorCategory, connectorID string) bool {
+	if len(routes) == 0 {
+		// No routing configured; proceed with normal channel-based delivery.
+		return false
 	}
+	route, foundRoute := findRoute(routes, eventType, channel)
+	if !foundRoute || !route.Enabled || severityRank(severity) > severityRank(route.MinSeverity) {
+		return true
+	}
+	return (route.ConnectorCategory != "" && route.ConnectorCategory != connectorCategory) ||
+		(route.ConnectorID != "" && route.ConnectorID != connectorID)
 }
 
 func findChannel(channels []channelCfg, typ string) (channelCfg, bool) {

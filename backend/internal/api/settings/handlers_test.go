@@ -191,6 +191,25 @@ func TestAIConfigRoundTrip(t *testing.T) {
 	})
 }
 
+func TestUpdateAIConfigEncryptsEmbedAPIKey(t *testing.T) {
+	s := apitest.NewStore(t)
+	h := NewHandler(s, testConfig(), ai.NewRegistry())
+	req := httptest.NewRequest(http.MethodPut, "/api/ai/config", strings.NewReader(`{"embedApiKey":"embed-super-secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.UpdateAIConfig(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "embed-super-secret") {
+		t.Fatalf("response leaked plaintext embed API key: %s", rr.Body.String())
+	}
+	if got := h.GetDecryptedEmbedAPIKey(); got != "embed-super-secret" {
+		t.Fatalf("GetDecryptedEmbedAPIKey() = %q, want embed-super-secret", got)
+	}
+}
+
 func TestNotificationsConfigRoundTrip(t *testing.T) {
 	s := apitest.NewStore(t)
 	h := NewHandler(s, testConfig(), ai.NewRegistry())

@@ -126,6 +126,30 @@ func TestNotifyAlert_NoChannelsConfigured(t *testing.T) {
 	}
 }
 
+func TestNotifyAlert_SkipExternalStillRecordsInApp(t *testing.T) {
+	s := newTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("external webhook must not be called when skipped")
+	}))
+	defer srv.Close()
+	setWebhookConfig(t, s, srv.URL)
+
+	d := NewDispatcher(s, nil)
+	d.notifyAlert(context.Background(), d.loadChannels(context.Background()), nil, "alert-1", "user-1", "alert.created", "", "", "Title", "Message", true)
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil || len(notifs) != 1 {
+		t.Fatalf("notifications = %d, err = %v; want one", len(notifs), err)
+	}
+	deliveries := deliveriesFor(t, s, notifs[0].ID)
+	if _, ok := findDelivery(deliveries, "in_app"); !ok {
+		t.Fatalf("in-app delivery missing: %+v", deliveries)
+	}
+	if _, ok := findDelivery(deliveries, "webhook"); ok {
+		t.Fatalf("webhook delivery must be skipped: %+v", deliveries)
+	}
+}
+
 func TestNotifyAlert_WebhookSuccess(t *testing.T) {
 	s := newTestStore(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

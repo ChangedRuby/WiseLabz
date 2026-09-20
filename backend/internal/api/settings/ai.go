@@ -233,15 +233,21 @@ func (h *Handler) UpdateAIConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "UPDATE ai_config SET " + strings.Join(parts, ", ") + " WHERE id = 1"
-
-	_, err := h.Store.DB().ExecContext(r.Context(), query, args...)
-	if err != nil {
-		httputil.Errorf(w, err)
+	if !h.persistAIConfigUpdate(w, r, parts, args) {
 		return
 	}
 
 	h.GetAIConfig(w, r)
+}
+
+func (h *Handler) persistAIConfigUpdate(w http.ResponseWriter, r *http.Request, parts []string, args []any) bool {
+	query := "UPDATE ai_config SET " + strings.Join(parts, ", ") + " WHERE id = 1"
+	_, err := h.Store.DB().ExecContext(r.Context(), query, args...)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	return true
 }
 
 // TestAIConfig handles POST /api/ai/config/test.
