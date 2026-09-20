@@ -109,6 +109,18 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusCreated, sanitizeUser(user))
 }
 
+// updateUserRequest is the PATCH /api/users/{id} body. Every field is a
+// pointer so an omitted field is distinguishable from a zero value and is
+// left untouched.
+type updateUserRequest struct {
+	Username                   *string `json:"username"`
+	DisplayName                *string `json:"displayName"`
+	Email                      *string `json:"email"`
+	Role                       *string `json:"role"`
+	Disabled                   *bool   `json:"disabled"`
+	CanManageDashboardDefaults *bool   `json:"canManageDashboardDefaults"`
+}
+
 // UpdateUser handles PATCH /api/users/{id}.
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
@@ -117,18 +129,37 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, ok := httputil.DecodeJSON[struct {
-		Username                   *string `json:"username"`
-		DisplayName                *string `json:"displayName"`
-		Email                      *string `json:"email"`
-		Role                       *string `json:"role"`
-		Disabled                   *bool   `json:"disabled"`
-		CanManageDashboardDefaults *bool   `json:"canManageDashboardDefaults"`
-	}](w, r)
+	req, ok := httputil.DecodeJSON[updateUserRequest](w, r)
 	if !ok {
 		return
 	}
 
+	updates, ok := h.buildUserUpdates(w, r, userID, req)
+	if !ok {
+		return
+	}
+
+	if len(updates) == 0 {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "No fields to update")
+		return
+	}
+
+	if err := h.Store.UpdateUser(r.Context(), userID, updates); err != nil {
+		writeUserWriteError(w, err)
+		return
+	}
+
+	h.revokeAfterUserUpdate(r.Context(), userID, updates)
+
+	user, _ := h.Store.GetUserByID(r.Context(), userID)
+	httputil.JSON(w, http.StatusOK, sanitizeUser(user))
+}
+
+// buildUserUpdates maps the request body onto store column updates, rejecting
+// invalid roles and the canManageDashboardDefaults/role combination. When the
+// request does not carry a role, the caller's current role is read back to
+// decide whether the flag may be set.
+func (h *Handler) buildUserUpdates(w http.ResponseWriter, r *http.Request, userID string, req updateUserRequest) (map[string]any, bool) {
 	updates := make(map[string]any)
 	if req.Username != nil {
 		updates["username"] = *req.Username
@@ -142,7 +173,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Role != nil {
 		if *req.Role != "user" && *req.Role != "admin" {
 			httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'")
-			return
+			return nil, false
 		}
 		updates["instance_admin_role"] = *req.Role
 	}
@@ -156,42 +187,34 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				if errors.Is(err, store.ErrNotFound) {
 					httputil.Error(w, http.StatusNotFound, "not_found", "User not found")
-					return
+					return nil, false
 				}
 				httputil.Errorf(w, err)
-				return
+				return nil, false
 			}
 			effectiveRole = &existing.InstanceAdminRole
 		}
 		if *req.CanManageDashboardDefaults && *effectiveRole != "admin" {
 			httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'")
-			return
+			return nil, false
 		}
 		updates["can_manage_dashboard_defaults"] = *req.CanManageDashboardDefaults
 	}
+	return updates, true
+}
 
-	if len(updates) == 0 {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "No fields to update")
+// writeUserWriteError maps store errors from a user write onto the API's
+// 404/409 responses.
+func writeUserWriteError(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "User not found")
 		return
 	}
-
-	if err := h.Store.UpdateUser(r.Context(), userID, updates); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			httputil.Error(w, http.StatusNotFound, "not_found", "User not found")
-			return
-		}
-		if errors.Is(err, store.ErrConflict) {
-			httputil.Error(w, http.StatusConflict, "conflict", "Username already exists")
-			return
-		}
-		httputil.Errorf(w, err)
+	if errors.Is(err, store.ErrConflict) {
+		httputil.Error(w, http.StatusConflict, "conflict", "Username already exists")
 		return
 	}
-
-	h.revokeAfterUserUpdate(r.Context(), userID, updates)
-
-	user, _ := h.Store.GetUserByID(r.Context(), userID)
-	httputil.JSON(w, http.StatusOK, sanitizeUser(user))
+	httputil.Errorf(w, err)
 }
 
 // revokeAfterUserUpdate applies the credential fallout of a user update.
