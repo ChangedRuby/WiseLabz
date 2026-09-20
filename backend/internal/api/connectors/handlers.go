@@ -181,27 +181,30 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, connectorWithRole{ConnectorRecord: *c, MyRole: role})
 }
 
+// updateConnectorRequest is the PUT /api/connectors/{id} request body.
+type updateConnectorRequest struct {
+	Name      *string        `json:"name"`
+	URL       *string        `json:"url"`
+	Owner     *string        `json:"owner"`
+	VerifyTLS *bool          `json:"verifyTls"`
+	Config    map[string]any `json:"config"`
+	Enabled   *bool          `json:"enabled"`
+	Category  *string        `json:"category"`
+	Type      *string        `json:"type"`
+	// ScheduleSeconds, UserExpiresAt and RotationMaxAgeDays are raw JSON so
+	// absence (leave unchanged) can be told apart from an explicit `null`
+	// (clear): a plain *T/**T decodes both to a nil pointer, losing that
+	// distinction.
+	ScheduleSeconds    json.RawMessage `json:"scheduleSeconds"`
+	UserExpiresAt      json.RawMessage `json:"userExpiresAt"`
+	RotationMaxAgeDays json.RawMessage `json:"rotationMaxAgeDays"`
+}
+
 // Update handles PUT /api/connectors/{id}.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	req, ok := httputil.DecodeJSON[struct {
-		Name      *string        `json:"name"`
-		URL       *string        `json:"url"`
-		Owner     *string        `json:"owner"`
-		VerifyTLS *bool          `json:"verifyTls"`
-		Config    map[string]any `json:"config"`
-		Enabled   *bool          `json:"enabled"`
-		Category  *string        `json:"category"`
-		Type      *string        `json:"type"`
-		// ScheduleSeconds, UserExpiresAt and RotationMaxAgeDays are raw JSON so
-		// absence (leave unchanged) can be told apart from an explicit `null`
-		// (clear): a plain *T/**T decodes both to a nil pointer, losing that
-		// distinction.
-		ScheduleSeconds    json.RawMessage `json:"scheduleSeconds"`
-		UserExpiresAt      json.RawMessage `json:"userExpiresAt"`
-		RotationMaxAgeDays json.RawMessage `json:"rotationMaxAgeDays"`
-	}](w, r)
+	req, ok := httputil.DecodeJSON[updateConnectorRequest](w, r)
 	if !ok {
 		return
 	}
@@ -211,26 +214,68 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "Request validation failed", fieldErrs)
 		return
 	}
-	// Repointing a connector makes the server send its stored credentials to
-	// the new endpoint, so changing where or how it connects is an
-	// instance-admin action; operators may still send unchanged values.
-	if (req.URL != nil || req.Type != nil || req.VerifyTLS != nil) && !auth.InstanceAdminFromContext(r.Context()) {
-		current, err := h.Store.GetConnector(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
-				return
-			}
-			httputil.Errorf(w, err)
-			return
-		}
-		if (req.URL != nil && *req.URL != current.URL) ||
-			(req.Type != nil && *req.Type != current.Type) ||
-			(req.VerifyTLS != nil && *req.VerifyTLS != current.VerifyTLS) {
-			httputil.Error(w, http.StatusForbidden, "forbidden", "Changing url, type or verifyTls requires an instance admin")
-			return
-		}
+	if !h.authorizeConnectorRepoint(w, r, id, &req) {
+		return
 	}
+	applyConnectorScalarUpdates(updates, &req)
+	if !h.applyConnectorConfigUpdate(w, r, id, &req, updates) {
+		return
+	}
+
+	if len(updates) == 0 {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", "No fields to update")
+		return
+	}
+
+	if err := h.Store.UpdateConnector(r.Context(), id, updates); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+			return
+		}
+		httputil.Errorf(w, err)
+		return
+	}
+
+	h.recordConnectorUpdateAudit(r, id, updates)
+
+	c, _ := h.Store.GetConnector(r.Context(), id)
+	httputil.JSON(w, http.StatusOK, c)
+}
+
+// authorizeConnectorRepoint guards the fields that decide where and how a
+// connector connects. Repointing one makes the server send its stored
+// credentials to the new endpoint, so changing url, type or verifyTls is an
+// instance-admin action; operators may still send unchanged values. It
+// writes the error response and reports false when the update must not
+// proceed.
+func (h *Handler) authorizeConnectorRepoint(w http.ResponseWriter, r *http.Request, id string, req *updateConnectorRequest) bool {
+	if req.URL == nil && req.Type == nil && req.VerifyTLS == nil {
+		return true
+	}
+	if auth.InstanceAdminFromContext(r.Context()) {
+		return true
+	}
+	current, err := h.Store.GetConnector(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
+			return false
+		}
+		httputil.Errorf(w, err)
+		return false
+	}
+	if (req.URL != nil && *req.URL != current.URL) ||
+		(req.Type != nil && *req.Type != current.Type) ||
+		(req.VerifyTLS != nil && *req.VerifyTLS != current.VerifyTLS) {
+		httputil.Error(w, http.StatusForbidden, "forbidden", "Changing url, type or verifyTls requires an instance admin")
+		return false
+	}
+	return true
+}
+
+// applyConnectorScalarUpdates copies every scalar field the request actually
+// carries into updates, under its column name.
+func applyConnectorScalarUpdates(updates map[string]any, req *updateConnectorRequest) {
 	if req.Name != nil {
 		updates["name"] = *req.Name
 	}
@@ -252,65 +297,64 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Type != nil {
 		updates["type"] = *req.Type
 	}
+}
 
-	if req.Config != nil {
-		rec, err := h.Store.GetConnector(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
-				return
-			}
-			httputil.Errorf(w, err)
-			return
-		}
-		typ := rec.Type
-		if req.Type != nil {
-			typ = *req.Type
-		}
-		url := rec.URL
-		if req.URL != nil {
-			url = *req.URL
-		}
-		verifyTLS := rec.VerifyTLS
-		if req.VerifyTLS != nil {
-			verifyTLS = *req.VerifyTLS
-		}
-		if err := validateConnectorConfig(typ, url, verifyTLS, req.Config); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
-			return
-		}
-		changed, err := store.SecretFieldsChanged(typ, rec.ConfigData, req.Config, h.Config.Encryption.Key)
-		if err != nil {
-			httputil.Errorf(w, err)
-			return
-		}
-		data, err := store.MarshalConnectorConfig(typ, req.Config, h.Config.Encryption.Key)
-		if err != nil {
-			httputil.Errorf(w, err)
-			return
-		}
-		updates["config_data"] = data
-		if changed {
-			updates["secret_rotated_at"] = time.Now().UTC().Format(time.RFC3339)
-		}
+// applyConnectorConfigUpdate validates the submitted config against the
+// connector's effective type, url and verifyTls — the request's values where
+// present, the stored ones otherwise — then marshals it into updates and
+// stamps secret_rotated_at when an encrypted field changed. A request
+// without a config body is a no-op. It writes the error response and reports
+// false when the update must not proceed.
+func (h *Handler) applyConnectorConfigUpdate(w http.ResponseWriter, r *http.Request, id string, req *updateConnectorRequest, updates map[string]any) bool {
+	if req.Config == nil {
+		return true
 	}
-
-	if len(updates) == 0 {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "No fields to update")
-		return
-	}
-
-	if err := h.Store.UpdateConnector(r.Context(), id, updates); err != nil {
+	rec, err := h.Store.GetConnector(r.Context(), id)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
-			return
+			return false
 		}
 		httputil.Errorf(w, err)
-		return
+		return false
 	}
+	typ := rec.Type
+	if req.Type != nil {
+		typ = *req.Type
+	}
+	url := rec.URL
+	if req.URL != nil {
+		url = *req.URL
+	}
+	verifyTLS := rec.VerifyTLS
+	if req.VerifyTLS != nil {
+		verifyTLS = *req.VerifyTLS
+	}
+	if err := validateConnectorConfig(typ, url, verifyTLS, req.Config); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return false
+	}
+	changed, err := store.SecretFieldsChanged(typ, rec.ConfigData, req.Config, h.Config.Encryption.Key)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	data, err := store.MarshalConnectorConfig(typ, req.Config, h.Config.Encryption.Key)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	updates["config_data"] = data
+	if changed {
+		updates["secret_rotated_at"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	return true
+}
 
-	// Record only which fields changed, not their values — config_data can
-	// carry connector credentials and must never land in the audit log.
+// recordConnectorUpdateAudit records only which fields changed, not their
+// values — config_data can carry connector credentials and must never land
+// in the audit log.
+func (h *Handler) recordConnectorUpdateAudit(r *http.Request, id string, updates map[string]any) {
 	fields := make([]string, 0, len(updates))
 	for k := range updates {
 		fields = append(fields, k)
@@ -320,9 +364,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("failed to record audit", "action", "connector.update", "error", err)
 	}
-
-	c, _ := h.Store.GetConnector(r.Context(), id)
-	httputil.JSON(w, http.StatusOK, c)
 }
 
 // Delete handles DELETE /api/connectors/{id}.
