@@ -249,6 +249,7 @@ import (
     _ "github.com/WiseLabz/wiselabz/internal/connector/adguardhome"
     _ "github.com/WiseLabz/wiselabz/internal/connector/custom"
     _ "github.com/WiseLabz/wiselabz/internal/connector/docker"
+    _ "github.com/WiseLabz/wiselabz/internal/connector/home_assistant"
     _ "github.com/WiseLabz/wiselabz/internal/connector/mynewservice" // <-- add this
     _ "github.com/WiseLabz/wiselabz/internal/connector/opnsense"
     _ "github.com/WiseLabz/wiselabz/internal/connector/pfsense"
@@ -438,6 +439,26 @@ connector simply does not decode them. The same rule is enforced for
 attributes are configuration, not telemetry. Where a resource is inherently
 volatile — connected clients, say — prefer a summary (counts per SSID) over
 one entity per instance.
+
+When nearly everything an API returns is volatile, filtering has to go a step
+further. The Home Assistant connector
+(`backend/internal/connector/home_assistant/`) is the reference for that case:
+
+- **Drop the timestamps outright.** Home Assistant stamps every entity with
+  `last_changed`/`last_updated`. Neither reaches the snapshot — they say when
+  something happened, not how the instance is configured.
+- **Collapse measurements to availability.** A `sensor.*` state is a live
+  reading. `stableState` reports such an entity as `available` (or
+  `unavailable`/`unknown`, which *are* meaningful) instead of its value, using
+  a volatile-domain list plus a numeric/timestamp check so an unrecognised
+  integration is treated conservatively.
+- **Report the counts, not the readings.** Per-domain totals and an
+  unavailable-entity count carry the operational signal that the individual
+  values would have, and only change when something actually changes.
+- **Sort before you cap.** Large instances expose thousands of entities, so a
+  `max_entities` field caps how many a snapshot carries. Entities are sorted by
+  ID first, so the cap always keeps the same set instead of whatever order the
+  API happened to return.
 
 ## Getting your connector merged
 
