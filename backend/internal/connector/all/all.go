@@ -15,4 +15,5 @@ import (
 	_ "github.com/WiseLabz/wiselabz/internal/connector/pfsense"     // register pfSense connector
 	_ "github.com/WiseLabz/wiselabz/internal/connector/pihole"      // register Pi-hole connector
 	_ "github.com/WiseLabz/wiselabz/internal/connector/proxmox"     // register Proxmox connector
+	_ "github.com/WiseLabz/wiselabz/internal/connector/traefik"     // register Traefik connector
 )

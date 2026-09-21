@@ -102,6 +102,7 @@ use `server config validate` to check deployment settings and `server config pri
 | pfSense / OPNsense | Built-in             |
 | Netbird            | Built-in             |
 | Cloudflare         | Built-in             |
+| Traefik            | Built-in             |
 | Everything else    | Community connectors |
 
 New service connectors are community-driven. If the service you run isn't here yet,

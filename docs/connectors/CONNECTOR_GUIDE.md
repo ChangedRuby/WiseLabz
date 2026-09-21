@@ -252,6 +252,7 @@ import (
     _ "github.com/WiseLabz/wiselabz/internal/connector/opnsense"
     _ "github.com/WiseLabz/wiselabz/internal/connector/pfsense"
     _ "github.com/WiseLabz/wiselabz/internal/connector/proxmox"
+    _ "github.com/WiseLabz/wiselabz/internal/connector/traefik"
 )
 ```
 
