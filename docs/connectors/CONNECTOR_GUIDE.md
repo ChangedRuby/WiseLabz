@@ -246,6 +246,7 @@ In `backend/internal/connector/all/all.go`, add one blank import line:
 package all
 
 import (
+    _ "github.com/WiseLabz/wiselabz/internal/connector/adguardhome"
     _ "github.com/WiseLabz/wiselabz/internal/connector/custom"
     _ "github.com/WiseLabz/wiselabz/internal/connector/docker"
     _ "github.com/WiseLabz/wiselabz/internal/connector/mynewservice" // <-- add this

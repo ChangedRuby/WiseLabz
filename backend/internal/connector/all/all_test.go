@@ -12,6 +12,7 @@ func TestAllConnectorImplementationsRegister(t *testing.T) {
 		category string
 		stub     bool
 	}{
+		{typ: "adguardhome", category: "dns"},
 		{typ: "custom", category: "virtualization"},
 		{typ: "docker", category: "containers_paas"},
 		{typ: "opnsense", category: "networking"},
