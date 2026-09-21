@@ -117,7 +117,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validateConnectorConfig(req.Type, req.URL, verifyTLS, req.Config); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeConfigRejection(w, err)
 		return
 	}
 
@@ -331,7 +331,7 @@ func (h *Handler) applyConnectorConfigUpdate(w http.ResponseWriter, r *http.Requ
 		verifyTLS = *req.VerifyTLS
 	}
 	if err := validateConnectorConfig(typ, url, verifyTLS, req.Config); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeConfigRejection(w, err)
 		return false
 	}
 	changed, err := store.SecretFieldsChanged(typ, rec.ConfigData, req.Config, h.Config.Encryption.Key)
@@ -745,6 +745,36 @@ func validateConnectorConfig(typ, url string, verifyTLS bool, config map[string]
 	cfg["url"] = url
 	cfg["verify_tls"] = verifyTLS
 	return connector.ValidateConfig(*schema, cfg)
+}
+
+// configRequestField maps a schema field key onto the request-body field the
+// client actually sent it in. validateConnectorConfig folds the two top-level
+// fields into the config map before validating, so they have to be folded
+// back out here; everything else is a key inside the config object.
+func configRequestField(schemaKey string) string {
+	switch schemaKey {
+	case "url":
+		return "url"
+	case "verify_tls":
+		return "verifyTls"
+	default:
+		return "config." + schemaKey
+	}
+}
+
+// writeConfigRejection writes the 400 for a connector config that failed its
+// type's schema rules, naming the offending field in details when
+// ValidateConfig identified one. A schema whose own pattern is malformed is a
+// server-side defect, not a field the caller can fix, so it keeps the plain
+// envelope.
+func writeConfigRejection(w http.ResponseWriter, err error) {
+	var invalid *connector.ConfigValidationError
+	if !errors.As(err, &invalid) {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", err.Error(),
+		[]httputil.FieldError{{Field: configRequestField(invalid.Field), Msg: invalid.Message}})
 }
 
 // Schema handles GET /api/connectors/schema.

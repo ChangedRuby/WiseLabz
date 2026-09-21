@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BadRequestResponse,
   ElevationRequiredResponse,
   ForbiddenResponse,
   User,
@@ -180,7 +181,7 @@ export const getPostUsersQueryKey = (userCreate?: BodyType<UserCreate>) => {
 
 export const getPostUsersQueryOptions = <
   TData = Awaited<ReturnType<typeof postUsers>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   userCreate: BodyType<UserCreate>,
   options?: {
@@ -203,11 +204,11 @@ export const getPostUsersQueryOptions = <
 };
 
 export type PostUsersQueryResult = NonNullable<Awaited<ReturnType<typeof postUsers>>>;
-export type PostUsersQueryError = ErrorType<ForbiddenResponse>;
+export type PostUsersQueryError = ErrorType<BadRequestResponse | ForbiddenResponse>;
 
 export function usePostUsers<
   TData = Awaited<ReturnType<typeof postUsers>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   userCreate: BodyType<UserCreate>,
   options: {
@@ -226,7 +227,7 @@ export function usePostUsers<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostUsers<
   TData = Awaited<ReturnType<typeof postUsers>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   userCreate: BodyType<UserCreate>,
   options?: {
@@ -245,7 +246,7 @@ export function usePostUsers<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostUsers<
   TData = Awaited<ReturnType<typeof postUsers>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   userCreate: BodyType<UserCreate>,
   options?: {
@@ -260,7 +261,7 @@ export function usePostUsers<
 
 export function usePostUsers<
   TData = Awaited<ReturnType<typeof postUsers>>,
-  TError = ErrorType<ForbiddenResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   userCreate: BodyType<UserCreate>,
   options?: {

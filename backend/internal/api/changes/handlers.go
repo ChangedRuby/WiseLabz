@@ -298,15 +298,15 @@ func (h *Handler) BulkResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	auditAction, ok := lowRiskBulkStatuses[req.Status]
 	if !ok {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "status must be acknowledged or dismissed")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "status must be acknowledged or dismissed", []httputil.FieldError{{Field: "status", Msg: "must be acknowledged or dismissed"}})
 		return
 	}
 	if len(req.IDs) == 0 {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array", []httputil.FieldError{{Field: "ids", Msg: "must be a non-empty array"}})
 		return
 	}
 	if len(req.IDs) > httputil.MaxBulkIDs {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items", []httputil.FieldError{{Field: "ids", Msg: "must contain at most 500 items"}})
 		return
 	}
 

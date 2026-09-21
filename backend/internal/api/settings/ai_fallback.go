@@ -40,9 +40,10 @@ func (h *Handler) UpdateAIFallbackProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	for _, p := range req {
+	for i, p := range req {
 		if p.Provider == "" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "provider is required for every fallback entry")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "provider is required for every fallback entry",
+				[]httputil.FieldError{{Field: fmt.Sprintf("[%d].provider", i), Msg: "is required"}})
 			return
 		}
 	}

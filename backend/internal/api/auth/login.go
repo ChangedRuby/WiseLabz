@@ -41,8 +41,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Username == "" || req.Password == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Username and password are required")
+	if fieldErrs := httputil.MissingFields("username", req.Username, "password", req.Password); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "Username and password are required", fieldErrs)
 		return
 	}
 
@@ -149,14 +149,14 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DigestCadence != nil {
 		if *req.DigestCadence != "off" && *req.DigestCadence != "daily" && *req.DigestCadence != "weekly" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "digestCadence must be one of: off, daily, weekly")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "digestCadence must be one of: off, daily, weekly", []httputil.FieldError{{Field: "digestCadence", Msg: "must be one of: off, daily, weekly"}})
 			return
 		}
 		updates["digest_cadence"] = *req.DigestCadence
 	}
 	if req.DigestTimezone != nil {
 		if _, err := time.LoadLocation(*req.DigestTimezone); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "digestTimezone is not a valid IANA timezone")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "digestTimezone is not a valid IANA timezone", []httputil.FieldError{{Field: "digestTimezone", Msg: "is not a valid IANA timezone"}})
 			return
 		}
 		updates["digest_timezone"] = *req.DigestTimezone
@@ -187,8 +187,8 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.CurrentPassword == "" || req.NewPassword == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "currentPassword and newPassword are required")
+	if fieldErrs := httputil.MissingFields("currentPassword", req.CurrentPassword, "newPassword", req.NewPassword); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "currentPassword and newPassword are required", fieldErrs)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid password: "+err.Error())
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "Invalid password: "+err.Error(), []httputil.FieldError{{Field: "newPassword", Msg: err.Error()}})
 		return
 	}
 

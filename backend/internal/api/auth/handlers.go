@@ -66,25 +66,25 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Username == "" || req.Password == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "username and password are required")
+	if fieldErrs := httputil.MissingFields("username", req.Username, "password", req.Password); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "username and password are required", fieldErrs)
 		return
 	}
 	if req.Role == "" {
 		req.Role = "user"
 	}
 	if req.Role != "user" && req.Role != "admin" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'", []httputil.FieldError{{Field: "role", Msg: "must be 'user' or 'admin'"}})
 		return
 	}
 	if req.CanManageDashboardDefaults && req.Role != "admin" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'", []httputil.FieldError{{Field: "canManageDashboardDefaults", Msg: "requires role 'admin'"}})
 		return
 	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("Invalid password: %v", err))
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("Invalid password: %v", err), []httputil.FieldError{{Field: "password", Msg: err.Error()}})
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *Handler) buildUserUpdates(w http.ResponseWriter, r *http.Request, userI
 	}
 	if req.Role != nil {
 		if *req.Role != "user" && *req.Role != "admin" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "role must be 'user' or 'admin'", []httputil.FieldError{{Field: "role", Msg: "must be 'user' or 'admin'"}})
 			return nil, false
 		}
 		updates["instance_admin_role"] = *req.Role
@@ -195,7 +195,7 @@ func (h *Handler) buildUserUpdates(w http.ResponseWriter, r *http.Request, userI
 			effectiveRole = &existing.InstanceAdminRole
 		}
 		if *req.CanManageDashboardDefaults && *effectiveRole != "admin" {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "canManageDashboardDefaults requires role 'admin'", []httputil.FieldError{{Field: "canManageDashboardDefaults", Msg: "requires role 'admin'"}})
 			return nil, false
 		}
 		updates["can_manage_dashboard_defaults"] = *req.CanManageDashboardDefaults
@@ -279,13 +279,13 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.NewPassword == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "newPassword is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "newPassword is required", []httputil.FieldError{{Field: "newPassword", Msg: "is required"}})
 		return
 	}
 
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("Invalid password: %v", err))
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("Invalid password: %v", err), []httputil.FieldError{{Field: "password", Msg: err.Error()}})
 		return
 	}
 

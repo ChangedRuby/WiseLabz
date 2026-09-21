@@ -40,7 +40,7 @@ func (h *Handler) ExportAudit(w http.ResponseWriter, r *http.Request) {
 		format = "json"
 	}
 	if format != "json" && format != "csv" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_format", "format must be \"json\" or \"csv\"")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_format", "format must be \"json\" or \"csv\"", []httputil.FieldError{{Field: "format", Msg: "must be \"json\" or \"csv\""}})
 		return
 	}
 

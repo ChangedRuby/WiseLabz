@@ -110,8 +110,8 @@ func (h *Handler) Elevate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Password == "" || req.Action == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "password and action are required")
+	if fieldErrs := httputil.MissingFields("password", req.Password, "action", req.Action); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "password and action are required", fieldErrs)
 		return
 	}
 

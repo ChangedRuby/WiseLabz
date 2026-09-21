@@ -134,7 +134,7 @@ func (h *Handler) TestNotificationsConfig(w http.ResponseWriter, r *http.Request
 		Channel string `json:"channel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "channel is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "channel is required", []httputil.FieldError{{Field: "channel", Msg: "is required"}})
 		return
 	}
 	slog.Info("test notification requested", "channel", logsafe.Sanitize(req.Channel))

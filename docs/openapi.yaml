@@ -70,6 +70,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /auth/oidc/callback:
     post:
@@ -256,6 +257,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /users/{userId}:
     parameters: [{ $ref: '#/components/parameters/UserId' }]
@@ -1288,6 +1290,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenerateResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { description: Template or connector not found }
 
   /docs/topology:
@@ -1395,6 +1398,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/BadRequest' }
   /templates/{templateId}:
     parameters: [{ $ref: '#/components/parameters/TemplateId' }]
     get:
@@ -1713,6 +1717,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AlertBulkSnoozeResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   # ───────────────────────── attention queue ─────────────────────────
   /attention:
@@ -2109,6 +2114,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/AiFallbackProvider' }
+        '400': { $ref: '#/components/responses/BadRequest' }
   /notifications/config:
     get:
       tags: [settings]
@@ -2716,7 +2722,7 @@ components:
       type: object
       required: [field, msg]
       properties:
-        field: { type: string, description: Request body field the failure applies to }
+        field: { type: string, description: "Request field the failure applies to: a body field, a query parameter, or an indexed path such as [0].provider" }
         msg: { type: string, description: Human-readable reason the field was rejected }
 
     # ── auth ──

@@ -83,6 +83,21 @@ func ErrorWithDetails(w http.ResponseWriter, status int, code, message string, f
 	})
 }
 
+// MissingFields returns one FieldError{Field: name, Msg: "is required"} per
+// named field whose value is empty, preserving argument order. Arguments
+// alternate name, value; a trailing unpaired name is ignored. It covers the
+// common "a and b are required" check, which needs to report every offending
+// field rather than just the first.
+func MissingFields(nameValuePairs ...string) []FieldError {
+	var errs []FieldError
+	for i := 0; i+1 < len(nameValuePairs); i += 2 {
+		if nameValuePairs[i+1] == "" {
+			errs = append(errs, FieldError{Field: nameValuePairs[i], Msg: "is required"})
+		}
+	}
+	return errs
+}
+
 // Errorf writes a 500 Internal Server Error with a generic message.
 // Use for unexpected errors; the caller should log the actual error.
 func Errorf(w http.ResponseWriter, err error) {

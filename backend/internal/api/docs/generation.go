@@ -16,8 +16,8 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.TemplateID == "" || req.ConnectorID == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "templateId and connectorId are required")
+	if fieldErrs := httputil.MissingFields("templateId", req.TemplateID, "connectorId", req.ConnectorID); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "templateId and connectorId are required", fieldErrs)
 		return
 	}
 	if !h.requireDocOperator(w, r, req.ConnectorID) {

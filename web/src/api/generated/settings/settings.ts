@@ -24,6 +24,7 @@ import type {
   AiFallbackProvider,
   AuthConfig,
   AuthSettingsUpdate,
+  BadRequestResponse,
   ForbiddenResponse,
   NotFoundResponse,
   NotificationConfig,
@@ -945,7 +946,7 @@ export const getPutAiConfigFallbackProvidersQueryKey = (
 
 export const getPutAiConfigFallbackProvidersQueryOptions = <
   TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   aiFallbackProvider: BodyType<AiFallbackProvider[]>,
   options?: {
@@ -974,11 +975,11 @@ export const getPutAiConfigFallbackProvidersQueryOptions = <
 export type PutAiConfigFallbackProvidersQueryResult = NonNullable<
   Awaited<ReturnType<typeof putAiConfigFallbackProviders>>
 >;
-export type PutAiConfigFallbackProvidersQueryError = ErrorType<unknown>;
+export type PutAiConfigFallbackProvidersQueryError = ErrorType<BadRequestResponse>;
 
 export function usePutAiConfigFallbackProviders<
   TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   aiFallbackProvider: BodyType<AiFallbackProvider[]>,
   options: {
@@ -999,7 +1000,7 @@ export function usePutAiConfigFallbackProviders<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePutAiConfigFallbackProviders<
   TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   aiFallbackProvider: BodyType<AiFallbackProvider[]>,
   options?: {
@@ -1020,7 +1021,7 @@ export function usePutAiConfigFallbackProviders<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePutAiConfigFallbackProviders<
   TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   aiFallbackProvider: BodyType<AiFallbackProvider[]>,
   options?: {
@@ -1037,7 +1038,7 @@ export function usePutAiConfigFallbackProviders<
 
 export function usePutAiConfigFallbackProviders<
   TData = Awaited<ReturnType<typeof putAiConfigFallbackProviders>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   aiFallbackProvider: BodyType<AiFallbackProvider[]>,
   options?: {

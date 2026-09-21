@@ -1758,7 +1758,7 @@ export const getPostDocsGenerateQueryKey = (
 
 export const getPostDocsGenerateQueryOptions = <
   TData = Awaited<ReturnType<typeof postDocsGenerate>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   postDocsGenerateBody: BodyType<PostDocsGenerateBody>,
   options?: {
@@ -1781,11 +1781,11 @@ export const getPostDocsGenerateQueryOptions = <
 };
 
 export type PostDocsGenerateQueryResult = NonNullable<Awaited<ReturnType<typeof postDocsGenerate>>>;
-export type PostDocsGenerateQueryError = ErrorType<void>;
+export type PostDocsGenerateQueryError = ErrorType<BadRequestResponse | void>;
 
 export function usePostDocsGenerate<
   TData = Awaited<ReturnType<typeof postDocsGenerate>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   postDocsGenerateBody: BodyType<PostDocsGenerateBody>,
   options: {
@@ -1804,7 +1804,7 @@ export function usePostDocsGenerate<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostDocsGenerate<
   TData = Awaited<ReturnType<typeof postDocsGenerate>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   postDocsGenerateBody: BodyType<PostDocsGenerateBody>,
   options?: {
@@ -1823,7 +1823,7 @@ export function usePostDocsGenerate<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostDocsGenerate<
   TData = Awaited<ReturnType<typeof postDocsGenerate>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   postDocsGenerateBody: BodyType<PostDocsGenerateBody>,
   options?: {
@@ -1838,7 +1838,7 @@ export function usePostDocsGenerate<
 
 export function usePostDocsGenerate<
   TData = Awaited<ReturnType<typeof postDocsGenerate>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   postDocsGenerateBody: BodyType<PostDocsGenerateBody>,
   options?: {

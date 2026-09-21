@@ -8,7 +8,7 @@
  */
 
 export interface FieldError {
-  /** Request body field the failure applies to */
+  /** Request field the failure applies to: a body field, a query parameter, or an indexed path such as [0].provider */
   field: string;
   /** Human-readable reason the field was rejected */
   msg: string;

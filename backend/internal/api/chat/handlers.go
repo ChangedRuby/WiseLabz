@@ -44,11 +44,11 @@ func (h *Handler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ScopeType != "doc" && req.ScopeType != "lab" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", `scopeType must be "doc" or "lab"`)
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", `scopeType must be "doc" or "lab"`, []httputil.FieldError{{Field: "scopeType", Msg: `must be "doc" or "lab"`}})
 		return
 	}
 	if req.ScopeType == "doc" && req.ScopeID == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "scopeId is required when scopeType is \"doc\"")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "scopeId is required when scopeType is \"doc\"", []httputil.FieldError{{Field: "scopeId", Msg: "is required when scopeType is \"doc\""}})
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "content is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "content is required", []httputil.FieldError{{Field: "content", Msg: "is required"}})
 		return
 	}
 

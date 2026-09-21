@@ -41,8 +41,8 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.ProviderID == "" || req.Code == "" || req.State == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "providerId, code, and state are required")
+	if fieldErrs := httputil.MissingFields("providerId", req.ProviderID, "code", req.Code, "state", req.State); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "providerId, code, and state are required", fieldErrs)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *Handler) verifyOIDCFlowState(w http.ResponseWriter, r *http.Request, pr
 func (h *Handler) resolveOIDCProvider(w http.ResponseWriter, r *http.Request, providerID string) (*config.OIDCProvider, *auth.OIDCProvider, bool) {
 	provCfg := h.findOIDCProvider(providerID)
 	if provCfg == nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_provider", "Unknown OIDC provider")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_provider", "Unknown OIDC provider", []httputil.FieldError{{Field: "providerId", Msg: "is not a known OIDC provider"}})
 		return nil, nil, false
 	}
 	if !h.oidcProviderEnabled(r.Context(), providerID) {

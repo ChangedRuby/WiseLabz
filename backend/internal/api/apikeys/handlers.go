@@ -38,13 +38,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "name is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "name is required", []httputil.FieldError{{Field: "name", Msg: "is required"}})
 		return
 	}
 	if req.ExpiresAt != "" {
 		expiresAt, err := time.Parse(time.RFC3339, req.ExpiresAt)
 		if err != nil || !expiresAt.After(time.Now().UTC()) {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", "expiresAt must be a future RFC3339 timestamp")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "expiresAt must be a future RFC3339 timestamp", []httputil.FieldError{{Field: "expiresAt", Msg: "must be a future RFC3339 timestamp"}})
 			return
 		}
 	}

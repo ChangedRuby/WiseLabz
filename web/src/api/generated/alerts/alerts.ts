@@ -24,6 +24,7 @@ import type {
   AlertBulkSnoozeRequest,
   AlertBulkSnoozeResponse,
   AlertPage,
+  BadRequestResponse,
   GetAlertsParams,
   NotFoundResponse,
   PostAlertsAlertIdSnoozeBody,
@@ -733,7 +734,7 @@ export const getPostAlertsBulkSnoozeQueryKey = (
 
 export const getPostAlertsBulkSnoozeQueryOptions = <
   TData = Awaited<ReturnType<typeof postAlertsBulkSnooze>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   alertBulkSnoozeRequest: BodyType<AlertBulkSnoozeRequest>,
   options?: {
@@ -761,11 +762,11 @@ export const getPostAlertsBulkSnoozeQueryOptions = <
 export type PostAlertsBulkSnoozeQueryResult = NonNullable<
   Awaited<ReturnType<typeof postAlertsBulkSnooze>>
 >;
-export type PostAlertsBulkSnoozeQueryError = ErrorType<unknown>;
+export type PostAlertsBulkSnoozeQueryError = ErrorType<BadRequestResponse>;
 
 export function usePostAlertsBulkSnooze<
   TData = Awaited<ReturnType<typeof postAlertsBulkSnooze>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   alertBulkSnoozeRequest: BodyType<AlertBulkSnoozeRequest>,
   options: {
@@ -786,7 +787,7 @@ export function usePostAlertsBulkSnooze<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAlertsBulkSnooze<
   TData = Awaited<ReturnType<typeof postAlertsBulkSnooze>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   alertBulkSnoozeRequest: BodyType<AlertBulkSnoozeRequest>,
   options?: {
@@ -807,7 +808,7 @@ export function usePostAlertsBulkSnooze<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAlertsBulkSnooze<
   TData = Awaited<ReturnType<typeof postAlertsBulkSnooze>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   alertBulkSnoozeRequest: BodyType<AlertBulkSnoozeRequest>,
   options?: {
@@ -824,7 +825,7 @@ export function usePostAlertsBulkSnooze<
 
 export function usePostAlertsBulkSnooze<
   TData = Awaited<ReturnType<typeof postAlertsBulkSnooze>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   alertBulkSnoozeRequest: BodyType<AlertBulkSnoozeRequest>,
   options?: {

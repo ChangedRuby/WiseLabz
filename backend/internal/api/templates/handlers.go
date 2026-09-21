@@ -165,7 +165,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "name is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "name is required", []httputil.FieldError{{Field: "name", Msg: "is required"}})
 		return
 	}
 

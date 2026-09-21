@@ -55,44 +55,90 @@ type Entity struct {
 	Attributes map[string]any `json:"attributes"`
 }
 
+// FieldError names one rule field that failed validation, and why.
+type FieldError struct {
+	Field string
+	Msg   string
+}
+
+// ValidationError reports the rule fields that failed validation. Message is
+// the human-readable sentence on its own; Fields names the offending rule
+// fields, so an API layer can return them per-field instead of re-deriving
+// them from the message text.
+type ValidationError struct {
+	Message string
+	Fields  []FieldError
+	// Err is the underlying cause when a check has one (a regexp compile
+	// failure), so errors.Is/As still reach it through the wrapper.
+	Err error
+}
+
+func (e *ValidationError) Error() string { return e.Message }
+
+func (e *ValidationError) Unwrap() error { return e.Err }
+
+// invalidField builds a single-field ValidationError. format/args produce
+// Message, so the sentence each check already returned is preserved exactly.
+func invalidField(field, msg, format string, args ...any) *ValidationError {
+	return &ValidationError{
+		Message: fmt.Sprintf(format, args...),
+		Fields:  []FieldError{{Field: field, Msg: msg}},
+	}
+}
+
 // Validate checks that a rule can be evaluated with catalog. Empty conditions
 // are rejected: matching every entity is not a useful compliance rule.
+//
+// Every rejection is a *ValidationError naming the rule field at fault; the
+// per-condition ones use an indexed path (conditions[2].op) so a caller can
+// point at the exact row of a multi-condition rule.
 func Validate(rule Rule, catalog Catalog) error {
 	kinds, ok := catalog[rule.ConnectorType]
 	if !ok {
-		return fmt.Errorf("unknown connector type %q", rule.ConnectorType)
+		return invalidField("connectorType", "is not a known connector type",
+			"unknown connector type %q", rule.ConnectorType)
 	}
 	attributes, ok := kinds[rule.EntityKind]
 	if !ok {
-		return fmt.Errorf("unknown entity kind %q for connector type %q", rule.EntityKind, rule.ConnectorType)
+		return invalidField("entityKind", "is not a known entity kind for this connector type",
+			"unknown entity kind %q for connector type %q", rule.EntityKind, rule.ConnectorType)
 	}
 	if len(rule.Conditions) == 0 {
-		return fmt.Errorf("at least one condition is required")
+		return invalidField("conditions", "must contain at least one condition",
+			"at least one condition is required")
 	}
 	if len(rule.Conditions) > maxConditions {
-		return fmt.Errorf("at most %d conditions are allowed", maxConditions)
+		return invalidField("conditions", fmt.Sprintf("must contain at most %d conditions", maxConditions),
+			"at most %d conditions are allowed", maxConditions)
 	}
 
-	for _, condition := range rule.Conditions {
+	for i, condition := range rule.Conditions {
 		spec, ok := findAttribute(attributes, condition.Attribute)
 		if !ok {
-			return fmt.Errorf("unknown attribute %q", condition.Attribute)
+			return invalidField(fmt.Sprintf("conditions[%d].attribute", i), "is not a known attribute for this entity kind",
+				"unknown attribute %q", condition.Attribute)
 		}
 		if !validOp(spec.Type, condition.Op) {
-			return fmt.Errorf("operator %q is not valid for %s attribute %q", condition.Op, spec.Type, condition.Attribute)
+			return invalidField(fmt.Sprintf("conditions[%d].op", i), fmt.Sprintf("is not a valid operator for %s attributes", spec.Type),
+				"operator %q is not valid for %s attribute %q", condition.Op, spec.Type, condition.Attribute)
 		}
 		if condition.Op != "regex" {
 			continue
 		}
 		pattern, ok := condition.Value.(string)
 		if !ok {
-			return fmt.Errorf("regex value for %q must be a string", condition.Attribute)
+			return invalidField(fmt.Sprintf("conditions[%d].value", i), "must be a string when op is regex",
+				"regex value for %q must be a string", condition.Attribute)
 		}
 		if len(pattern) > maxRegexLength {
-			return fmt.Errorf("regex for %q exceeds %d characters", condition.Attribute, maxRegexLength)
+			return invalidField(fmt.Sprintf("conditions[%d].value", i), fmt.Sprintf("must be at most %d characters", maxRegexLength),
+				"regex for %q exceeds %d characters", condition.Attribute, maxRegexLength)
 		}
 		if _, err := regexp.Compile(pattern); err != nil {
-			return fmt.Errorf("invalid regex for %q: %w", condition.Attribute, err)
+			invalid := invalidField(fmt.Sprintf("conditions[%d].value", i), "is not a valid regular expression",
+				"invalid regex for %q: %v", condition.Attribute, err)
+			invalid.Err = err
+			return invalid
 		}
 	}
 	return nil

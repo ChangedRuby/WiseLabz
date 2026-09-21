@@ -2,6 +2,7 @@ package compliance
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -155,5 +156,68 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("Validate error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestValidateFieldAttribution pins the rule field each rejection names, so
+// the API layer can surface it as a {field, msg} detail without re-deriving
+// it from the message text.
+func TestValidateFieldAttribution(t *testing.T) {
+	ok := Condition{Attribute: "name", Op: "eq", Value: "web"}
+	rule := func(conditions ...Condition) Rule {
+		return Rule{ConnectorType: "docker", EntityKind: "container", Conditions: conditions}
+	}
+	tests := []struct {
+		name  string
+		rule  Rule
+		field string
+	}{
+		{"unknown connector", Rule{ConnectorType: "nope", EntityKind: "container", Conditions: []Condition{ok}}, "connectorType"},
+		{"unknown kind", Rule{ConnectorType: "docker", EntityKind: "vm", Conditions: []Condition{ok}}, "entityKind"},
+		{"empty conditions", rule(), "conditions"},
+		{"unknown attribute", rule(ok, Condition{Attribute: "nope", Op: "eq", Value: "x"}), "conditions[1].attribute"},
+		{"invalid op", rule(ok, Condition{Attribute: "name", Op: "gt", Value: "x"}), "conditions[1].op"},
+		{"invalid regex", rule(Condition{Attribute: "name", Op: "regex", Value: "["}), "conditions[0].value"},
+		{"non-string regex", rule(ok, ok, Condition{Attribute: "name", Op: "regex", Value: 1}), "conditions[2].value"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.rule, testCatalog())
+
+			var invalid *ValidationError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("Validate error = %v, want *ValidationError", err)
+			}
+			if len(invalid.Fields) != 1 {
+				t.Fatalf("Fields = %+v, want exactly one", invalid.Fields)
+			}
+			if invalid.Fields[0].Field != tt.field {
+				t.Errorf("Field = %q, want %q", invalid.Fields[0].Field, tt.field)
+			}
+			if invalid.Fields[0].Msg == "" {
+				t.Error("Msg is empty")
+			}
+			// Error() must still read as the sentence callers already log.
+			if invalid.Error() != invalid.Message {
+				t.Errorf("Error() = %q, want %q", invalid.Error(), invalid.Message)
+			}
+		})
+	}
+}
+
+// TestValidateRegexErrorUnwraps keeps the regexp compile failure reachable
+// through the ValidationError wrapper.
+func TestValidateRegexErrorUnwraps(t *testing.T) {
+	err := Validate(
+		Rule{ConnectorType: "docker", EntityKind: "container", Conditions: []Condition{{Attribute: "name", Op: "regex", Value: "["}}},
+		testCatalog(),
+	)
+	var invalid *ValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Validate error = %v, want *ValidationError", err)
+	}
+	if errors.Unwrap(invalid) == nil {
+		t.Error("Unwrap() = nil, want the regexp compile error")
 	}
 }

@@ -66,7 +66,7 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 	}
 
 	if req.CronExpr == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_cron", "cronExpr must not be empty")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_cron", "cronExpr must not be empty", []httputil.FieldError{{Field: "cronExpr", Msg: "must not be empty"}})
 		return
 	}
 	parser5Field := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
@@ -74,15 +74,28 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 	_, err5 := parser5Field.Parse(req.CronExpr)
 	_, err6 := parser6Field.Parse(req.CronExpr)
 	if err5 != nil && err6 != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_cron", "Invalid cron expression: must be valid 5-field or 6-field cron format")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_cron", "Invalid cron expression: must be valid 5-field or 6-field cron format", []httputil.FieldError{{Field: "cronExpr", Msg: "must be a valid 5-field or 6-field cron expression"}})
 		return
 	}
 
-	for _, days := range []int{req.SnapshotDays, req.DocVersionDays, req.AlertDays, req.SyncRunDays, req.AuditDays} {
-		if days < 0 {
-			httputil.Error(w, http.StatusBadRequest, "invalid_days", "retention day values must be >= 0 (0 disables cleanup)")
-			return
+	var dayErrs []httputil.FieldError
+	for _, f := range []struct {
+		name string
+		days int
+	}{
+		{"snapshotDays", req.SnapshotDays},
+		{"docVersionDays", req.DocVersionDays},
+		{"alertDays", req.AlertDays},
+		{"syncRunDays", req.SyncRunDays},
+		{"auditDays", req.AuditDays},
+	} {
+		if f.days < 0 {
+			dayErrs = append(dayErrs, httputil.FieldError{Field: f.name, Msg: "must be >= 0 (0 disables cleanup)"})
 		}
+	}
+	if len(dayErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_days", "retention day values must be >= 0 (0 disables cleanup)", dayErrs)
+		return
 	}
 
 	newSettings := store.RetentionSettings{

@@ -32,7 +32,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	changeType := r.URL.Query().Get("changeType")
 	alertSeverity := r.URL.Query().Get("alertSeverity")
 	if changeType != "" && alertSeverity != "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "changeType and alertSeverity are mutually exclusive")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "changeType and alertSeverity are mutually exclusive", []httputil.FieldError{
+			{Field: "changeType", Msg: "is mutually exclusive with alertSeverity"},
+			{Field: "alertSeverity", Msg: "is mutually exclusive with changeType"},
+		})
 		return
 	}
 
@@ -106,12 +109,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Title == "" || req.TargetValue == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "title and targetValue are required")
+	if fieldErrs := httputil.MissingFields("title", req.Title, "targetValue", req.TargetValue); len(fieldErrs) > 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "title and targetValue are required", fieldErrs)
 		return
 	}
 	if !validTargetType(req.TargetType) {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "targetType must be change_type or alert_severity")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "targetType must be change_type or alert_severity", []httputil.FieldError{{Field: "targetType", Msg: "must be change_type or alert_severity"}})
 		return
 	}
 
@@ -169,7 +172,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", jsonKey+" must be a string")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", jsonKey+" must be a string", []httputil.FieldError{{Field: jsonKey, Msg: "must be a string"}})
 			return
 		}
 		updates[col] = s
@@ -181,14 +184,14 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		var s *string
 		if err := json.Unmarshal(v, &s); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid_request", jsonKey+" must be a string or null")
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", jsonKey+" must be a string or null", []httputil.FieldError{{Field: jsonKey, Msg: "must be a string or null"}})
 			return
 		}
 		updates[col] = s
 	}
 
 	if tt, ok := updates["target_type"]; ok && !validTargetType(tt.(string)) {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "targetType must be change_type or alert_severity")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "targetType must be change_type or alert_severity", []httputil.FieldError{{Field: "targetType", Msg: "must be change_type or alert_severity"}})
 		return
 	}
 

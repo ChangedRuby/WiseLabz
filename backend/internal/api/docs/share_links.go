@@ -53,7 +53,7 @@ func (h *Handler) resolveShareLinkNode(w http.ResponseWriter, r *http.Request, d
 	// covered subtree is just that one doc, not its whole connector.
 	d, err := h.Store.GetDoc(r.Context(), docTreeRoot)
 	if errors.Is(err, store.ErrNotFound) {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "docTreeRoot does not refer to a known doc, connector, or the lab root")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "docTreeRoot does not refer to a known doc, connector, or the lab root", []httputil.FieldError{{Field: "docTreeRoot", Msg: "does not refer to a known doc, connector, or the lab root"}})
 		return shareLinkNode{}, false
 	}
 	if err != nil {
@@ -110,12 +110,12 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.DocTreeRoot == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "docTreeRoot is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "docTreeRoot is required", []httputil.FieldError{{Field: "docTreeRoot", Msg: "is required"}})
 		return
 	}
 	expiresAt, err := time.Parse(time.RFC3339, req.ExpiresAt)
 	if err != nil || !expiresAt.After(time.Now().UTC()) {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "expiresAt is required and must be a future RFC3339 timestamp")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "expiresAt is required and must be a future RFC3339 timestamp", []httputil.FieldError{{Field: "expiresAt", Msg: "is required and must be a future RFC3339 timestamp"}})
 		return
 	}
 

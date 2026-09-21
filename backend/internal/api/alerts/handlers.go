@@ -238,11 +238,11 @@ func (h *Handler) Snooze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Until == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "until is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "until is required", []httputil.FieldError{{Field: "until", Msg: "is required"}})
 		return
 	}
 	if _, err := time.Parse(time.RFC3339, req.Until); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "until must be an RFC3339 timestamp")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "until must be an RFC3339 timestamp", []httputil.FieldError{{Field: "until", Msg: "must be an RFC3339 timestamp"}})
 		return
 	}
 
@@ -301,19 +301,19 @@ func (h *Handler) BulkSnooze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Until == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "until is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "until is required", []httputil.FieldError{{Field: "until", Msg: "is required"}})
 		return
 	}
 	if _, err := time.Parse(time.RFC3339, req.Until); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "until must be an RFC3339 timestamp")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "until must be an RFC3339 timestamp", []httputil.FieldError{{Field: "until", Msg: "must be an RFC3339 timestamp"}})
 		return
 	}
 	if len(req.IDs) == 0 {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "ids must be a non-empty array", []httputil.FieldError{{Field: "ids", Msg: "must be a non-empty array"}})
 		return
 	}
 	if len(req.IDs) > httputil.MaxBulkIDs {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "ids must contain at most 500 items", []httputil.FieldError{{Field: "ids", Msg: "must contain at most 500 items"}})
 		return
 	}
 

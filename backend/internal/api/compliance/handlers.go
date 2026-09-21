@@ -84,12 +84,38 @@ func validRecord(record store.ComplianceRuleRecord) error {
 		return err
 	}
 	if rule.Name == "" || rule.Title == "" {
-		return errors.New("name and title are required")
+		var fields []compliance.FieldError
+		for _, f := range []struct{ name, value string }{{"name", rule.Name}, {"title", rule.Title}} {
+			if f.value == "" {
+				fields = append(fields, compliance.FieldError{Field: f.name, Msg: "is required"})
+			}
+		}
+		return &compliance.ValidationError{Message: "name and title are required", Fields: fields}
 	}
 	if rule.Severity != "info" && rule.Severity != "warning" && rule.Severity != "critical" {
-		return errors.New("severity must be info, warning, or critical")
+		return &compliance.ValidationError{
+			Message: "severity must be info, warning, or critical",
+			Fields:  []compliance.FieldError{{Field: "severity", Msg: "must be info, warning, or critical"}},
+		}
 	}
 	return compliance.Validate(rule, catalog())
+}
+
+// writeRuleRejection writes the 400 for a rule that failed record() or
+// validRecord(), attaching the offending rule fields as details whenever the
+// failure named them. A rejection that names none — a conditions payload that
+// will not round-trip through JSON — keeps the plain error envelope.
+func writeRuleRejection(w http.ResponseWriter, err error) {
+	var invalid *compliance.ValidationError
+	if !errors.As(err, &invalid) || len(invalid.Fields) == 0 {
+		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	fields := make([]httputil.FieldError, len(invalid.Fields))
+	for i, f := range invalid.Fields {
+		fields[i] = httputil.FieldError{Field: f.Field, Msg: f.Msg}
+	}
+	httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", err.Error(), fields)
 }
 
 func response(record store.ComplianceRuleRecord) (map[string]any, error) {
@@ -154,7 +180,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		err = validRecord(rule)
 	}
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeRuleRejection(w, err)
 		return
 	}
 	if err := h.Store.CreateComplianceRule(r.Context(), &rule); err != nil {
@@ -197,7 +223,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		err = validRecord(rule)
 	}
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeRuleRejection(w, err)
 		return
 	}
 	rule.CreatedAt = old.CreatedAt
@@ -295,7 +321,7 @@ func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 		err = validRecord(record)
 	}
 	if err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeRuleRejection(w, err)
 		return
 	}
 	rule, _ := toRule(record)

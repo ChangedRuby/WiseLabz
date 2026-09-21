@@ -35,7 +35,7 @@ var surfaces = map[string]bool{
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	surface := r.URL.Query().Get("surface")
 	if !surfaces[surface] {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "surface must be one of: services, changes, alerts")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "surface must be one of: services, changes, alerts", []httputil.FieldError{{Field: "surface", Msg: "must be one of: services, changes, alerts"}})
 		return
 	}
 
@@ -59,11 +59,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !surfaces[req.Surface] {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "surface must be one of: services, changes, alerts")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "surface must be one of: services, changes, alerts", []httputil.FieldError{{Field: "surface", Msg: "must be one of: services, changes, alerts"}})
 		return
 	}
 	if req.Name == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_request", "name is required")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "name is required", []httputil.FieldError{{Field: "name", Msg: "is required"}})
 		return
 	}
 

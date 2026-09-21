@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BadRequestResponse,
   ElevationRequiredResponse,
   NotFoundResponse,
   PostTemplatesTemplateIdPreviewBody,
@@ -183,7 +184,7 @@ export const getPostTemplatesQueryKey = (templateInput?: BodyType<TemplateInput>
 
 export const getPostTemplatesQueryOptions = <
   TData = Awaited<ReturnType<typeof postTemplates>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   templateInput: BodyType<TemplateInput>,
   options?: {
@@ -206,11 +207,11 @@ export const getPostTemplatesQueryOptions = <
 };
 
 export type PostTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof postTemplates>>>;
-export type PostTemplatesQueryError = ErrorType<unknown>;
+export type PostTemplatesQueryError = ErrorType<BadRequestResponse>;
 
 export function usePostTemplates<
   TData = Awaited<ReturnType<typeof postTemplates>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   templateInput: BodyType<TemplateInput>,
   options: {
@@ -229,7 +230,7 @@ export function usePostTemplates<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostTemplates<
   TData = Awaited<ReturnType<typeof postTemplates>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   templateInput: BodyType<TemplateInput>,
   options?: {
@@ -248,7 +249,7 @@ export function usePostTemplates<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostTemplates<
   TData = Awaited<ReturnType<typeof postTemplates>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   templateInput: BodyType<TemplateInput>,
   options?: {
@@ -263,7 +264,7 @@ export function usePostTemplates<
 
 export function usePostTemplates<
   TData = Awaited<ReturnType<typeof postTemplates>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BadRequestResponse>,
 >(
   templateInput: BodyType<TemplateInput>,
   options?: {

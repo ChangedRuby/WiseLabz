@@ -101,7 +101,7 @@ func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
 
 	// Validate cron expression (try both 5-field and 6-field parsers)
 	if req.CronExpr == "" {
-		httputil.Error(w, http.StatusBadRequest, "invalid_cron", "cronExpr must not be empty")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_cron", "cronExpr must not be empty", []httputil.FieldError{{Field: "cronExpr", Msg: "must not be empty"}})
 		return
 	}
 	parser5Field := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
@@ -109,7 +109,7 @@ func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
 	_, err5 := parser5Field.Parse(req.CronExpr)
 	_, err6 := parser6Field.Parse(req.CronExpr)
 	if err5 != nil && err6 != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid_cron", "Invalid cron expression: must be valid 5-field or 6-field cron format")
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_cron", "Invalid cron expression: must be valid 5-field or 6-field cron format", []httputil.FieldError{{Field: "cronExpr", Msg: "must be a valid 5-field or 6-field cron expression"}})
 		return
 	}
 

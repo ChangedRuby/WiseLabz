@@ -189,7 +189,7 @@ export const getPostAuthLoginQueryKey = (loginRequest?: BodyType<LoginRequest>) 
 
 export const getPostAuthLoginQueryOptions = <
   TData = Awaited<ReturnType<typeof postAuthLogin>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
 >(
   loginRequest: BodyType<LoginRequest>,
   options?: {
@@ -212,11 +212,11 @@ export const getPostAuthLoginQueryOptions = <
 };
 
 export type PostAuthLoginQueryResult = NonNullable<Awaited<ReturnType<typeof postAuthLogin>>>;
-export type PostAuthLoginQueryError = ErrorType<UnauthorizedResponse>;
+export type PostAuthLoginQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse>;
 
 export function usePostAuthLogin<
   TData = Awaited<ReturnType<typeof postAuthLogin>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
 >(
   loginRequest: BodyType<LoginRequest>,
   options: {
@@ -235,7 +235,7 @@ export function usePostAuthLogin<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthLogin<
   TData = Awaited<ReturnType<typeof postAuthLogin>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
 >(
   loginRequest: BodyType<LoginRequest>,
   options?: {
@@ -254,7 +254,7 @@ export function usePostAuthLogin<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthLogin<
   TData = Awaited<ReturnType<typeof postAuthLogin>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
 >(
   loginRequest: BodyType<LoginRequest>,
   options?: {
@@ -269,7 +269,7 @@ export function usePostAuthLogin<
 
 export function usePostAuthLogin<
   TData = Awaited<ReturnType<typeof postAuthLogin>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
 >(
   loginRequest: BodyType<LoginRequest>,
   options?: {
