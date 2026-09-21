@@ -372,6 +372,35 @@ If you don't have the service running, you have three options:
 - **Go version and dependencies:** Match the `go.mod` at the repository root.
   Avoid pulling in large dependency trees for simple HTTP calls.
 
+## Version-aware connectors
+
+Some services change their API between major releases: different paths,
+different auth, sometimes a different payload shape for the same concept. The
+Pi-hole connector (`backend/internal/connector/pihole/`) is the reference for
+handling that without splitting into two connectors:
+
+- **Offer the choice, default to detection.** A `select` field
+  (`api_version`, options `auto` / `v6` / `v5`, default `auto`) lets an
+  operator pin a version when detection would be ambiguous. The factory
+  normalises anything unrecognised back to `auto`, so an existing stored
+  config without the field keeps working.
+- **Resolve the version once per call.** A small `session` struct carries the
+  resolved version plus whatever the auth handshake produced (Pi-hole v6
+  returns a session id from `POST /api/auth`; v5 sends its API token on every
+  request). On `auto`, probe the newer API first and fall back; report the
+  newer API's error when neither answers, since that is the one an operator
+  most likely misconfigured.
+- **Normalise before rendering.** Each version gets its own parser producing
+  the same internal row structs (`groupRow`, `adlistRow`, ...). The table
+  builders and the `SnapshotEntity` values they emit are version-agnostic, so
+  the same instance diffs identically whichever API served it — and entity
+  kinds, IDs and attributes stay stable across an upgrade.
+- **Be explicit about what a version cannot do.** Pi-hole v5 exposes no
+  restart action, so `Restart` returns a plain error naming the limitation
+  rather than silently calling a v6-only path.
+- **Test both.** Stand up one `httptest` fake per version, each answering 404
+  for any path it does not serve, and run the same assertions against both.
+
 ## Getting your connector merged
 
 Once your connector is implemented and tested:

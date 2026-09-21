@@ -101,6 +101,7 @@ use `server config validate` to check deployment settings and `server config pri
 | Docker / Portainer | Built-in             |
 | pfSense / OPNsense | Built-in             |
 | Netbird            | Built-in             |
+| Pi-hole (v5/v6)    | Built-in             |
 | Cloudflare         | Built-in             |
 | Traefik            | Built-in             |
 | Everything else    | Community connectors |
