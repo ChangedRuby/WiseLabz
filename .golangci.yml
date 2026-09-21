@@ -12,6 +12,17 @@ linters:
     - unused
     - misspell
     - revive
+    - funlen
+  settings:
+    funlen:
+      # Ratchet at the current maximum; tighten as #265/#266/#269 land.
+      lines: 240
+      statements: 118
+  exclusions:
+    rules:
+      - path: '_test\.go$'
+        linters:
+          - funlen
 
 formatters:
   enable:
