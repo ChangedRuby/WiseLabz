@@ -52,8 +52,7 @@ type routerDeps struct {
 // NewRouter — under the legacy /api prefix and the versioned /api/v1 prefix (an
 // alias, same handlers and middleware).
 func mountAPIRoutes(r chi.Router, d routerDeps) {
-	// --- System endpoints ---
-	r.Get("/health", d.sysH.Health)
+	mountPublicSystemRoutes(r, d)
 
 	mountAuthRoutes(r, d)
 	mountShareRoutes(r, d)

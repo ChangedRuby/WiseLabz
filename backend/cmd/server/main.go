@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -278,9 +277,9 @@ func main() {
 	logger.Info("Shutdown complete")
 }
 
-// runHealthcheck queries this server's own /api/health endpoint and exits 0 if
-// healthy, 1 otherwise. Used as the Docker HEALTHCHECK command since distroless
-// images ship no shell/curl to do this externally. Always terminates the process.
+// runHealthcheck queries this server's own /readyz endpoint and exits 0 for a
+// ready server. Used as the Docker HEALTHCHECK command since distroless images
+// ship no shell/curl to do this externally. Always terminates the process.
 func runHealthcheck() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -292,7 +291,7 @@ func runHealthcheck() {
 	if host == "" || host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	url := fmt.Sprintf("http://%s:%d/api/health", host, cfg.Server.Port)
+	url := fmt.Sprintf("http://%s:%d/readyz", host, cfg.Server.Port)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
@@ -304,19 +303,6 @@ func runHealthcheck() {
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "healthcheck: server returned status %d\n", resp.StatusCode)
-		os.Exit(1)
-	}
-
-	var body struct {
-		Healthy bool `json:"healthy"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		fmt.Fprintf(os.Stderr, "healthcheck: failed to parse response: %v\n", err)
-		os.Exit(1)
-	}
-
-	if !body.Healthy {
-		fmt.Fprintln(os.Stderr, "healthcheck: server reported unhealthy")
 		os.Exit(1)
 	}
 

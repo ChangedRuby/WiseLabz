@@ -19,7 +19,9 @@ import type {
   BackupSchedule,
   DiagnosticsBundle,
   Health,
+  Liveness,
   PostWsTicket200,
+  Readiness,
   RetentionSettings,
   SystemInfo,
 } from '../../model';
@@ -532,6 +534,24 @@ export const getGetHealthResponseMock = (
         faker.string.alpha({ length: { min: 10, max: 20 } }),
         undefined,
       ]),
+    })
+  ),
+  ...overrideResponse,
+});
+
+export const getGetHealthzResponseMock = (
+  overrideResponse: Partial<Extract<Liveness, object>> = {}
+): Liveness => ({ status: faker.helpers.arrayElement(['ok'] as const), ...overrideResponse });
+
+export const getGetReadyzResponseMock = (
+  overrideResponse: Partial<Extract<Readiness, object>> = {}
+): Readiness => ({
+  status: faker.helpers.arrayElement(['ok', 'degraded'] as const),
+  ready: faker.datatype.boolean(),
+  components: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      status: faker.helpers.arrayElement(['ok', 'down', 'pending', 'dirty', 'unknown'] as const),
     })
   ),
   ...overrideResponse,

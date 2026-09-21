@@ -28,6 +28,8 @@ type DBTX interface {
 // and all repository implementations.
 type Store struct {
 	db                   DBTX
+	rawDB                *sql.DB
+	driver               string
 	userStatusMu         sync.Mutex
 	userStatusGeneration uint64
 	userStatuses         map[string]userStatus
@@ -87,9 +89,9 @@ func (p pgTransactionDB) QueryRow(query string, args ...any) *sql.Row {
 // "sqlite") uses db directly.
 func New(db *sql.DB, driver string) *Store {
 	if driver == "postgres" {
-		return &Store{db: pgPlaceholderDB{db}}
+		return &Store{db: pgPlaceholderDB{db}, rawDB: db, driver: driver}
 	}
-	return &Store{db: db}
+	return &Store{db: db, rawDB: db, driver: driver}
 }
 
 // WithinTransaction runs fn against a transaction-bound Store and commits only on success.
@@ -141,6 +143,15 @@ func (s *Store) Close() error {
 // Ping checks the database connection health.
 func (s *Store) Ping(ctx context.Context) error {
 	return s.db.PingContext(ctx)
+}
+
+// MigrationStatus reports whether the database has applied every migration
+// bundled with this server.
+func (s *Store) MigrationStatus() (MigrationStatus, error) {
+	if s.rawDB == nil {
+		return MigrationStatus{}, fmt.Errorf("migration status unavailable for transaction store")
+	}
+	return GetMigrationStatus(s.rawDB, s.driver)
 }
 
 // initSingletons ensures singleton config rows exist (auth_config, ai_config, notification_config).

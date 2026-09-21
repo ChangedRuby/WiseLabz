@@ -24,6 +24,16 @@ func TestHealthReportsHealthy(t *testing.T) {
 	}
 }
 
+func TestHealthProbeRoutes(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/healthz", "/readyz"} {
+		rec := app.req(t, http.MethodGet, path, nil, "")
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200; body = %s", path, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestVersionRouteIsNotExposed(t *testing.T) {
 	app := newTestApp(t)
 	rec := app.req(t, http.MethodGet, "/api/version", nil, "")

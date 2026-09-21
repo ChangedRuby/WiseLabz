@@ -71,6 +71,7 @@ func NewRouter(cfg Config) chi.Router {
 	r.Use(middleware.CORS(cfg.Config.Server.Origin))
 
 	d := newRouterDeps(cfg)
+	mountRootRoutes(r, d)
 
 	if cfg.WSHub != nil {
 		cfg.WSHub.SetRevalidator(func(ctx context.Context, userID, role, sessionHash string) bool {

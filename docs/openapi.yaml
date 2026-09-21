@@ -2444,6 +2444,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness probe
+      description: Available at the server root; reports whether the HTTP server is running.
+      servers: [{ url: / }]
+      security: []
+      responses:
+        '200':
+          description: Server is live
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Liveness' }
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness probe
+      description: Available at the server root; returns 503 when the database is unavailable or migrations are pending.
+      servers: [{ url: / }]
+      security: []
+      responses:
+        '200':
+          description: Server is ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '503':
+          description: Server is not ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
 
   /connectors/{connectorId}/permissions:
     get:
@@ -3956,6 +3987,25 @@ components:
               name: { type: string }
               status: { type: string, enum: [ok, degraded, down] }
               detail: { type: string }
+    Liveness:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    Readiness:
+      type: object
+      required: [status, ready, components]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        ready: { type: boolean }
+        components:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: { type: string }
+              status: { type: string, enum: [ok, down, pending, dirty, unknown] }
 
     # ── audit ──
     AuditRecord:

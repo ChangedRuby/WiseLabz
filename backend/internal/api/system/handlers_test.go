@@ -1,6 +1,8 @@
 package system
 
 import (
+	"database/sql"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +10,7 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/config"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 func newTestHandler(t *testing.T) *Handler {
@@ -24,6 +27,66 @@ func TestHealth(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
 	}
+}
+
+func TestLivenessAlwaysOK(t *testing.T) {
+	h := newTestHandler(t)
+	if err := h.DB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	h.Liveness(rr, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+}
+
+func TestReadiness(t *testing.T) {
+	t.Run("ready", func(t *testing.T) {
+		h := newTestHandler(t)
+		rr := httptest.NewRecorder()
+		h.Readiness(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+	})
+
+	t.Run("migrations pending", func(t *testing.T) {
+		h := newTestHandler(t)
+		db, ok := h.DB.(*sql.DB)
+		if !ok {
+			t.Fatalf("DB = %T, want *sql.DB", h.DB)
+		}
+		if err := store.RunMigrationsDown(db, "sqlite", slog.Default()); err != nil {
+			t.Fatalf("run migrations down: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		h.Readiness(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), `"pending"`) {
+			t.Errorf("body = %s, want pending migration status", rr.Body.String())
+		}
+	})
+
+	t.Run("database unavailable", func(t *testing.T) {
+		h := newTestHandler(t)
+		if err := h.DB.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		h.Readiness(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), `"database","status":"down"`) {
+			t.Errorf("body = %s, want database/down", rr.Body.String())
+		}
+	})
 }
 
 func TestInfo(t *testing.T) {

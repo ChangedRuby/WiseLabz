@@ -22,7 +22,9 @@ import type {
   BackupSchedule,
   DiagnosticsBundle,
   Health,
+  Liveness,
   PostWsTicket200,
+  Readiness,
   RetentionSettings,
   SystemInfo,
 } from '../../model';
@@ -540,6 +542,24 @@ export const getGetHealthResponseMock = (
   ...overrideResponse,
 });
 
+export const getGetHealthzResponseMock = (
+  overrideResponse: Partial<Extract<Liveness, object>> = {}
+): Liveness => ({ status: faker.helpers.arrayElement(['ok'] as const), ...overrideResponse });
+
+export const getGetReadyzResponseMock = (
+  overrideResponse: Partial<Extract<Readiness, object>> = {}
+): Readiness => ({
+  status: faker.helpers.arrayElement(['ok', 'degraded'] as const),
+  ready: faker.datatype.boolean(),
+  components: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      status: faker.helpers.arrayElement(['ok', 'down', 'pending', 'dirty', 'unknown'] as const),
+    })
+  ),
+  ...overrideResponse,
+});
+
 export const getPostWsTicketResponseMock = (
   overrideResponse: Partial<Extract<PostWsTicket200, object>> = {}
 ): PostWsTicket200 => ({
@@ -853,6 +873,50 @@ export const getGetHealthMockHandler = (
   );
 };
 
+export const getGetHealthzMockHandler = (
+  overrideResponse?:
+    | Liveness
+    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Liveness> | Liveness),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/healthz',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetHealthzResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getGetReadyzMockHandler = (
+  overrideResponse?:
+    | Readiness
+    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Readiness> | Readiness),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/readyz',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetReadyzResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
 export const getPostWsTicketMockHandler = (
   overrideResponse?:
     | PostWsTicket200
@@ -890,5 +954,7 @@ export const getSystemMock = () => [
   getPostSystemBackupRunMockHandler(),
   getGetSystemDiagnosticsMockHandler(),
   getGetHealthMockHandler(),
+  getGetHealthzMockHandler(),
+  getGetReadyzMockHandler(),
   getPostWsTicketMockHandler(),
 ];

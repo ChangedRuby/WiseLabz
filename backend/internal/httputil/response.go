@@ -2,6 +2,7 @@
 package httputil
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,6 +11,25 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/storeerr"
 )
+
+type loggerKey struct{}
+
+// WithLogger attaches a request-scoped logger to ctx.
+func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey{}, logger)
+}
+
+// Logger returns the request-scoped logger from ctx, or the default logger.
+func Logger(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok {
+		return logger
+	}
+	return slog.Default()
+}
+
+type contextResponseWriter interface {
+	Context() context.Context
+}
 
 // ErrorResponse is the standard error envelope returned by all API endpoints.
 // Matches the OpenAPI Error schema.
@@ -66,7 +86,11 @@ func ErrorWithDetails(w http.ResponseWriter, status int, code, message string, f
 // Errorf writes a 500 Internal Server Error with a generic message.
 // Use for unexpected errors; the caller should log the actual error.
 func Errorf(w http.ResponseWriter, err error) {
-	slog.Error("internal server error", "error", err)
+	logger := slog.Default()
+	if rw, ok := w.(contextResponseWriter); ok {
+		logger = Logger(rw.Context())
+	}
+	logger.Error("internal server error", "error", err)
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
 }
 

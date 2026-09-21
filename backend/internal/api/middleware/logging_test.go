@@ -2,11 +2,14 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/WiseLabz/wiselabz/internal/httputil"
 )
 
 func captureLog(t *testing.T) *bytes.Buffer {
@@ -40,5 +43,19 @@ func TestLoggerRedactsWSTicket(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/ws?ticket=ONETIMEVALUE", nil))
 	if strings.Contains(buf.String(), "ONETIMEVALUE") {
 		t.Fatalf("log output contains ws ticket: %s", buf.String())
+	}
+}
+
+func TestLoggerCorrelatesErrorfWithRequestID(t *testing.T) {
+	buf := captureLog(t)
+	h := RequestID(Logger(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		httputil.Errorf(w, errors.New("boom"))
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Request-ID", "request-264")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if !strings.Contains(buf.String(), "request_id=request-264") {
+		t.Fatalf("error log lacks request ID: %s", buf.String())
 	}
 }

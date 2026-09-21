@@ -22,7 +22,10 @@ var (
 		"GET /ws": "WebSocket upgrade, not a REST operation; documented in docs/WS_CONTRACT.md",
 	}
 	// specOnly: documented in the spec but not implemented by the router.
-	specOnly = map[string]string{}
+	specOnly = map[string]string{
+		"GET /healthz": "Root liveness probe; this spec operation overrides the API server URL.",
+		"GET /readyz":  "Root readiness probe; this spec operation overrides the API server URL.",
+	}
 )
 
 func normalizeParams(path string) string {
@@ -148,6 +151,17 @@ func TestAPIV1AliasServesSameHandlers(t *testing.T) {
 		app.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("unauthenticated GET %s = %d, want 401", path, rec.Code)
+		}
+	}
+}
+
+func TestOpenAPIHealthProbeRoutes(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/healthz", "/readyz"} {
+		rec := httptest.NewRecorder()
+		app.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, rec.Code)
 		}
 	}
 }

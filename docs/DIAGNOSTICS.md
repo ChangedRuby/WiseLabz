@@ -15,7 +15,7 @@ by hand first.
 
 ## What's included
 
-- **`health`** — the same DB-ping check as `GET /api/health`.
+- **`health`** — the same DB-ping check as `GET /api/health` and `GET /readyz`.
 - **`versions`** — Go/build version information collected for the operator-only bundle.
 - **`sanitizedConfig`**:
   - `connectors` — name/type/category/enabled, plus `configData` with any

@@ -81,8 +81,8 @@ VOLUME ["/data"]
 ENV WISELABZ_SERVER_EMBED=true
 
 # distroless/static has no shell (no curl/wget), so HEALTHCHECK relies on the
-# binary's own --healthcheck mode: it GETs its own /api/health, parses the
-# JSON body, and exits 0 only if healthy:true.
+# binary's own --healthcheck mode: it GETs its own /readyz and exits 0 only
+# when the server is ready.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/wiselabz", "--healthcheck"]
 
 ENTRYPOINT ["/wiselabz"]

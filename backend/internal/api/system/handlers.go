@@ -50,6 +50,50 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Liveness responds whenever the HTTP server is running.
+// GET /healthz
+func (h *Handler) Liveness(w http.ResponseWriter, _ *http.Request) {
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// Readiness responds once the database is reachable and all migrations are applied.
+// GET /readyz
+func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
+	health := diagnostics.CheckHealth(r.Context(), h.DB)
+	components := health.Components
+	ready := health.Status == "ok"
+
+	migrationStatus := "unknown"
+	if ready {
+		status, err := h.Store.MigrationStatus()
+		switch {
+		case err != nil:
+			ready = false
+		case status.Dirty:
+			migrationStatus = "dirty"
+			ready = false
+		case status.Pending():
+			migrationStatus = "pending"
+			ready = false
+		default:
+			migrationStatus = "ok"
+		}
+	}
+	components = append(components, diagnostics.Component{Name: "migrations", Status: migrationStatus})
+
+	code := http.StatusOK
+	overallStatus := "ok"
+	if !ready {
+		code = http.StatusServiceUnavailable
+		overallStatus = "degraded"
+	}
+	httputil.JSON(w, code, map[string]any{
+		"status":     overallStatus,
+		"ready":      ready,
+		"components": components,
+	})
+}
+
 // Info responds with instance info (version, sync schedule, integrations).
 // GET /api/system/info
 func (h *Handler) Info(w http.ResponseWriter, _ *http.Request) {

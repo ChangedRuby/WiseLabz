@@ -66,14 +66,18 @@ describe('axios-instance', () => {
 
       expect(capturedHeaders['Authorization']).toBeNull();
     });
+
+    it.each(['/healthz', '/readyz'])('uses the server root for %s', async (path) => {
+      server.use(http.get(path, () => HttpResponse.json({ status: 'ok' })));
+
+      await AXIOS_INSTANCE.get(path);
+    });
   });
 
   describe('response interceptor - happy path', () => {
     it('passes through successful responses unchanged', async () => {
       const testData = { id: 1, name: 'test' };
-      server.use(
-        http.get('/api/test', () => HttpResponse.json(testData))
-      );
+      server.use(http.get('/api/test', () => HttpResponse.json(testData)));
 
       const response = await AXIOS_INSTANCE.get('/test');
 
@@ -157,9 +161,7 @@ describe('axios-instance', () => {
       setAccessToken('expired_token');
 
       server.use(
-        http.get('/api/test', () =>
-          HttpResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        )
+        http.get('/api/test', () => HttpResponse.json({ error: 'Unauthorized' }, { status: 401 }))
       );
 
       await expect(AXIOS_INSTANCE.get('/test')).rejects.toThrow();
@@ -174,9 +176,7 @@ describe('axios-instance', () => {
       setAccessToken('expired_token');
 
       server.use(
-        http.get('/api/test', () =>
-          HttpResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        )
+        http.get('/api/test', () => HttpResponse.json({ error: 'Unauthorized' }, { status: 401 }))
       );
 
       await expect(AXIOS_INSTANCE.get('/test')).rejects.toThrow();

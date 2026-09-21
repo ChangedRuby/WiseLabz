@@ -2,21 +2,27 @@ package middleware
 
 import (
 	"bufio"
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 )
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
 type responseWriter struct {
 	http.ResponseWriter
+	ctx     context.Context
 	status  int
 	written int64
 }
+
+// Context exposes the request context to response helpers.
+func (rw *responseWriter) Context() context.Context { return rw.ctx }
 
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
@@ -76,8 +82,10 @@ func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rid := GetRequestID(r.Context())
+		ctx := httputil.WithLogger(r.Context(), slog.Default().With("request_id", rid))
+		r = r.WithContext(ctx)
 
-		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		rw := &responseWriter{ResponseWriter: w, ctx: ctx, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
 
 		slog.Info("request",

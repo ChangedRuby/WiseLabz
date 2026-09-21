@@ -39,6 +39,9 @@ export const setRefreshHandler = (fn: RefreshFn): void => {
 
 // Attach the in-memory access token to every request.
 AXIOS_INSTANCE.interceptors.request.use((config) => {
+  if (config.url === '/healthz' || config.url === '/readyz') {
+    config.baseURL = '';
+  }
   const token = getAccessToken();
   if (token) {
     config.headers = config.headers ?? {};

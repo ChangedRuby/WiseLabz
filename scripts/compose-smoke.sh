@@ -35,7 +35,8 @@ EOF
 "${compose[@]}" up --build --wait --wait-timeout 120
 
 base_url="http://127.0.0.1:$port/api"
-curl --fail --silent --show-error "$base_url/health" | jq -e '.healthy == true' >/dev/null
+root_url="${base_url%/api}"
+curl --fail --silent --show-error "$root_url/readyz" | jq -e '.ready == true' >/dev/null
 access_token="$(curl --fail --silent --show-error \
 	-H 'Content-Type: application/json' \
 	--data '{"username":"admin","password":"compose-smoke-admin-password"}' \
