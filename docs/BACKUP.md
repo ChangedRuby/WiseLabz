@@ -69,3 +69,16 @@ the exact shape.
 - **`aiConfig` is never imported** (see Exclusions above).
 - The response reports per-entity `{ imported, skipped }` counts
   (`BackupImportResult` in `docs/openapi.yaml`).
+
+## Manifest, checksum, and verification
+
+Every bundle written by `ExportToFile` (the scheduled backup job, and
+`POST /api/system/backup/run`) gets a `<bundle>.manifest.json` sidecar with
+its sha256 checksum, per-entity row counts, and app/schema version.
+`Import`ing from a file checks the checksum first; a scheduled job restores
+the latest bundle into a scratch in-memory database nightly to confirm it
+actually comes back intact; and `backup verify`/`backup restore` (a new
+`cmd/backup` binary) do the same checks from the command line, plus an
+actual restore. See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for the full
+verify/restore workflow and, since secrets are redacted (see Exclusions
+above), what has to be manually re-entered after a restore.

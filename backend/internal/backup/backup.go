@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -443,12 +444,20 @@ type Run struct {
 	FilePath    string `json:"filePath"`
 	SizeBytes   int64  `json:"sizeBytes"`
 	CreatedAt   string `json:"createdAt"`
+
+	// ManifestPath and Checksum describe the manifest sidecar written
+	// alongside FilePath (see BuildManifest). Additive fields: existing
+	// callers that only read the fields above are unaffected.
+	ManifestPath string `json:"manifestPath,omitempty"`
+	Checksum     string `json:"checksumSha256,omitempty"`
 }
 
 // ExportToFile calls Export, marshals the bundle to JSON, writes it to
-// {dir}/wiselabz-backup-{RFC3339 timestamp}.json, and returns metadata about
-// the created file. The directory is created if it does not exist (0o700),
-// and the file is written 0o600 since the bundle is a full infrastructure
+// {dir}/wiselabz-backup-{RFC3339 timestamp}.json, writes a manifest sidecar
+// (see BuildManifest) recording per-entity row counts, app/schema version,
+// and the bundle's sha256 checksum, and returns metadata about the created
+// files. The directory is created if it does not exist (0o700), and both
+// files are written 0o600 since the bundle is a full infrastructure
 // inventory even with secrets redacted.
 func ExportToFile(ctx context.Context, s *store.Store, dir string) (Run, error) {
 	var run Run
@@ -488,5 +497,49 @@ func ExportToFile(ctx context.Context, s *store.Store, dir string) (Run, error) 
 	run.SizeBytes = int64(len(data))
 	run.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
+	// Write the manifest sidecar. schemaVersion falls back to 0 (unknown)
+	// rather than failing the export — the manifest is a verification aid,
+	// not a requirement for the bundle itself to be usable.
+	var schemaVersion uint
+	if st, err := s.MigrationStatus(); err == nil {
+		schemaVersion = st.Current
+	} else {
+		slog.Warn("backup export: could not read migration status for manifest", "error", err)
+	}
+	manifest := BuildManifest(bundle, data, AppVersion(), schemaVersion)
+	manifestPath := ManifestPath(path)
+	if err := WriteManifest(manifestPath, manifest); err != nil {
+		return run, fmt.Errorf("write manifest: %w", err)
+	}
+	run.ManifestPath = manifestPath
+	run.Checksum = manifest.Checksum
+
 	return run, nil
+}
+
+// ImportFromFile reads bundlePath, verifies its sha256 checksum against the
+// manifest sidecar (see ManifestPath) when one exists, then imports it via
+// Import. A missing manifest (e.g. a bundle exported before this feature, or
+// a hand-edited bundle) is not an error — the checksum check is simply
+// skipped, matching Import's existing tolerance of externally-authored
+// bundles.
+func ImportFromFile(ctx context.Context, s *store.Store, bundlePath string) (Result, error) {
+	data, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return Result{}, fmt.Errorf("read bundle file: %w", err)
+	}
+
+	if manifest, mErr := ReadManifest(ManifestPath(bundlePath)); mErr == nil {
+		if got := ChecksumBytes(data); got != manifest.Checksum {
+			return Result{}, fmt.Errorf("checksum mismatch: bundle file may be corrupted or modified (manifest expects %s, got %s)", manifest.Checksum, got)
+		}
+	} else if !errors.Is(mErr, os.ErrNotExist) {
+		return Result{}, fmt.Errorf("read manifest: %w", mErr)
+	}
+
+	var b Bundle
+	if err := json.Unmarshal(data, &b); err != nil {
+		return Result{}, fmt.Errorf("parse bundle: %w", err)
+	}
+	return Import(ctx, s, &b)
 }
