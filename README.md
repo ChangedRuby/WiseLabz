@@ -108,6 +108,7 @@ use `server config validate` to check deployment settings and `server config pri
 | Portainer          | Built-in             |
 | AdGuard Home       | Built-in             |
 | UniFi              | Built-in             |
+| TrueNAS            | Built-in             |
 | Everything else    | Community connectors |
 
 New service connectors are community-driven. If the service you run isn't here yet,

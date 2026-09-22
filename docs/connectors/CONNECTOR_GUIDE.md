@@ -256,6 +256,7 @@ import (
     _ "github.com/WiseLabz/wiselabz/internal/connector/portainer"
     _ "github.com/WiseLabz/wiselabz/internal/connector/proxmox"
     _ "github.com/WiseLabz/wiselabz/internal/connector/traefik"
+    _ "github.com/WiseLabz/wiselabz/internal/connector/truenas"
     _ "github.com/WiseLabz/wiselabz/internal/connector/unifi"
 )
 ```
@@ -459,6 +460,26 @@ further. The Home Assistant connector
   `max_entities` field caps how many a snapshot carries. Entities are sorted by
   ID first, so the cap always keeps the same set instead of whatever order the
   API happened to return.
+
+An appliance that reports far more than it should store needs the same
+discipline applied section by section. The TrueNAS connector
+(`backend/internal/connector/truenas/`) is the reference there:
+
+- **Snapshot configuration, not telemetry.** Pool and dataset usage, uptime,
+  load averages and disk temperatures are all available from `/api/v2.0/...`
+  and all deliberately dropped. What stays is what an operator configured:
+  topology, encryption, compression, share exports, which services start on
+  boot.
+- **Sort anything the API does not order.** Services are sorted by name and
+  the dataset tree is flattened and sorted, so a reordered API response is
+  not read as a change.
+- **Derive stable summaries.** A vdev group becomes `"data: MIRROR (2
+  disks)"` rather than a raw child list, and capacities are rendered from the
+  static `size` field, never from live allocation.
+- **Degrade per section.** Each endpoint is fetched independently and a
+  failure leaves an `_<section> unavailable: ..._` placeholder, so an API key
+  without one privilege (or a release that lacks an endpoint) still yields
+  every other section.
 
 ## Getting your connector merged
 

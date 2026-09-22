@@ -22,6 +22,7 @@ func TestAllConnectorImplementationsRegister(t *testing.T) {
 		{typ: "pihole", category: "dns"},
 		{typ: "proxmox", category: "virtualization"},
 		{typ: "traefik", category: "networking"},
+		{typ: "truenas", category: "virtualization"},
 		{typ: "unifi", category: "networking"},
 	}
 	for _, tt := range tests {

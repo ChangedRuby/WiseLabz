@@ -19,5 +19,6 @@ import (
 	_ "github.com/WiseLabz/wiselabz/internal/connector/portainer"      // register Portainer connector
 	_ "github.com/WiseLabz/wiselabz/internal/connector/proxmox"        // register Proxmox connector
 	_ "github.com/WiseLabz/wiselabz/internal/connector/traefik"        // register Traefik connector
+	_ "github.com/WiseLabz/wiselabz/internal/connector/truenas"        // register TrueNAS connector
 	_ "github.com/WiseLabz/wiselabz/internal/connector/unifi"          // register UniFi connector
 )
