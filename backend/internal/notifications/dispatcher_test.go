@@ -25,11 +25,17 @@ func newTestStore(t *testing.T) *store.Store {
 	// Webhook tests target httptest servers on 127.0.0.1, which the guarded dialer blocks.
 	connector.AllowLoopbackForTest(t)
 	dir := t.TempDir()
-	dsn := "file:" + dir + "/test.db?cache=shared"
+	// busy_timeout, and the single connection the other test helpers in this repo also pin:
+	// dispatcher fan-out writes from goroutines while the test body reads, and an unbounded
+	// sqlite pool turns that overlap into a sporadic SQLITE_BUSY ("database is locked")
+	// rather than a wait. Not store.OpenDB, which also enables foreign_keys — several tests
+	// here dispatch to synthetic user IDs that have no users row.
+	dsn := "file:" + dir + "/test.db?cache=shared&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() }) //nolint:errcheck
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -85,6 +91,24 @@ func deliveriesFor(t *testing.T, s *store.Store, notificationID string) []store.
 		out = append(out, d)
 	}
 	return out
+}
+
+// waitForDispatch blocks until every goroutine the dispatcher spawned has finished. The
+// Notify* entry points return before their fan-out has written notification and delivery
+// rows, so tests wait on actual quiescence: a fixed sleep is a bet on the machine being
+// fast enough, and a loaded CI runner wins that bet often enough to flake.
+func waitForDispatch(t *testing.T, d *Dispatcher) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		d.inflight.Wait()
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for notification dispatch to finish")
+	}
 }
 
 func findDelivery(deliveries []store.DeliveryRecord, channel string) (store.DeliveryRecord, bool) {
@@ -436,9 +460,8 @@ func TestNotifyAlertCreated_NoChannelsConfigured(t *testing.T) {
 	// Dispatch alert to all users.
 	d.NotifyAlertCreated(context.Background(), "alert-1", "Test Alert", "This is a test alert")
 
-	// Give any goroutines time to complete.
-	// ponytail: simple sleep; in production, would use a sync.WaitGroup or channels.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the fan-out goroutines to finish.
+	waitForDispatch(t, d)
 
 	// Verify notification was created for the user.
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
@@ -544,7 +567,7 @@ func TestNotifyAlert_RoutingBelowSeveritySkips(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
 	if err != nil {
@@ -591,7 +614,7 @@ func TestNotifyAlert_RoutingAboveSeverityDelivers(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -655,7 +678,7 @@ func TestNotifyAlert_ConnectorCategoryFilterMatches(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -719,7 +742,7 @@ func TestNotifyAlert_ConnectorCategoryFilterMismatch(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -777,7 +800,7 @@ func TestNotifyAlert_ConnectorIDFilterMatches(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -852,7 +875,7 @@ func TestNotifyAlert_ConnectorIDFilterMismatch(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -910,7 +933,7 @@ func TestNotifyAlert_ConnectorCategoryAndIDFilterBothMatch(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -985,7 +1008,7 @@ func TestNotifyAlert_ConnectorCategoryAndIDFilterPartialMismatch(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -1043,7 +1066,7 @@ func TestNotifyAlert_ConnectorFiltersWildcard(t *testing.T) {
 
 	d := NewDispatcher(s, nil)
 	d.NotifyAlertCreated(context.Background(), alert.ID, "Title", "Message")
-	time.Sleep(100 * time.Millisecond)
+	waitForDispatch(t, d)
 
 	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
 	if err != nil {
@@ -1101,7 +1124,6 @@ func TestRunDigestSweep_DailyDigest(t *testing.T) {
 	// Run digest sweep with now at UTC hour 8 (eligible hour)
 	d := NewDispatcher(s, nil)
 	d.RunDigestSweep(ctx, now, logger)
-	time.Sleep(100 * time.Millisecond)
 
 	// Check: exactly one digest.summary notification was created
 	notifs, _, err := s.ListNotifications(ctx, u.ID, false, 0, 10)
@@ -1184,23 +1206,18 @@ func TestNotifyAlertsCreatedBatch(t *testing.T) {
 	}
 	setChannelAndRoutingConfig(t, s, "smtp", "", `[{"eventType":"alert.created","channel":"smtp","enabled":true,"minSeverity":"critical","connectorId":"service-batch"}]`)
 	// No alert rows are needed: the batch already supplies routing metadata.
-	NewDispatcher(s, nil).NotifyAlertsCreated(ctx, []store.AlertRecord{
+	d := NewDispatcher(s, nil)
+	d.NotifyAlertsCreated(ctx, []store.AlertRecord{
 		{ID: "batch-warning", ServiceID: "service-batch", Severity: "warning", Title: "Warning", Description: "first"},
 		{ID: "batch-critical", ServiceID: "service-batch", Severity: "critical", Title: "Critical", Description: "second"},
 	})
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		var count int
-		if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries`).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count == 3 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("expected two in-app deliveries and one SMTP delivery, got %d", count)
-		}
-		time.Sleep(10 * time.Millisecond)
+	waitForDispatch(t, d)
+	var count int
+	if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("expected two in-app deliveries and one SMTP delivery, got %d", count)
 	}
 	notifs, total, err := s.ListNotifications(ctx, user.ID, false, 0, 10)
 	if err != nil || total != 2 {
