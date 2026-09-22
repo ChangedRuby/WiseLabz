@@ -25,6 +25,7 @@ type Config struct {
 	Log        LogSettings        `mapstructure:"log"`
 	Retention  RetentionSettings  `mapstructure:"retention"`
 	Backup     BackupSettings     `mapstructure:"backup"`
+	DocExport  DocExportSettings  `mapstructure:"doc_export"`
 }
 
 // Database holds database connection settings.
@@ -200,6 +201,16 @@ type BackupSettings struct {
 	Enabled     bool   `mapstructure:"enabled"`       // enable/disable scheduled backups
 }
 
+// DocExportSettings holds scheduled doc export configuration: writing every
+// generated doc as Markdown to a local directory on a cron schedule. This
+// first cut is directory-only; exporting to a Git remote (clone/pull/commit/
+// push) is tracked as a follow-up.
+type DocExportSettings struct {
+	Dir      string `mapstructure:"dir"`       // directory where exported Markdown docs are written
+	CronExpr string `mapstructure:"cron_expr"` // cron expression for scheduled export
+	Enabled  bool   `mapstructure:"enabled"`   // enable/disable scheduled doc export
+}
+
 // Load reads configuration from file and environment, returning a populated Config.
 // It searches for config.yaml in /etc/wiselabz/, ., and ./deploy/.
 // All values can be overridden via WISELABZ_ prefixed environment variables.
@@ -247,6 +258,9 @@ func Load() (*Config, error) {
 	v.SetDefault("backup.max_backups", 14)           // keep last 14 backups
 	v.SetDefault("backup.max_age_hours", 720)        // keep backups for 30 days
 	v.SetDefault("backup.enabled", true)             // scheduled backups enabled by default
+	v.SetDefault("doc_export.dir", "./data/docexport")
+	v.SetDefault("doc_export.cron_expr", "0 2 * * *") // daily doc export at 2 AM
+	v.SetDefault("doc_export.enabled", false)         // opt-in: operator must configure a target directory
 
 	// Bind every field to its WISELABZ_ env var. viper's AutomaticEnv alone
 	// does not reliably resolve nested keys through Unmarshal, so each key
@@ -270,6 +284,7 @@ func Load() (*Config, error) {
 		"log.level", "log.format",
 		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.cron_expr",
 		"backup.dir", "backup.cron_expr", "backup.max_backups", "backup.max_age_hours", "backup.enabled",
+		"doc_export.dir", "doc_export.cron_expr", "doc_export.enabled",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind env %q: %w", key, err)
@@ -307,10 +322,11 @@ func (c *Config) validateCronExpressions() error {
 	parser6Field := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 	cronExprs := map[string]string{
-		"retention.cron_expr": c.Retention.CronExpr,
-		"quality.cron_expr":   c.Quality.CronExpr,
-		"sync.poll_cron_expr": c.Sync.PollCronExpr,
-		"backup.cron_expr":    c.Backup.CronExpr,
+		"retention.cron_expr":  c.Retention.CronExpr,
+		"quality.cron_expr":    c.Quality.CronExpr,
+		"sync.poll_cron_expr":  c.Sync.PollCronExpr,
+		"backup.cron_expr":     c.Backup.CronExpr,
+		"doc_export.cron_expr": c.DocExport.CronExpr,
 	}
 
 	for name, expr := range cronExprs {

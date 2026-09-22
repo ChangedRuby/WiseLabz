@@ -20,6 +20,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/backup"
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/doc"
+	"github.com/WiseLabz/wiselabz/internal/docexport"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/quality"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
@@ -176,6 +177,21 @@ func main() {
 	}); err != nil {
 		logger.Error("Failed to add backup verify job", "error", err)
 		os.Exit(1)
+	}
+
+	// Scheduled doc export (issue #283): writes every generated doc as
+	// Markdown to a local directory. Config-file only for now, same as
+	// "quality"/"digest"/"backup-verify" above — no operator-facing API to
+	// change it at runtime. Opt-in via doc_export.enabled since it writes to
+	// disk on a schedule.
+	if cfg.DocExport.Enabled {
+		docExporter := docexport.NewExporter(s)
+		if _, err := jobRunner.AddJob("docexport", cfg.DocExport.CronExpr, func(jobCtx context.Context) {
+			docexport.RunExportOnce(jobCtx, docExporter, cfg.DocExport.Dir, logger)
+		}); err != nil {
+			logger.Error("Failed to add doc export job", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// Build HTTP router

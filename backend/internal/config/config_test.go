@@ -66,6 +66,15 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Sync.PollCronExpr != "*/30 * * * * *" {
 		t.Errorf("sync.poll_cron_expr = %q, want */30 * * * * *", cfg.Sync.PollCronExpr)
 	}
+	if cfg.DocExport.Dir != "./data/docexport" {
+		t.Errorf("doc_export.dir = %q, want ./data/docexport", cfg.DocExport.Dir)
+	}
+	if cfg.DocExport.CronExpr != "0 2 * * *" {
+		t.Errorf("doc_export.cron_expr = %q, want 0 2 * * *", cfg.DocExport.CronExpr)
+	}
+	if cfg.DocExport.Enabled {
+		t.Errorf("doc_export.enabled = true, want false")
+	}
 }
 
 func TestLoadFromYAML(t *testing.T) {
@@ -249,6 +258,9 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		"WISELABZ_BACKUP_MAX_BACKUPS":              "1",
 		"WISELABZ_BACKUP_MAX_AGE_HOURS":            "2",
 		"WISELABZ_BACKUP_ENABLED":                  "false",
+		"WISELABZ_DOC_EXPORT_DIR":                  "/tmp/docexport",
+		"WISELABZ_DOC_EXPORT_CRON_EXPR":            "0 6 * * *",
+		"WISELABZ_DOC_EXPORT_ENABLED":              "true",
 	}
 	for k, v := range env {
 		t.Setenv(k, v)
@@ -274,6 +286,7 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		Log:       LogSettings{Level: "debug", Format: "json"},
 		Retention: RetentionSettings{SnapshotDays: 1, DocVersionDays: 2, AlertDays: 3, SyncRunDays: 4, AuditDays: 5, CronExpr: "0 4 * * *"},
 		Backup:    BackupSettings{Dir: "/tmp/backups", CronExpr: "0 5 * * *", MaxBackups: 1, MaxAgeHours: 2, Enabled: false},
+		DocExport: DocExportSettings{Dir: "/tmp/docexport", CronExpr: "0 6 * * *", Enabled: true},
 	}
 
 	got := *cfg
