@@ -12,6 +12,18 @@ import type { NotificationChannelType } from './notificationChannelType';
 export interface NotificationChannel {
   type: NotificationChannelType;
   enabled: boolean;
-  /** Channel-specific (SMTP host/port/creds, webhook URL/headers, etc.). Webhook, Discord and Slack channels accept a write-only secret that signs deliveries with HMAC-SHA256 (X-WiseLabz-Timestamp and X-WiseLabz-Signature headers). It is stored encrypted and never returned; reads expose secretSet instead. */
+  /**
+   * Channel-specific, keyed by type (see docs/NOTIFICATIONS.md for the full field reference per channel):
+   *   - webhook: { url, secret } — generic JSON POST, HMAC-signed when a secret is set.
+   *   - discord / slack: { url, secret } — incoming-webhook URL; secret HMAC-signs the
+   *     request the same way the generic webhook channel does.
+   *   - ntfy: { url (server, default https://ntfy.sh), topic, priority, tags } — publishes
+   *     via ntfy's HTTP API.
+   *   - telegram: { chatId, secret } — secret is the bot token; sends via the Bot API's
+   *     sendMessage.
+   *   - smtp: { host, port, username, secret, from, to } — secret is the SMTP password;
+   *     sent with opportunistic STARTTLS.
+   * "secret" is write-only: webhook/Discord/Slack sign deliveries with HMAC-SHA256 (X-WiseLabz-Timestamp and X-WiseLabz-Signature headers) when set; Telegram and SMTP reuse the same field for their own credential (bot token / password). It is stored encrypted and never returned; reads expose secretSet instead.
+   */
   config?: NotificationChannelConfig;
 }

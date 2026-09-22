@@ -16,4 +16,6 @@ export const NotificationChannelType = {
   webhook: 'webhook',
   discord: 'discord',
   slack: 'slack',
+  ntfy: 'ntfy',
+  telegram: 'telegram',
 } as const;

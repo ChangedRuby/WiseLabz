@@ -101,7 +101,6 @@ export * from './deleteConnectorsConnectorIdMaintenanceWindow200';
 export * from './diagnosticsBundle';
 export * from './diagnosticsBundleRecentFailures';
 export * from './diagnosticsBundleRecentFailuresDeliveriesItem';
-export * from './diagnosticsBundleRecentFailuresDeliveriesItemChannel';
 export * from './diagnosticsBundleRecentFailuresDeliveriesItemStatus';
 export * from './diagnosticsBundleRecentFailuresSyncRunsItem';
 export * from './diagnosticsBundleSanitizedConfig';

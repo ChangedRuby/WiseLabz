@@ -3,9 +3,11 @@ package notifications
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
+	"github.com/WiseLabz/wiselabz/internal/crypto"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -256,8 +259,8 @@ func TestNotifyAlert_DiscordSuccess(t *testing.T) {
 	if discord.Status != store.DeliveryStatusSent {
 		t.Errorf("expected discord status sent, got %s (err=%s)", discord.Status, discord.LastError)
 	}
-	if !strings.Contains(gotBody, `"content"`) || !strings.Contains(gotBody, "**Title**") {
-		t.Errorf("expected discord payload with bolded title, got %s", gotBody)
+	if !strings.Contains(gotBody, `"embeds"`) || !strings.Contains(gotBody, `"title":"Title"`) || !strings.Contains(gotBody, `"description":"Message"`) {
+		t.Errorf("expected discord embed payload with title/description, got %s", gotBody)
 	}
 }
 
@@ -336,6 +339,139 @@ func TestNotifyAlert_SlackFailure(t *testing.T) {
 	}
 	if slack.Status != store.DeliveryStatusFailed {
 		t.Errorf("expected slack status failed, got %s", slack.Status)
+	}
+}
+
+// setChannelConfigJSON writes a notification_config row from a raw channels array, for channel
+// types whose config isn't a bare "url" (ntfy, telegram, smtp).
+func setChannelConfigJSON(t *testing.T, s *store.Store, channelsJSON string) {
+	t.Helper()
+	cfgJSON := `{"channels":` + channelsJSON + `}`
+	if _, err := s.DB().ExecContext(context.Background(),
+		`INSERT INTO notification_config (id, config_json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json`, cfgJSON); err != nil {
+		t.Fatalf("set channel config: %v", err)
+	}
+}
+
+func TestNotifyAlert_NtfySuccess(t *testing.T) {
+	s := newTestStore(t)
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	setChannelConfigJSON(t, s, `[{"type":"ntfy","enabled":true,"config":{"url":"`+srv.URL+`","topic":"wiselabz"}}]`)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	ntfy, ok := findDelivery(deliveriesFor(t, s, notifs[0].ID), "ntfy")
+	if !ok || ntfy.Status != store.DeliveryStatusSent {
+		t.Fatalf("expected ntfy status sent, got %+v (ok=%v)", ntfy, ok)
+	}
+	if gotPath != "/wiselabz" {
+		t.Errorf("path = %q, want /wiselabz", gotPath)
+	}
+}
+
+func TestNotifyAlert_NtfyFailure(t *testing.T) {
+	s := newTestStore(t)
+	setChannelConfigJSON(t, s, `[{"type":"ntfy","enabled":true,"config":{"url":"http://127.0.0.1:1"}}]`)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	ntfy, ok := findDelivery(deliveriesFor(t, s, notifs[0].ID), "ntfy")
+	if !ok || ntfy.Status != store.DeliveryStatusFailed {
+		t.Fatalf("expected ntfy status failed, got %+v (ok=%v)", ntfy, ok)
+	}
+}
+
+// TestNotifyAlert_TelegramDecryptsBotToken verifies the dispatcher decrypts the channel's shared
+// secret field and passes it through to the Telegram sender as the bot token (rather than
+// failing with "bot token not configured"). The Telegram Bot API host is hardcoded, so a real
+// send against a local httptest server isn't exercised here; sendTelegramChannel's request
+// shaping is covered directly in TestSendTelegramChannel_SendsChatAndText.
+func TestNotifyAlert_TelegramDecryptsBotToken(t *testing.T) {
+	s := newTestStore(t)
+	rawKey := []byte(strings.Repeat("k", 32))
+	enc, err := crypto.Encrypt("bot-token", rawKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setChannelConfigJSON(t, s, `[{"type":"telegram","enabled":true,"config":{"chatId":"12345","secretEncrypted":"`+enc+`"}}]`)
+
+	d := NewDispatcher(s, nil)
+	d.SetEncryptionKey(base64.StdEncoding.EncodeToString(rawKey))
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	telegram, ok := findDelivery(deliveriesFor(t, s, notifs[0].ID), "telegram")
+	if !ok {
+		t.Fatalf("expected telegram delivery row, got none")
+	}
+	if strings.Contains(telegram.LastError, "bot token") {
+		t.Errorf("expected decrypted bot token to be used, got error: %s", telegram.LastError)
+	}
+}
+
+func TestNotifyAlert_TelegramMissingBotToken(t *testing.T) {
+	s := newTestStore(t)
+	setChannelConfigJSON(t, s, `[{"type":"telegram","enabled":true,"config":{"chatId":"12345"}}]`)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	telegram, ok := findDelivery(deliveriesFor(t, s, notifs[0].ID), "telegram")
+	if !ok || telegram.Status != store.DeliveryStatusFailed || !strings.Contains(telegram.LastError, "bot token") {
+		t.Fatalf("expected telegram failure for missing bot token, got %+v (ok=%v)", telegram, ok)
+	}
+}
+
+func TestNotifyAlert_SMTPSendsRealMail(t *testing.T) {
+	s := newTestStore(t)
+	addr, dataCh := fakeSMTPServer(t)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setChannelConfigJSON(t, s, `[{"type":"smtp","enabled":true,"config":{"host":"`+host+`","port":`+port+
+		`,"from":"alerts@wiselabz.local","to":"ops@example.com"}}]`)
+
+	d := NewDispatcher(s, nil)
+	d.NotifyAlert("alert-1", "user-1", "alert.created", "Title", "Message")
+
+	notifs, _, err := s.ListNotifications(context.Background(), "user-1", false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	smtpDelivery, ok := findDelivery(deliveriesFor(t, s, notifs[0].ID), "smtp")
+	if !ok || smtpDelivery.Status != store.DeliveryStatusSent {
+		t.Fatalf("expected smtp status sent, got %+v (ok=%v)", smtpDelivery, ok)
+	}
+	select {
+	case data := <-dataCh:
+		if !strings.Contains(data, "Subject: Title") {
+			t.Errorf("unexpected DATA payload: %q", data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake SMTP server never received DATA")
 	}
 }
 

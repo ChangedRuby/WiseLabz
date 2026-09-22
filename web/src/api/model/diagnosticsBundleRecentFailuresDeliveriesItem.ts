@@ -6,8 +6,8 @@
  *
  * OpenAPI spec version: 0.1.0
  */
-import type { DiagnosticsBundleRecentFailuresDeliveriesItemChannel } from './diagnosticsBundleRecentFailuresDeliveriesItemChannel';
 import type { DiagnosticsBundleRecentFailuresDeliveriesItemStatus } from './diagnosticsBundleRecentFailuresDeliveriesItemStatus';
+import type { NotificationChannelType } from './notificationChannelType';
 
 /**
  * Delivery attempt record only — never the channel's own config
@@ -15,7 +15,7 @@ import type { DiagnosticsBundleRecentFailuresDeliveriesItemStatus } from './diag
 export type DiagnosticsBundleRecentFailuresDeliveriesItem = {
   id?: string;
   notificationId?: string;
-  channel?: DiagnosticsBundleRecentFailuresDeliveriesItemChannel;
+  channel?: NotificationChannelType;
   status?: DiagnosticsBundleRecentFailuresDeliveriesItemStatus;
   attempts?: number;
   lastError?: string;

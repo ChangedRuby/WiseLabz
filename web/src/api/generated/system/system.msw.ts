@@ -11,7 +11,7 @@ import { faker } from '@faker-js/faker';
 import { HttpResponse, http } from 'msw';
 import type { RequestHandlerOptions } from 'msw';
 
-import { ConnectorCategory, Role, ServiceStatus } from '../../model';
+import { ConnectorCategory, NotificationChannelType, Role, ServiceStatus } from '../../model';
 import type {
   AuditPage,
   AuditRecord,
@@ -497,7 +497,7 @@ export const getGetSystemDiagnosticsResponseMock = (
           undefined,
         ]),
         channel: faker.helpers.arrayElement([
-          faker.helpers.arrayElement(['in_app', 'smtp', 'webhook'] as const),
+          faker.helpers.arrayElement(Object.values(NotificationChannelType)),
           undefined,
         ]),
         status: faker.helpers.arrayElement([

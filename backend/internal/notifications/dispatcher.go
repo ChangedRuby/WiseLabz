@@ -1,11 +1,10 @@
-// Package notifications provides notification dispatching (in-app, SMTP stub, webhook, Discord,
-// Slack) with per-channel delivery tracking and bounded retry for failed deliveries.
+// Package notifications provides notification dispatching (in-app, SMTP, webhook, Discord, Slack,
+// ntfy, Telegram) with per-channel delivery tracking and bounded retry for failed deliveries.
 package notifications
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -271,29 +270,21 @@ func (d *Dispatcher) sendInApp(ctx context.Context, userID, alertID, eventType, 
 	return notifID, true
 }
 
-func (d *Dispatcher) notifyExternalChannels(ctx context.Context, notifID string, channels []channelCfg, routes []routeCfg, eventType, severity, connectorID, userID, title, message string) {
+// externalChannelTypes lists every channel type notifyExternalChannels attempts, in delivery
+// order. Each must have an entry in channelSenders (see channels.go).
+var externalChannelTypes = []string{"smtp", "webhook", "discord", "slack", "ntfy", "telegram"}
+
+func (d *Dispatcher) notifyExternalChannels(ctx context.Context, notifID string, channels []channelCfg, routes []routeCfg, eventType, severity, connectorID, _, title, message string) {
 	connectorCategory := d.notificationConnectorCategory(ctx, connectorID)
 	shouldSkip := func(channel string) bool {
 		return shouldSkipRoute(routes, eventType, channel, severity, connectorCategory, connectorID)
 	}
-	if !shouldSkip("smtp") {
-		if _, enabled := findChannel(channels, "smtp"); enabled {
-			// ponytail: SMTP delivery is a stub — always "succeeds" and only logs. Real sending
-			// (user email lookup, SMTP auth/TLS, credential decryption) is out of scope for issue #18;
-			// still recorded as a real delivery row so retry/observability plumbing already covers it
-			// once real sending lands.
-			slog.Info("SMTP notification (stub)", "userID", userID, "title", title)
-			d.recordDelivery(ctx, notifID, "smtp", store.DeliveryStatusSent, "")
+	for _, channelType := range externalChannelTypes {
+		if shouldSkip(channelType) {
+			continue
 		}
-	}
-	for _, delivery := range []struct {
-		channel string
-		payload any
-	}{{"webhook", webhookPayload(title, message)}, {"discord", discordPayload(title, message)}, {"slack", slackPayload(title, message)}} {
-		if !shouldSkip(delivery.channel) {
-			if cfg, enabled := findChannel(channels, delivery.channel); enabled {
-				d.attemptChannel(ctx, notifID, delivery.channel, cfg, delivery.payload)
-			}
+		if cfg, enabled := findChannel(channels, channelType); enabled {
+			d.attemptChannel(ctx, notifID, channelType, cfg, title, message)
 		}
 	}
 }
@@ -389,32 +380,17 @@ func (d *Dispatcher) recordDelivery(ctx context.Context, notificationID, channel
 	}
 }
 
-// attemptChannel sends payload to the channel's configured URL over the shared webhook transport
+// attemptChannel sends title/message to the given channel type using its channelSenders entry
 // and records the resulting delivery status under channelType.
-func (d *Dispatcher) attemptChannel(ctx context.Context, notificationID, channelType string, cfg channelCfg, payload any) {
-	url, _ := cfg.Config["url"].(string)
-	if url == "" {
-		d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusFailed, channelType+" url not configured")
+func (d *Dispatcher) attemptChannel(ctx context.Context, notificationID, channelType string, cfg channelCfg, title, message string) {
+	sender, ok := channelSenders[channelType]
+	if !ok {
+		d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusFailed, "unsupported channel type")
 		return
 	}
-	if err := sendWebhook(ctx, url, d.signingSecret(cfg), payload); err != nil {
+	if err := sender(ctx, cfg, d.signingSecret(cfg), title, message); err != nil {
 		d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusFailed, err.Error())
 		return
 	}
 	d.recordDelivery(ctx, notificationID, channelType, store.DeliveryStatusSent, "")
-}
-
-// webhookPayload shapes a title/message pair into the generic webhook body.
-func webhookPayload(title, message string) any {
-	return map[string]string{"title": title, "message": message}
-}
-
-// discordPayload shapes a title/message pair into a Discord incoming-webhook body.
-func discordPayload(title, message string) any {
-	return map[string]string{"content": fmt.Sprintf("**%s**\n%s", title, message)}
-}
-
-// slackPayload shapes a title/message pair into a Slack incoming-webhook body.
-func slackPayload(title, message string) any {
-	return map[string]string{"text": fmt.Sprintf("*%s*\n%s", title, message)}
 }

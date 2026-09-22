@@ -235,7 +235,7 @@ func TestRetryChannel_ChannelDisabledReturnsError(t *testing.T) {
 	}
 
 	// retryChannel should return an error.
-	err := d.retryChannel(context.Background(), notif, "webhook", webhookPayload)
+	err := d.retryChannel(context.Background(), notif, "webhook")
 	if err == nil {
 		t.Errorf("expected retryChannel to return error for disabled channel, got nil")
 	}

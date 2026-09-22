@@ -80,15 +80,27 @@ func sendWebhook(ctx context.Context, rawURL, secret string, payload any) error 
 	if err != nil {
 		return err
 	}
+	headers := map[string]string{"Content-Type": "application/json"}
+	if secret != "" {
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		headers[timestampHeader] = ts
+		headers[signatureHeader] = signWebhook(secret, ts, body)
+	}
+	return doHTTPRequest(ctx, rawURL, headers, body)
+}
+
+// doHTTPRequest POSTs body to rawURL with the given headers over the shared guarded webhook
+// transport, treating any transport error or non-2xx response as failure. Shared by every HTTP-based
+// channel sender (generic webhook, Discord, Slack, ntfy, Telegram) so they all inherit the same
+// SSRF-guarded dialer, redirect policy, and bounded response read. Errors never embed the URL, since
+// it may carry credentials or tokens and errors are persisted with the delivery record.
+func doHTTPRequest(ctx context.Context, rawURL string, headers map[string]string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
 	if err != nil {
 		return redactURLError(err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if secret != "" {
-		ts := strconv.FormatInt(time.Now().Unix(), 10)
-		req.Header.Set(timestampHeader, ts)
-		req.Header.Set(signatureHeader, signWebhook(secret, ts, body))
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := webhookClient.Do(req)
 	if err != nil {
@@ -97,7 +109,7 @@ func sendWebhook(ctx context.Context, rawURL, secret string, payload any) error 
 	defer resp.Body.Close() //nolint:errcheck
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxWebhookResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
+		return fmt.Errorf("request returned status %d", resp.StatusCode)
 	}
 	return nil
 }

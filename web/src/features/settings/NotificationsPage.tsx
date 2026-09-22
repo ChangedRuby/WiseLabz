@@ -44,6 +44,8 @@ const CHANNEL_LABELS: Record<NotificationChannelType, string> = {
   webhook: 'Webhook',
   discord: 'Discord',
   slack: 'Slack',
+  ntfy: 'ntfy',
+  telegram: 'Telegram',
 };
 
 const CHANNEL_DESC_KEYS: Record<NotificationChannelType, string> = {
@@ -52,6 +54,8 @@ const CHANNEL_DESC_KEYS: Record<NotificationChannelType, string> = {
   webhook: 'settings.notifications.webhookDesc',
   discord: 'settings.notifications.discordDesc',
   slack: 'settings.notifications.slackDesc',
+  ntfy: 'settings.notifications.ntfyDesc',
+  telegram: 'settings.notifications.telegramDesc',
 };
 
 export function NotificationsPage() {

@@ -49,19 +49,12 @@ func (d *Dispatcher) retryDueDeliveries(ctx context.Context, logger *slog.Logger
 			continue
 		}
 
-		var sendErr error
-		switch del.Channel {
-		case "webhook":
-			sendErr = d.retryChannel(ctx, notif, "webhook", webhookPayload)
-		case "discord":
-			sendErr = d.retryChannel(ctx, notif, "discord", discordPayload)
-		case "slack":
-			sendErr = d.retryChannel(ctx, notif, "slack", slackPayload)
-		default:
-			// ponytail: only webhook/discord/slack are retried today; in_app never fails and
-			// smtp is a stub that always succeeds, so neither lands in the failed+due set.
+		if _, ok := channelSenders[del.Channel]; !ok {
+			// in_app never fails, so it never lands in the failed+due set; anything else here
+			// is a channel type no longer supported by this build.
 			continue
 		}
+		sendErr := d.retryChannel(ctx, notif, del.Channel)
 
 		attempts := del.Attempts + 1
 		if sendErr == nil {
@@ -84,14 +77,14 @@ func (d *Dispatcher) retryDueDeliveries(ctx context.Context, logger *slog.Logger
 // retryChannel re-sends a delivery for the given channel type using the current channel config.
 // If the channel was disabled or removed since the original attempt, retrying fails without a
 // network call.
-func (d *Dispatcher) retryChannel(ctx context.Context, notif *store.NotificationRecord, channelType string, payloadFn func(title, message string) any) error {
+func (d *Dispatcher) retryChannel(ctx context.Context, notif *store.NotificationRecord, channelType string) error {
 	cfg, enabled := d.channel(ctx, channelType)
 	if !enabled {
 		return errors.New(channelType + " channel disabled or removed")
 	}
-	url, _ := cfg.Config["url"].(string)
-	if url == "" {
-		return errors.New(channelType + " url not configured")
+	sender, ok := channelSenders[channelType]
+	if !ok {
+		return errors.New("unsupported channel type: " + channelType)
 	}
-	return sendWebhook(ctx, url, d.signingSecret(cfg), payloadFn(notif.Title, notif.Message))
+	return sender(ctx, cfg, d.signingSecret(cfg), notif.Title, notif.Message)
 }

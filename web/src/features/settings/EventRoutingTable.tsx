@@ -18,6 +18,8 @@ const CHANNEL_LABELS: Record<NotificationChannelType, string> = {
   webhook: 'Webhook',
   discord: 'Discord',
   slack: 'Slack',
+  ntfy: 'ntfy',
+  telegram: 'Telegram',
 };
 
 function eventLabel(eventType: string): string {
