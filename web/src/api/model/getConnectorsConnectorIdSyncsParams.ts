@@ -6,10 +6,15 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { CursorParameter } from './cursorParameter';
 
 export type GetConnectorsConnectorIdSyncsParams = {
   /**
    * @maximum 100
    */
   limit?: number;
+  /**
+   * Opt in to keyset (cursor) pagination, which stays cheap as the table grows. Send it empty for the first page, then echo back the previous response's `nextCursor` (or `X-Next-Cursor` header, where the response body is a bare array). The value is opaque and must not be constructed by clients. Omit the parameter entirely for offset pagination, whose behaviour is unchanged; `page` is ignored while a cursor is in use.
+   */
+  cursor?: CursorParameter;
 };

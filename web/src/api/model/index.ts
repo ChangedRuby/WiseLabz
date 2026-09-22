@@ -92,6 +92,7 @@ export * from './connectorCreateConfig';
 export * from './connectorTypeSchema';
 export * from './connectorUpdate';
 export * from './connectorUpdateConfig';
+export * from './cursorParameter';
 export * from './dashboardLayout';
 export * from './dashboardOverview';
 export * from './dashboardOverviewStatusCounts';

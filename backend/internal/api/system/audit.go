@@ -8,17 +8,40 @@ import (
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/httputil"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 // ListAudit handles GET /api/system/audit. Operator-only.
 // Returns the audit trail (docs/AUDIT.md), newest first, optionally
 // filtered by action, targetType, and/or a createdAt range.
+//
+// Passing ?cursor= (empty for the first page, then the previous response's
+// nextCursor) switches to keyset pagination, which stays cheap as the table
+// grows. Without the parameter the historical offset behaviour is unchanged.
 func (h *Handler) ListAudit(w http.ResponseWriter, r *http.Request) {
 	page, pageSize, offset := httputil.Paginate(r)
 	action := r.URL.Query().Get("action")
 	targetType := r.URL.Query().Get("targetType")
 	createdAfter := r.URL.Query().Get("createdAfter")
 	createdBefore := r.URL.Query().Get("createdBefore")
+
+	keyset, curSort, curID, ok := httputil.Cursor(w, r)
+	if !ok {
+		return
+	}
+	if keyset {
+		records, total, err := h.Store.ListAuditRecordsKeyset(r.Context(), action, targetType, createdAfter, createdBefore,
+			store.Keyset{Sort: curSort, ID: curID}, pageSize)
+		if err != nil {
+			httputil.Errorf(w, err)
+			return
+		}
+		next := httputil.NextCursor(records, pageSize, func(a store.AuditRecord) (string, string) {
+			return a.CreatedAt, a.ID
+		})
+		httputil.WritePaginatedCursor(w, records, page, pageSize, total, next)
+		return
+	}
 
 	records, total, err := h.Store.ListAuditRecords(r.Context(), action, targetType, createdAfter, createdBefore, offset, pageSize)
 	if err != nil {

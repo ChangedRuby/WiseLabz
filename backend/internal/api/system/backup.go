@@ -145,6 +145,16 @@ func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
 // maxBackupRunsLimit caps the page size for backup run listings.
 const maxBackupRunsLimit = 200
 
+// backupRunPage is GET /api/system/backup/runs' published envelope
+// (BackupRunPage in docs/openapi.yaml) — limit/offset rather than the
+// page/pageSize shape httputil.PaginatedResponse carries.
+type backupRunPage struct {
+	Runs   any `json:"runs"`
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
 // ListBackupRuns handles GET /api/system/backup/runs. Operator-only.
 // Returns a paginated list of past backups.
 func (h *Handler) ListBackupRuns(w http.ResponseWriter, r *http.Request) {
@@ -193,11 +203,15 @@ func (h *Handler) ListBackupRuns(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	httputil.JSON(w, http.StatusOK, map[string]any{
-		"runs":   items,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
+	// Not httputil.WritePaginated: the published BackupRunPage schema names the
+	// list `runs` and pages with limit/offset rather than page/pageSize, so
+	// moving it onto the shared envelope would break existing clients. Kept as
+	// a declared type so the shape lives in one place.
+	httputil.JSON(w, http.StatusOK, backupRunPage{
+		Runs:   items,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
 	})
 }
 

@@ -241,6 +241,14 @@ func (s *Store) UpdateChangeStatuses(ctx context.Context, ids []string, status s
 
 // ListChanges returns a paginated list of change records, optionally filtered by service and severity.
 func (s *Store) ListChanges(ctx context.Context, serviceID, severity string, offset, limit int) ([]ChangeRecord, int, error) {
+	where, args := changeFilterClause(serviceID, severity)
+
+	return paginatedQuery(ctx, s.db, "changes", changeColumns, where, args, "detected_at DESC", limit, offset, scanChange)
+}
+
+// changeFilterClause builds the shared WHERE clause + args for the offset and
+// keyset change listings.
+func changeFilterClause(serviceID, severity string) (string, []any) {
 	where := "WHERE 1=1"
 	var args []any
 	if serviceID != "" {
@@ -251,8 +259,17 @@ func (s *Store) ListChanges(ctx context.Context, serviceID, severity string, off
 		where += " AND severity = ?"
 		args = append(args, severity)
 	}
+	return where, args
+}
 
-	return paginatedQuery(ctx, s.db, "changes", changeColumns, where, args, "detected_at DESC", limit, offset, scanChange)
+// ListChangesKeyset returns one keyset (cursor) page of change records,
+// newest first, using the same filters as ListChanges. Rows strictly before
+// cur in (detected_at, id) order are returned; a zero cur starts at the newest
+// change. total counts every change matching the filters, ignoring cur.
+func (s *Store) ListChangesKeyset(ctx context.Context, serviceID, severity string, cur Keyset, limit int) ([]ChangeRecord, int, error) {
+	where, args := changeFilterClause(serviceID, severity)
+
+	return keysetQuery(ctx, s.db, "changes", changeColumns, where, args, "detected_at", cur, limit, scanChange)
 }
 
 // CountChanges returns the total number of change records.

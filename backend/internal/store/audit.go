@@ -145,6 +145,16 @@ func (s *Store) ListAuditRecords(ctx context.Context, action, targetType, create
 	return paginatedQuery(ctx, s.db, "audit_log", auditColumns, where, args, "created_at DESC", limit, offset, scanAuditRecord)
 }
 
+// ListAuditRecordsKeyset returns one keyset (cursor) page of audit records,
+// newest first, using the same filters as ListAuditRecords. Rows strictly
+// before cur in (created_at, id) order are returned; a zero cur starts at the
+// newest record. total counts every record matching the filters, ignoring cur.
+func (s *Store) ListAuditRecordsKeyset(ctx context.Context, action, targetType, createdAfter, createdBefore string, cur Keyset, limit int) ([]AuditRecord, int, error) {
+	where, args := auditFilterClause(action, targetType, createdAfter, createdBefore)
+
+	return keysetQuery(ctx, s.db, "audit_log", auditColumns, where, args, "created_at", cur, limit, scanAuditRecord)
+}
+
 // ListAllAuditRecords returns every audit record matching the given filters
 // (no pagination), newest first. Used by the export endpoint, which needs
 // the full matching set rather than one page — kept as a separate method

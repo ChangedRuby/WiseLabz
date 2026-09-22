@@ -914,9 +914,18 @@ paths:
           in: query
           required: false
           schema: { type: integer, default: 20, maximum: 100 }
+        - { $ref: '#/components/parameters/Cursor' }
       responses:
         '200':
           description: OK
+          headers:
+            X-Next-Cursor:
+              description: >-
+                Cursor for the next keyset page, present only when `cursor` was
+                sent and more rows follow. This response body is a bare array,
+                so the cursor rides on a header rather than an envelope field.
+              required: false
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1516,6 +1525,7 @@ paths:
           schema: { $ref: '#/components/schemas/Severity' }
         - { $ref: '#/components/parameters/Page' }
         - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Cursor' }
       responses:
         '200':
           description: OK
@@ -2200,6 +2210,7 @@ paths:
           description: Only records with createdAt <= this RFC3339 timestamp
         - { $ref: '#/components/parameters/Page' }
         - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Cursor' }
       responses:
         '200':
           description: OK
@@ -2645,6 +2656,18 @@ components:
     DaysQuery: { name: days, in: query, required: false, schema: { type: integer, default: 7, minimum: 1 } }
     Page: { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
     PageSize: { name: pageSize, in: query, required: false, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+      description: >-
+        Opt in to keyset (cursor) pagination, which stays cheap as the table
+        grows. Send it empty for the first page, then echo back the previous
+        response's `nextCursor` (or `X-Next-Cursor` header, where the response
+        body is a bare array). The value is opaque and must not be constructed
+        by clients. Omit the parameter entirely for offset pagination, whose
+        behaviour is unchanged; `page` is ignored while a cursor is in use.
 
   responses:
     BadRequest:
@@ -3425,6 +3448,12 @@ components:
         total: { type: integer }
         page: { type: integer }
         pageSize: { type: integer }
+        nextCursor:
+          type: string
+          description: >-
+            Cursor for the next keyset page. Present only when the request sent
+            `cursor` and more rows follow; absent for offset requests and on the
+            last page.
     BulkResolveRequest:
       type: object
       required: [ids, status]
@@ -4039,6 +4068,12 @@ components:
         total: { type: integer }
         page: { type: integer }
         pageSize: { type: integer }
+        nextCursor:
+          type: string
+          description: >-
+            Cursor for the next keyset page. Present only when the request sent
+            `cursor` and more rows follow; absent for offset requests and on the
+            last page.
 
     # ── backup ──
     BackupBundle:

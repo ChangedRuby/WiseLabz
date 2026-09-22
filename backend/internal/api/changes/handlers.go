@@ -105,6 +105,10 @@ func (h *Handler) changeDetail(ctx context.Context, id string) (map[string]any, 
 
 // List handles GET /api/changes. Default deny: filters to connectors the
 // caller has at least a viewer grant on.
+//
+// Passing ?cursor= (empty for the first page, then the previous response's
+// nextCursor) switches to keyset pagination; without it the historical offset
+// behaviour is unchanged.
 // ponytail: filters after the DB page is fetched, same trade-off as
 // alerts.Handler.List; push into SQL if pagination skew matters at scale.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -112,11 +116,36 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	serviceID := r.URL.Query().Get("serviceId")
 	severity := r.URL.Query().Get("severity")
 
-	changes, total, err := h.Store.ListChanges(r.Context(), serviceID, severity, offset, pageSize)
+	keyset, curSort, curID, ok := httputil.Cursor(w, r)
+	if !ok {
+		return
+	}
+
+	var (
+		changes []store.ChangeRecord
+		total   int
+		err     error
+	)
+	if keyset {
+		changes, total, err = h.Store.ListChangesKeyset(r.Context(), serviceID, severity,
+			store.Keyset{Sort: curSort, ID: curID}, pageSize)
+	} else {
+		changes, total, err = h.Store.ListChanges(r.Context(), serviceID, severity, offset, pageSize)
+	}
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
+
+	// The cursor must advance past the whole DB page, not just the rows that
+	// survive the grant filter below, or the next page would skip rows.
+	next := ""
+	if keyset {
+		next = httputil.NextCursor(changes, pageSize, func(c store.ChangeRecord) (string, string) {
+			return c.DetectedAt, c.ID
+		})
+	}
+
 	serviceIDs := make([]string, len(changes))
 	for i, c := range changes {
 		serviceIDs[i] = c.ServiceID
@@ -136,7 +165,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			filtered = append(filtered, c)
 		}
 	}
-	httputil.WritePaginated(w, filtered, page, pageSize, total)
+	httputil.WritePaginatedCursor(w, filtered, page, pageSize, total, next)
 }
 
 // Get handles GET /api/changes/{id}. Default deny: 404s if the caller has

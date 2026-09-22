@@ -101,10 +101,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
-	// The API contract calls this field items; WritePaginated uses data.
-	httputil.JSON(w, http.StatusOK, map[string]any{
-		"items": items, "total": total, "page": page, "pageSize": pageSize,
-	})
+	httputil.WritePaginated(w, items, page, pageSize, total)
 }
 
 // Get handles GET /api/findings/{id}.

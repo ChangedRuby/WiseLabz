@@ -58,31 +58,30 @@ func (s *Store) CreateSyncRun(ctx context.Context, r *SyncRunRecord) error {
 	return nil
 }
 
+// syncRunColumns is the shared column list for every sync_runs SELECT.
+const syncRunColumns = `id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count`
+
 // ListSyncRunsByConnector returns sync runs for a connector, newest first.
 // Never returns a nil slice.
 func (s *Store) ListSyncRunsByConnector(ctx context.Context, connectorID string, limit int) ([]SyncRunRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count
-		FROM sync_runs WHERE connector_id = ?
-		ORDER BY started_at DESC, finished_at DESC, id DESC LIMIT ?
-	`, connectorID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list sync runs: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
+	query := `SELECT ` + syncRunColumns + ` FROM sync_runs WHERE connector_id = ?
+		ORDER BY started_at DESC, finished_at DESC, id DESC LIMIT ?`
 
-	runs := []SyncRunRecord{}
-	for rows.Next() {
-		r, err := scanSyncRun(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
-		}
-		runs = append(runs, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate sync runs: %w", err)
-	}
-	return runs, nil
+	return scanAll(ctx, s.db, "sync runs", query, []any{connectorID, limit}, scanSyncRun)
+}
+
+// ListSyncRunsByConnectorKeyset returns one keyset (cursor) page of a
+// connector's sync runs, newest first. Rows strictly before cur in
+// (started_at, id) order are returned; a zero cur starts at the newest run.
+// total counts every run for the connector, ignoring cur.
+//
+// Keyset mode tie-breaks on id alone, where the offset listing also considers
+// finished_at; that extra key cannot participate in a cursor (it is nullable
+// and not unique), and ordering by (started_at, id) is what makes the page
+// boundary exact.
+func (s *Store) ListSyncRunsByConnectorKeyset(ctx context.Context, connectorID string, cur Keyset, limit int) ([]SyncRunRecord, int, error) {
+	return keysetQuery(ctx, s.db, "sync_runs", syncRunColumns, "WHERE connector_id = ?", []any{connectorID},
+		"started_at", cur, limit, scanSyncRun)
 }
 
 // FailedSyncRun is one failed sync run enriched with its connector's name

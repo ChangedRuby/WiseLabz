@@ -564,6 +564,10 @@ const (
 
 // Syncs handles GET /api/connectors/{id}/syncs (OpenAPI's connectorId path param).
 // Returns recent sync run history for a connector, newest first.
+//
+// Passing ?cursor= (empty for the first page, then the previous response's
+// X-Next-Cursor header) switches to keyset pagination; without it the
+// historical limit-only behaviour is unchanged.
 func (h *Handler) Syncs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -586,10 +590,32 @@ func (h *Handler) Syncs(w http.ResponseWriter, r *http.Request) {
 		limit = syncsMaxLimit
 	}
 
-	runs, err := h.Store.ListSyncRunsByConnector(r.Context(), id, limit)
+	keyset, curSort, curID, ok := httputil.Cursor(w, r)
+	if !ok {
+		return
+	}
+
+	var (
+		runs []store.SyncRunRecord
+		err  error
+	)
+	if keyset {
+		runs, _, err = h.Store.ListSyncRunsByConnectorKeyset(r.Context(), id, store.Keyset{Sort: curSort, ID: curID}, limit)
+	} else {
+		runs, err = h.Store.ListSyncRunsByConnector(r.Context(), id, limit)
+	}
 	if err != nil {
 		httputil.Errorf(w, err)
 		return
+	}
+
+	// This endpoint's published contract is a bare SyncRun[] with no envelope
+	// to put nextCursor in, so the cursor for the next keyset page rides on a
+	// response header instead. The JSON body is byte-for-byte what it was.
+	if next := httputil.NextCursor(runs, limit, func(sr store.SyncRunRecord) (string, string) {
+		return sr.StartedAt, sr.ID
+	}); keyset && next != "" {
+		w.Header().Set(httputil.NextCursorHeader, next)
 	}
 
 	httputil.JSON(w, http.StatusOK, runs)

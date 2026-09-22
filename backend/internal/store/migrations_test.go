@@ -122,6 +122,12 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertKeysetPaginationIndexes(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() keyset_pagination_indexes error: %v", err)
+	}
+	assertKeysetPaginationIndexes(t, db, "sqlite", false)
+
 	assertSessionLastSeenIndex(t, db, "sqlite", true)
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() session_last_seen_index error: %v", err)
@@ -203,6 +209,12 @@ func TestRunMigrationsDown(t *testing.T) {
 	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
 		t.Fatal("users.digest_cadence missing after reapply")
 	}
+	assertKeysetPaginationIndexes(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, keyset pagination indexes error: %v", err)
+	}
+	assertKeysetPaginationIndexes(t, db, "sqlite", false)
+
 	assertSessionLastSeenIndex(t, db, "sqlite", true)
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, session last seen index error: %v", err)
@@ -357,6 +369,12 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertKeysetPaginationIndexes(t, db, "postgres", true)
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() keyset_pagination_indexes error: %v", err)
+	}
+	assertKeysetPaginationIndexes(t, db, "postgres", false)
+
 	assertSessionLastSeenIndex(t, db, "postgres", true)
 	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() session_last_seen_index error: %v", err)
@@ -395,6 +413,7 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	}
 	assertShareLinkRetentionIndexes(t, db, "postgres", true)
 	assertSessionLastSeenIndex(t, db, "postgres", true)
+	assertKeysetPaginationIndexes(t, db, "postgres", true)
 }
 
 func TestSessionAuthProviderMigration(t *testing.T) {
@@ -594,6 +613,44 @@ func assertShareLinkRetentionIndexes(t *testing.T, db *sql.DB, driver string, pr
 			}
 		} else if err != nil || !strings.Contains(definition, "("+column+")") {
 			t.Errorf("%s should index share_links(%s), got %q, %v", name, column, definition, err)
+		}
+	}
+}
+
+// assertKeysetPaginationIndexes checks 000033_keyset_pagination_indexes'
+// (sort_key, id) indexes against the dialect's catalog, in both directions of
+// the migration.
+func assertKeysetPaginationIndexes(t *testing.T, db *sql.DB, driver string, present bool) {
+	t.Helper()
+	for _, idx := range []struct{ name, table, cols string }{
+		{"idx_audit_log_created_id", "audit_log", "created_at"},
+		{"idx_audit_log_action_created_id", "audit_log", "action"},
+		{"idx_audit_log_target_type_created_id", "audit_log", "target_type"},
+		{"idx_changes_detected_id", "changes", "detected_at"},
+		{"idx_changes_service_detected_id", "changes", "service_id"},
+		{"idx_changes_severity_detected_id", "changes", "severity"},
+		{"idx_sync_runs_connector_started_id", "sync_runs", "connector_id"},
+	} {
+		query := "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='" + idx.table + "' AND name=?"
+		if driver == "postgres" {
+			query = "SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='" + idx.table + "' AND indexname=$1"
+		}
+		var definition string
+		err := db.QueryRow(query, idx.name).Scan(&definition)
+		if !present {
+			if !errors.Is(err, sql.ErrNoRows) {
+				t.Errorf("%s should be absent, got %q, %v", idx.name, definition, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s should exist: %v", idx.name, err)
+			continue
+		}
+		// Every keyset index must lead with its filter column and end with id,
+		// which is what makes the (sort_key, id) row comparison seekable.
+		if !strings.Contains(definition, idx.cols) || !strings.HasSuffix(strings.TrimSuffix(strings.TrimSpace(definition), ")"), "id DESC") {
+			t.Errorf("%s should index %s(%s ..., id DESC), got %q", idx.name, idx.table, idx.cols, definition)
 		}
 	}
 }

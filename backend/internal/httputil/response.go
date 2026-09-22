@@ -154,18 +154,50 @@ func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 }
 
 // PaginatedResponse wraps a paginated list response. Matches the AlertPage /
-// ChangePage OpenAPI schemas: { items, total, page, pageSize }.
+// ChangePage OpenAPI schemas: { items, total, page, pageSize }. NextCursor is
+// additive and omitted unless the request opted into keyset pagination, so
+// existing offset clients see the exact same object they always have.
 type PaginatedResponse struct {
-	Items    any `json:"items"`
+	Items      any    `json:"items"`
+	Total      int    `json:"total"`
+	Page       int    `json:"page"`
+	PageSize   int    `json:"pageSize"`
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
+// WritePaginated writes a paginated response with pagination metadata.
+func WritePaginated(w http.ResponseWriter, data any, page, pageSize, total int) {
+	WritePaginatedCursor(w, data, page, pageSize, total, "")
+}
+
+// WritePaginatedCursor is WritePaginated plus the opaque cursor a keyset
+// client passes back as ?cursor= to fetch the next page. An empty nextCursor
+// is omitted from the JSON, so offset callers get the unchanged envelope.
+func WritePaginatedCursor(w http.ResponseWriter, data any, page, pageSize, total int, nextCursor string) {
+	JSON(w, http.StatusOK, PaginatedResponse{
+		Items:      data,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		NextCursor: nextCursor,
+	})
+}
+
+// DataPaginatedResponse is the pagination envelope for the one endpoint whose
+// published contract names the list `data` rather than `items`
+// (GET /api/attention, schema AttentionPage). Kept as its own type rather than
+// renaming the field, since that would break existing clients.
+type DataPaginatedResponse struct {
+	Data     any `json:"data"`
 	Total    int `json:"total"`
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`
 }
 
-// WritePaginated writes a paginated response with pagination metadata.
-func WritePaginated(w http.ResponseWriter, data any, page, pageSize, total int) {
-	JSON(w, http.StatusOK, PaginatedResponse{
-		Items:    data,
+// WriteDataPaginated writes the legacy `data`-keyed pagination envelope.
+func WriteDataPaginated(w http.ResponseWriter, data any, page, pageSize, total int) {
+	JSON(w, http.StatusOK, DataPaginatedResponse{
+		Data:     data,
 		Total:    total,
 		Page:     page,
 		PageSize: pageSize,

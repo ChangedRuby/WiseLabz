@@ -13,4 +13,6 @@ export interface AuditPage {
   total: number;
   page: number;
   pageSize: number;
+  /** Cursor for the next keyset page. Present only when the request sent `cursor` and more rows follow; absent for offset requests and on the last page. */
+  nextCursor?: string;
 }
