@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/crypto"
@@ -31,6 +32,10 @@ type Dispatcher struct {
 	hub       *ws.Hub
 	fanoutSem chan struct{}
 	encKey    []byte // decodes per-channel signing secrets; nil disables signing
+	// inflight tracks every goroutine spawned by the Notify* entry points. Nothing in
+	// production waits on it today; it exists so callers (today: tests) can wait for real
+	// quiescence instead of guessing at a sleep, and so a future graceful shutdown can drain.
+	inflight sync.WaitGroup
 }
 
 // NewDispatcher creates a new notification dispatcher.
@@ -72,7 +77,11 @@ func (d *Dispatcher) NotifyAlertCreated(ctx context.Context, alertID, title, mes
 			connectorID = alert.ServiceID
 		}
 	}
-	go d.notifyAlertCreated(users, channels, routes, alertID, severity, connectorID, title, message)
+	d.inflight.Add(1)
+	go func() {
+		defer d.inflight.Done()
+		d.notifyAlertCreated(users, channels, routes, alertID, severity, connectorID, title, message)
+	}()
 }
 
 // NotifyAlertsCreated reuses users, channels, and routing for a committed sync batch.
@@ -89,7 +98,9 @@ func (d *Dispatcher) NotifyAlertsCreated(ctx context.Context, alerts []store.Ale
 	channels := d.loadChannels(ctx)
 	routes := d.loadRouting(ctx)
 	batch := append([]store.AlertRecord(nil), alerts...)
+	d.inflight.Add(1)
 	go func() {
+		defer d.inflight.Done()
 		for _, alert := range batch {
 			d.notifyAlertCreated(users, channels, routes, alert.ID, alert.Severity, alert.ServiceID, alert.Title, alert.Description)
 		}
@@ -102,7 +113,9 @@ func (d *Dispatcher) notifyAlertCreated(users []store.User, channels []channelCf
 			continue
 		}
 		d.fanoutSem <- struct{}{}
+		d.inflight.Add(1)
 		go func(userID string, skipExternal bool) {
+			defer d.inflight.Done()
 			defer func() { <-d.fanoutSem }()
 			d.notifyAlert(context.Background(), channels, routes, alertID, userID, "alert.created", severity, connectorID, title, message, skipExternal)
 		}(u.ID, u.DigestCadence != "off")
@@ -131,7 +144,11 @@ func (d *Dispatcher) NotifyFindingCreated(ctx context.Context, findingID, title,
 			connectorID = finding.ConnectorID
 		}
 	}
-	go d.notifyFindingCreated(users, channels, routes, severity, connectorID, title, message)
+	d.inflight.Add(1)
+	go func() {
+		defer d.inflight.Done()
+		d.notifyFindingCreated(users, channels, routes, severity, connectorID, title, message)
+	}()
 }
 
 // notifyFindingCreated fans out like notifyAlertCreated. It reuses notifyAlert
@@ -144,7 +161,9 @@ func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channel
 			continue
 		}
 		d.fanoutSem <- struct{}{}
+		d.inflight.Add(1)
 		go func(userID string, skipExternal bool) {
+			defer d.inflight.Done()
 			defer func() { <-d.fanoutSem }()
 			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message, skipExternal)
 		}(u.ID, u.DigestCadence != "off")
