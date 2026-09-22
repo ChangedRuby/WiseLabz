@@ -50,38 +50,12 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, unreadOnly
 		where += " AND read = 0"
 	}
 
-	var total int
-	countQuery := "SELECT COUNT(*) FROM in_app_notifications " + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count notifications: %w", err)
-	}
-
-	query := `SELECT id, user_id, alert_id, event_type, title, message, read, created_at
-		FROM in_app_notifications ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list notifications: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var notifications []NotificationRecord
-	for rows.Next() {
-		n, err := scanNotification(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan: %w", err)
-		}
-		notifications = append(notifications, n)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate notifications: %w", err)
-	}
-	if notifications == nil {
-		notifications = []NotificationRecord{}
-	}
-	return notifications, total, nil
+	return paginatedQuery(ctx, s.db, "in_app_notifications", notificationColumns, where, args, "created_at DESC", limit, offset, scanNotification)
 }
+
+// notificationColumns is the shared column list for every
+// in_app_notifications SELECT.
+const notificationColumns = `id, user_id, alert_id, event_type, title, message, read, created_at`
 
 // ListNotificationsSince returns a user's notifications with the given event
 // types created at or after `since` (RFC3339), most recent first. Used by the
@@ -98,7 +72,7 @@ func (s *Store) ListNotificationsSince(ctx context.Context, userID, since string
 		args = append(args, et)
 	}
 
-	query := `SELECT id, user_id, alert_id, event_type, title, message, read, created_at
+	query := `SELECT ` + notificationColumns + `
 		FROM in_app_notifications
 		WHERE user_id = ? AND event_type IN (` + strings.Join(placeholders, ",") + `)`
 

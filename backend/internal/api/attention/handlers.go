@@ -18,12 +18,12 @@ const cacheTTL = 5 * time.Second
 // Handler holds dependencies for attention queue endpoints.
 type Handler struct {
 	Store *store.Store
-	cache *ttlcache.Cache[map[string]any]
+	cache *ttlcache.Cache[httputil.DataPaginatedResponse]
 }
 
 // NewHandler creates a new attention handler.
 func NewHandler(s *store.Store) *Handler {
-	return &Handler{Store: s, cache: ttlcache.New[map[string]any](cacheTTL)}
+	return &Handler{Store: s, cache: ttlcache.New[httputil.DataPaginatedResponse](cacheTTL)}
 }
 
 // List handles GET /api/attention.
@@ -37,7 +37,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r.Context())
 	key := fmt.Sprintf("%s|%s|%d|%d", userID, r.URL.Query().Get("days"), offset, pageSize)
 	if cached, ok := h.cache.Get(key); ok {
-		httputil.JSON(w, http.StatusOK, cached)
+		httputil.WriteDataPaginated(w, cached.Data, cached.Page, cached.PageSize, cached.Total)
 		return
 	}
 
@@ -47,12 +47,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := map[string]any{
-		"data":     items,
-		"page":     page,
-		"pageSize": pageSize,
-		"total":    total,
+	resp := httputil.DataPaginatedResponse{
+		Data:     items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
 	}
 	h.cache.Set(key, resp)
-	httputil.JSON(w, http.StatusOK, resp)
+	httputil.WriteDataPaginated(w, resp.Data, resp.Page, resp.PageSize, resp.Total)
 }

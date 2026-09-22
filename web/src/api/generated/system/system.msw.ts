@@ -69,6 +69,10 @@ export const getGetSystemAuditResponseMock = (
   total: faker.number.int(),
   page: faker.number.int(),
   pageSize: faker.number.int(),
+  nextCursor: faker.helpers.arrayElement([
+    faker.string.alpha({ length: { min: 10, max: 20 } }),
+    undefined,
+  ]),
   ...overrideResponse,
 });
 

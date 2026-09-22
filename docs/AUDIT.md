@@ -15,6 +15,25 @@ newest-first like other list endpoints (`page`, `pageSize`; see
 
 Response shape mirrors `ChangePage`/`AlertPage`: `{ items, total, page, pageSize }`.
 
+### Keyset (cursor) pagination
+
+Offset pagination re-counts and re-skips rows on every page, which gets
+expensive as `audit_log` grows. Sending `cursor` opts into keyset pagination
+instead: `?cursor=` for the first page, then the previous response's
+`nextCursor` for each page after it. The server answers
+`WHERE (created_at, id) < (cursor) ORDER BY created_at DESC, id DESC LIMIT
+pageSize`, which reads straight out of an index (migration 000033) and cannot
+skip or repeat a row when several records share a `created_at`.
+
+The cursor is opaque — never build one client-side. `nextCursor` is absent on
+the last page and on requests that did not send `cursor`, so offset clients see
+the unchanged four-key envelope. While a cursor is in use `page` is ignored;
+`total` still reports the full filtered count.
+
+`GET /api/changes` and `GET /api/connectors/{id}/syncs` take the same `cursor`
+parameter. Since the sync-run response body is a bare array, its cursor comes
+back in the `X-Next-Cursor` response header rather than an envelope field.
+
 ## What's recorded
 
 Each entry (`AuditRecord` in `docs/openapi.yaml`) has: `actorUserId`,

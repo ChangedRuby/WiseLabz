@@ -103,6 +103,7 @@ use `server config validate` to check deployment settings and `server config pri
 | Netbird            | Built-in             |
 | Pi-hole (v5/v6)    | Built-in             |
 | Cloudflare         | Built-in             |
+| Home Assistant     | Built-in             |
 | Traefik            | Built-in             |
 | Portainer          | Built-in             |
 | AdGuard Home       | Built-in             |

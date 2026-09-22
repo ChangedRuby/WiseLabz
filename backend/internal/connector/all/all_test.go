@@ -15,6 +15,7 @@ func TestAllConnectorImplementationsRegister(t *testing.T) {
 		{typ: "adguardhome", category: "dns"},
 		{typ: "custom", category: "virtualization"},
 		{typ: "docker", category: "containers_paas"},
+		{typ: "home_assistant", category: "virtualization"},
 		{typ: "opnsense", category: "networking"},
 		{typ: "pfsense", category: "networking"},
 		{typ: "portainer", category: "containers_paas"},
