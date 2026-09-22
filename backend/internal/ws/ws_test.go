@@ -29,7 +29,7 @@ func TestHubConfiguredOrigin(t *testing.T) {
 
 func TestHubBroadcastRouting(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	first := &Client{hub: hub, send: make(chan []byte, 1), userID: "first"}
 	second := &Client{hub: hub, send: make(chan []byte, 1), userID: "second"}
@@ -76,7 +76,7 @@ func assertEnvelope(t *testing.T, data []byte, wantType, wantJob string) {
 
 func TestDocLockEventBroadcast(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	client := &Client{hub: hub, send: make(chan []byte, 3), userID: "test"}
 	hub.register <- client
@@ -129,7 +129,7 @@ func TestDocLockEventBroadcast(t *testing.T) {
 // the connection, and writePump sends messages to the client.
 func TestUpgradeHandlerAndWritePump(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		err := hub.UpgradeHandler(w, r, "user-test-123", "admin", "")
@@ -190,7 +190,7 @@ func TestUpgradeHandlerAndWritePump(t *testing.T) {
 // without crashing the server.
 func TestReadPumpGarbageInput(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		err := hub.UpgradeHandler(w, r, "user-garbage-456", "viewer", "")
@@ -243,7 +243,7 @@ func TestReadPumpGarbageInput(t *testing.T) {
 // handle client disconnection and remove the client from the hub.
 func TestClientCloseDisconnect(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		err := hub.UpgradeHandler(w, r, "user-close-789", "operator", "")
@@ -289,7 +289,7 @@ func TestClientCloseDisconnect(t *testing.T) {
 // connection, verifying that UpgradeHandler and writePump work together.
 func TestBroadcastToUserAfterUpgrade(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	// Create two separate servers/connections for two users
 	conn1 := setupWSConnection(t, hub, "alice")
@@ -424,7 +424,7 @@ func TestRevalidationClosesConnection(t *testing.T) {
 	hub.SetRevalidator(func(_ context.Context, userID, _, _ string) bool {
 		return userID == "u1" && valid.Load()
 	})
-	go hub.Run()
+	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = hub.UpgradeHandler(w, r, "u1", "viewer", "sess")
@@ -550,7 +550,7 @@ func TestSlowClientEviction(t *testing.T) {
 		t.Fatal("socket timed out instead of closing")
 	}
 	// The read pump may unregister an already evicted client; it must be safe.
-	go hub.Run()
+	go hub.Run(context.Background())
 	hub.unregister <- slow
 	hub.BroadcastToUser("healthy", EventSystemNotice, nil)
 	select {

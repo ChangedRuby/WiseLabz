@@ -16,7 +16,7 @@ import (
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
 	s := apitest.NewStore(t)
-	return NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	return NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 }
 
 func TestHealth(t *testing.T) {

@@ -132,12 +132,27 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 // persisted settings, routing through the same RetentionJobID bookkeeping as
 // reregisterRetentionJob uses. This must be the only place that ever calls
 // h.Scheduler.AddJob("retention", ...) directly — see InitBackupJob for why.
-// Logs and returns if no settings row exists yet (nothing to schedule).
+// Seeds the settings from config defaults if no row exists yet (first boot).
 func (h *Handler) InitRetentionJob(ctx context.Context) {
 	rs, err := h.Store.GetRetentionSettings(ctx)
 	if err != nil {
-		slog.Warn("no retention settings persisted yet; retention job not registered at startup", "error", err)
-		return
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("failed to read retention settings", "error", err)
+			return
+		}
+		slog.Info("initializing retention settings with defaults")
+		rs = store.RetentionSettings{
+			SnapshotDays:   h.Config.Retention.SnapshotDays,
+			DocVersionDays: h.Config.Retention.DocVersionDays,
+			AlertDays:      h.Config.Retention.AlertDays,
+			SyncRunDays:    h.Config.Retention.SyncRunDays,
+			AuditDays:      h.Config.Retention.AuditDays,
+			CronExpr:       h.Config.Retention.CronExpr,
+		}
+		if err := h.Store.UpsertRetentionSettings(ctx, rs); err != nil {
+			slog.Error("failed to initialize retention settings", "error", err)
+			return
+		}
 	}
 	h.reregisterRetentionJob(rs)
 }

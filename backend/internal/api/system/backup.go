@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -305,12 +306,25 @@ func (h *Handler) pruneBackups(ctx context.Context) {
 // happens anywhere else (e.g. main.go calling the scheduler directly), the
 // Handler never learns that job's entry ID, so the first PUT /schedule call
 // can't remove it and a duplicate job accumulates instead of replacing it.
-// Logs and returns if no schedule row exists yet (nothing to schedule).
+// Seeds the schedule from config defaults if no row exists yet (first boot).
 func (h *Handler) InitBackupJob(ctx context.Context) {
 	sched, err := h.Store.GetBackupSchedule(ctx)
 	if err != nil {
-		slog.Warn("no backup schedule persisted yet; backup job not registered at startup", "error", err)
-		return
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("failed to read backup schedule", "error", err)
+			return
+		}
+		slog.Info("initializing backup schedule with defaults")
+		sched = store.BackupSchedule{
+			CronExpr:    h.Config.Backup.CronExpr,
+			MaxBackups:  h.Config.Backup.MaxBackups,
+			MaxAgeHours: h.Config.Backup.MaxAgeHours,
+			Enabled:     h.Config.Backup.Enabled,
+		}
+		if err := h.Store.UpsertBackupSchedule(ctx, sched); err != nil {
+			slog.Error("failed to initialize backup schedule", "error", err)
+			return
+		}
 	}
 	h.reregisterBackupJob(sched)
 }

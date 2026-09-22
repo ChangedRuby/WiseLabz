@@ -67,7 +67,7 @@ func TestExportBackupRedactsConnectorSecrets(t *testing.T) {
 		t.Fatalf("create opnsense connector: %v", err)
 	}
 
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/system/backup/export", nil)
 	rr := httptest.NewRecorder()
 	h.ExportBackup(rr, req)
@@ -130,7 +130,7 @@ func TestExportBackupRedactsConnectorSecrets(t *testing.T) {
 // TestImportBackupCorruptJSON verifies ImportBackup rejects invalid JSON gracefully.
 func TestImportBackupCorruptJSON(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/system/backup/import", strings.NewReader(`{`))
 	rr := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestImportBackupCorruptJSON(t *testing.T) {
 // TestImportBackupTruncatedJSON verifies ImportBackup handles truncated data.
 func TestImportBackupTruncatedJSON(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	// Valid JSON structure but incomplete (missing closing braces)
 	truncated := `{"version":1,"exportedAt":"2024-01-01","connectors":[{"id":"c1","name":"test","type":"proxmox","url":"https://example.com","category":"virtualization","configData":"{}`
@@ -163,7 +163,7 @@ func TestImportBackupTruncatedJSON(t *testing.T) {
 // TestImportBackupRequestTooLarge verifies ImportBackup enforces the 10 MiB limit.
 func TestImportBackupRequestTooLarge(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	// Create a valid JSON structure with a large array of connectors to exceed 10 MiB.
 	// Each connector record is roughly 200 bytes, so 50k connectors = ~10 MiB+.
@@ -203,7 +203,7 @@ func TestImportBackupRequestTooLarge(t *testing.T) {
 // TestImportBackupWrongVersion verifies ImportBackup rejects incompatible bundle versions.
 func TestImportBackupWrongVersion(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	b := backup.Bundle{
 		Version:    backup.BundleVersion + 1,
@@ -225,7 +225,7 @@ func TestImportBackupWrongVersion(t *testing.T) {
 // TestImportBackupInvalidCategory verifies ImportBackup rejects connectors with invalid categories.
 func TestImportBackupInvalidCategory(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	b := backup.Bundle{
 		Version:    backup.BundleVersion,
@@ -257,7 +257,7 @@ func TestImportBackupInvalidCategory(t *testing.T) {
 // that reference non-existent docs, preventing partial-state application.
 func TestImportBackupOrphanDocVersion(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	b := backup.Bundle{
 		Version:    backup.BundleVersion,
@@ -284,7 +284,7 @@ func TestImportBackupOrphanDocVersion(t *testing.T) {
 // sections that reference non-existent templates, preventing partial-state application.
 func TestImportBackupOrphanTemplateSection(t *testing.T) {
 	s := apitest.NewStore(t)
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	b := backup.Bundle{
 		Version:    backup.BundleVersion,
@@ -325,7 +325,7 @@ func TestImportBackupPartialFailureRollback(t *testing.T) {
 		t.Fatalf("create initial version: %v", err)
 	}
 
-	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir())
+	h := NewHandler(s.DB(), &config.Config{}, s, nil, t.TempDir(), nil)
 
 	// Import bundle with:
 	// - A new connector (should be imported)
@@ -400,7 +400,7 @@ func TestImportBackupIdempotence(t *testing.T) {
 
 	// Create destination store and import twice
 	dst := apitest.NewStore(t)
-	h := NewHandler(dst.DB(), &config.Config{}, dst, nil, t.TempDir())
+	h := NewHandler(dst.DB(), &config.Config{}, dst, nil, t.TempDir(), nil)
 
 	body, _ := json.Marshal(b)
 
@@ -480,7 +480,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 
 	// Export
-	srcHandler := NewHandler(src.DB(), &config.Config{}, src, nil, t.TempDir())
+	srcHandler := NewHandler(src.DB(), &config.Config{}, src, nil, t.TempDir(), nil)
 	exportReq := httptest.NewRequest(http.MethodGet, "/api/system/backup/export", nil)
 	exportRR := httptest.NewRecorder()
 	srcHandler.ExportBackup(exportRR, exportReq)
@@ -491,7 +491,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 
 	// Import into destination
 	dst := apitest.NewStore(t)
-	dstHandler := NewHandler(dst.DB(), &config.Config{}, dst, nil, t.TempDir())
+	dstHandler := NewHandler(dst.DB(), &config.Config{}, dst, nil, t.TempDir(), nil)
 	importReq := httptest.NewRequest(http.MethodPost, "/api/system/backup/import", bytes.NewReader(exportRR.Body.Bytes()))
 	importRR := httptest.NewRecorder()
 	dstHandler.ImportBackup(importRR, importReq)

@@ -43,6 +43,13 @@ func NewDispatcher(s *store.Store, hub *ws.Hub) *Dispatcher {
 	return &Dispatcher{store: s, hub: hub, fanoutSem: make(chan struct{}, maxConcurrentNotifications)}
 }
 
+// Wait blocks until every in-flight goroutine spawned by the Notify* entry
+// points has finished. Graceful shutdown calls this after the scheduler has
+// stopped so the DB isn't closed out from under a still-running dispatch.
+func (d *Dispatcher) Wait() {
+	d.inflight.Wait()
+}
+
 // SetEncryptionKey installs the base64 key used to decrypt per-channel webhook signing
 // secrets. An invalid key leaves signing disabled and is logged.
 func (d *Dispatcher) SetEncryptionKey(b64 string) {

@@ -189,13 +189,17 @@ func (h *Hub) RedeemTicket(id string) (userID, role, sessionHash string, ok bool
 	return t.userID, t.role, t.sessionHash, true
 }
 
-// Run starts the hub's event loop. Should be run in a goroutine.
-func (h *Hub) Run() {
+// Run starts the hub's event loop. Should be run in a goroutine. Returns
+// when ctx is canceled.
+func (h *Hub) Run(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
+
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true

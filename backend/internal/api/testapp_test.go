@@ -100,7 +100,7 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 	ai.RegisterOpenAIEmbedder(embedRegistry)
 
 	wsHub := ws.NewHub(cfg.Server.Origin)
-	go wsHub.Run()
+	go wsHub.Run(context.Background())
 
 	router := api.NewRouter(api.Config{
 		WSHub:         wsHub,

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/robfig/cron/v3"
 
@@ -15,6 +16,21 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
+// ReadyState is a shared, concurrency-safe readiness flag. main creates one
+// and passes it both to the router (whose /readyz handler reads it) and to
+// the lifecycle manager (which flips it as the first step of ordered
+// shutdown, before anything stops accepting work).
+type ReadyState struct {
+	notReady atomic.Bool
+}
+
+// SetNotReady marks the server as not ready. One-way: once shutdown starts,
+// the server never becomes ready again.
+func (r *ReadyState) SetNotReady() { r.notReady.Store(true) }
+
+// NotReady reports whether SetNotReady has been called.
+func (r *ReadyState) NotReady() bool { return r.notReady.Load() }
+
 // Handler holds dependencies for system endpoints.
 type Handler struct {
 	DB               store.DBTX
@@ -22,20 +38,23 @@ type Handler struct {
 	Store            *store.Store
 	Scheduler        *scheduler.Runner // for re-registering backup/retention jobs
 	BackupDir        string            // directory where backups are written
+	Ready            *ReadyState       // nil means always-ready (e.g. in tests)
 	BackupJobIDMu    sync.Mutex        // protects BackupJobID
 	BackupJobID      cron.EntryID      // current backup job entry ID (0 if not registered)
 	RetentionJobIDMu sync.Mutex        // protects RetentionJobID
 	RetentionJobID   cron.EntryID      // current retention job entry ID (0 if not registered)
 }
 
-// NewHandler creates a new system handler.
-func NewHandler(db store.DBTX, cfg *config.Config, s *store.Store, scheduler *scheduler.Runner, backupDir string) *Handler {
+// NewHandler creates a new system handler. ready may be nil, in which case
+// the /readyz endpoint never reports the not-ready-for-shutdown state.
+func NewHandler(db store.DBTX, cfg *config.Config, s *store.Store, scheduler *scheduler.Runner, backupDir string, ready *ReadyState) *Handler {
 	return &Handler{
 		DB:        db,
 		Config:    cfg,
 		Store:     s,
 		Scheduler: scheduler,
 		BackupDir: backupDir,
+		Ready:     ready,
 	}
 }
 
@@ -59,6 +78,15 @@ func (h *Handler) Liveness(w http.ResponseWriter, _ *http.Request) {
 // Readiness responds once the database is reachable and all migrations are applied.
 // GET /readyz
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
+	if h.Ready != nil && h.Ready.NotReady() {
+		httputil.JSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":     "degraded",
+			"ready":      false,
+			"components": []diagnostics.Component{{Name: "shutdown", Status: "draining"}},
+		})
+		return
+	}
+
 	health := diagnostics.CheckHealth(r.Context(), h.DB)
 	components := health.Components
 	ready := health.Status == "ok"

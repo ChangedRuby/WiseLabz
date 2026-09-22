@@ -3,8 +3,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/ai"
 	"github.com/WiseLabz/wiselabz/internal/api"
+	syshandler "github.com/WiseLabz/wiselabz/internal/api/system"
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/backup"
 	"github.com/WiseLabz/wiselabz/internal/config"
@@ -71,7 +70,6 @@ func main() {
 		logger.Error("Failed to open database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close() //nolint:errcheck
 
 	// Run migrations
 	if err := store.RunMigrations(db, cfg.DB.Driver, logger); err != nil {
@@ -82,7 +80,10 @@ func main() {
 	// Initialize store
 	s := store.New(db, cfg.DB.Driver)
 
-	// Create root context that cancels on interrupt
+	// Create root context that cancels on interrupt. This only signals that
+	// shutdown should begin; the lifecycle manager below owns the separate
+	// context that actually stops the background goroutines, so it can do so
+	// in order instead of everything canceling out at once.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -103,10 +104,8 @@ func main() {
 	)
 
 	// Initialize WebSocket hub (must be created before sync engine so sync
-	// can broadcast progress events).
+	// can broadcast progress events). Started by the lifecycle manager below.
 	wsHub := ws.NewHub(splitOrigins(cfg.Server.Origin)...)
-	go wsHub.Run()
-	logger.Info("WebSocket hub started")
 
 	// Initialize notification dispatcher (must precede sync engine so it can
 	// notify on alert creation)
@@ -135,53 +134,12 @@ func main() {
 		backupDir = "./data/backups"
 	}
 
-	// Seed the backup schedule from config defaults if no row exists yet.
-	// api.NewRouter's InitBackupJob reads it back and registers the cron job.
-	if _, err := s.GetBackupSchedule(ctx); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			logger.Error("Failed to read backup schedule", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("Initializing backup schedule with defaults")
-		defaultSched := store.BackupSchedule{
-			CronExpr:    cfg.Backup.CronExpr,
-			MaxBackups:  cfg.Backup.MaxBackups,
-			MaxAgeHours: cfg.Backup.MaxAgeHours,
-			Enabled:     cfg.Backup.Enabled,
-		}
-		if err := s.UpsertBackupSchedule(ctx, defaultSched); err != nil {
-			logger.Error("Failed to initialize backup schedule", "error", err)
-			os.Exit(1)
-		}
-	}
-
-	// Seed the retention settings from config defaults if no row exists yet.
-	// api.NewRouter's InitRetentionJob reads it back and registers the cron job.
-	if _, err := s.GetRetentionSettings(ctx); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			logger.Error("Failed to read retention settings", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("Initializing retention settings with defaults")
-		defaultRetention := store.RetentionSettings{
-			SnapshotDays:   cfg.Retention.SnapshotDays,
-			DocVersionDays: cfg.Retention.DocVersionDays,
-			AlertDays:      cfg.Retention.AlertDays,
-			SyncRunDays:    cfg.Retention.SyncRunDays,
-			AuditDays:      cfg.Retention.AuditDays,
-			CronExpr:       cfg.Retention.CronExpr,
-		}
-		if err := s.UpsertRetentionSettings(ctx, defaultRetention); err != nil {
-			logger.Error("Failed to initialize retention settings", "error", err)
-			os.Exit(1)
-		}
-	}
-
 	syncEngine.SetBaseContext(ctx)
 
-	// Start scheduler for quality, sync, and backup jobs. The retention job
-	// itself is registered by api.NewRouter (via the system handler's
-	// InitRetentionJob), same reasoning as the backup job below.
+	// Start scheduler for quality, sync, digest, and alert expiry jobs. The
+	// backup and retention jobs (and the schedule/settings seeding that used
+	// to live here) are registered by api.NewRouter, via the system
+	// handler's InitBackupJob/InitRetentionJob — see those for why.
 	jobRunner := scheduler.New(logger)
 	if _, err := jobRunner.AddJob("quality", cfg.Quality.CronExpr, func(jobCtx context.Context) {
 		quality.RunStaleSweepOnce(jobCtx, s, wsHub, notifDispatcher, logger)
@@ -201,6 +159,12 @@ func main() {
 		logger.Error("Failed to add digest job", "error", err)
 		os.Exit(1)
 	}
+	if _, err := jobRunner.AddJob("alertExpirer", "0 * * * * *", func(jobCtx context.Context) {
+		expireAlertsOnce(jobCtx, s, notifDispatcher, logger)
+	}); err != nil {
+		logger.Error("Failed to add alert expirer job", "error", err)
+		os.Exit(1)
+	}
 
 	// Unlike the backup job itself (registered by api.NewRouter via
 	// InitBackupJob, since its schedule is operator-configurable through
@@ -214,14 +178,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The backup job itself is registered by api.NewRouter (via the system
-	// handler's InitBackupJob), not here — that keeps the handler's
-	// BackupJobID bookkeeping in sync with what's actually scheduled, so a
-	// later PUT /schedule can remove/replace it instead of stacking a
-	// duplicate job alongside this startup registration.
-	jobRunner.Start(ctx)
-
 	// Build HTTP router
+	readyState := &syshandler.ReadyState{}
 	routerCfg := api.Config{
 		Store:          s,
 		JWT:            jwtSvc,
@@ -234,6 +192,7 @@ func main() {
 		AIRegistry:     aiRegistry,
 		EmbedRegistry:  embedRegistry,
 		QualityChecker: qualityChecker,
+		Ready:          readyState,
 	}
 	if cfg.Server.Embed {
 		spaFiles, err := fs.Sub(web.DistFS, "dist")
@@ -254,36 +213,28 @@ func main() {
 		WriteTimeout:      cfg.Server.WriteTimeoutDuration(),
 	}
 
-	go func() {
-		logger.Info("HTTP server listening", "addr", cfg.Server.Addr())
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("HTTP server error", "error", err)
-		}
-	}()
-
-	// Start snoozed alert expiration goroutine
-	go runAlertExpirer(ctx, s, notifDispatcher, logger)
-	go notifications.RunDeliveryRetries(ctx, notifDispatcher, logger)
-	go store.RunDocLockSweep(ctx, s, wsHub, store.DocLockHeartbeat, logger)
+	// The lifecycle manager owns every long-running goroutine (HTTP server,
+	// WS hub, scheduler, delivery retries, doc lock sweep) under one
+	// errgroup, and runs the ordered stop on shutdown: mark not-ready ->
+	// drain HTTP/WS -> stop scheduler -> wait for remaining goroutines ->
+	// wait for in-flight dispatch goroutines -> close the DB last.
+	lifecycle := newLifecycleManager(lifecycleDeps{
+		Logger:          logger,
+		HTTPServer:      srv,
+		WSHub:           wsHub,
+		Scheduler:       jobRunner,
+		Dispatcher:      notifDispatcher,
+		Store:           s,
+		Ready:           readyState,
+		ShutdownTimeout: cfg.Server.ShutdownTimeoutDuration(),
+	})
+	lifecycle.Start()
 
 	// Wait for shutdown signal
 	<-ctx.Done()
 	logger.Info("Shutting down gracefully")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeoutDuration())
-	defer shutdownCancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("HTTP server shutdown error", "error", err)
-	}
-
-	// Stop() blocks until any in-flight job (e.g. a backup) finishes, so the
-	// DB below is only closed once nothing is still using it. Safe to call
-	// even though Start's ctx-watcher goroutine may also call it concurrently
-	// (cron.Cron.Stop is idempotent).
-	jobRunner.Stop()
-
-	if err := s.Close(); err != nil {
+	if err := lifecycle.Shutdown(); err != nil {
 		logger.Error("Failed to close store", "error", err)
 	}
 
@@ -322,27 +273,27 @@ func runHealthcheck() {
 	os.Exit(0)
 }
 
-// runAlertExpirer periodically un-snoozes expired alerts.
-func runAlertExpirer(ctx context.Context, s *store.Store, _ *notifications.Dispatcher, logger *slog.Logger) {
-	logger.Info("Alert expirer started")
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			n, err := s.UnsnoozeExpiredAlerts(ctx)
-			if err != nil {
-				logger.Error("Failed to un-snooze expired alerts", "error", err)
-			} else if n > 0 {
-				logger.Info("Un-snoozed expired alerts", "count", n)
-			}
-		}
-		// Check every 60 seconds
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(60 * time.Second):
-		}
+// expireAlertsOnce un-snoozes every alert whose snooze has expired and
+// notifies affected users via the dispatcher, same fanout as a newly created
+// alert (it's actionable again). Runs as a scheduler job instead of its own
+// hand-rolled select-then-sleep loop.
+func expireAlertsOnce(ctx context.Context, s *store.Store, d *notifications.Dispatcher, logger *slog.Logger) {
+	expired, err := s.GetExpiredSnoozedAlerts(ctx)
+	if err != nil {
+		logger.Error("get expired snoozed alerts", "error", err)
+		return
+	}
+	if len(expired) == 0 {
+		return
+	}
+	n, err := s.UnsnoozeExpiredAlerts(ctx)
+	if err != nil {
+		logger.Error("unsnooze expired alerts", "error", err)
+		return
+	}
+	if n > 0 {
+		logger.Info("un-snoozed expired alerts", "count", n)
+		d.NotifyAlertsCreated(ctx, expired)
 	}
 }
 

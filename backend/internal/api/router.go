@@ -55,6 +55,9 @@ type Config struct {
 	Scheduler      *scheduler.Runner // for backup job scheduling
 	QualityChecker *quality.Checker
 	BackupDir      string // directory where backups are written
+	// Ready is the shared readiness flag the lifecycle manager flips during
+	// ordered shutdown. Nil in tests that don't exercise /readyz.
+	Ready *syshandler.ReadyState
 	// SPAFiles serves the embedded frontend build. Only used when Config.Server.Embed is true.
 	SPAFiles fs.FS
 }
@@ -104,7 +107,7 @@ func NewRouter(cfg Config) chi.Router {
 // newRouterDeps constructs every domain handler once, so the /api and /api/v1
 // mounts share the same instances.
 func newRouterDeps(cfg Config) routerDeps {
-	sysH := syshandler.NewHandler(cfg.Store.DB(), cfg.Config, cfg.Store, cfg.Scheduler, cfg.BackupDir)
+	sysH := syshandler.NewHandler(cfg.Store.DB(), cfg.Config, cfg.Store, cfg.Scheduler, cfg.BackupDir, cfg.Ready)
 	// Register the backup cron job through the handler (not directly against
 	// cfg.Scheduler) so its entry ID is tracked and later PUT /schedule calls
 	// can remove/replace it instead of stacking duplicate jobs.
