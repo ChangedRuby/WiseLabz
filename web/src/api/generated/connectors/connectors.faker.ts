@@ -16,8 +16,10 @@ import type {
   ConnectorBulkRestartResponse,
   ConnectorBulkSyncResponse,
   ConnectorTypeSchema,
+  DeleteConnectorsConnectorIdGoldenSnapshot200,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
   GetConnectorsConnectorIdPermissions200Item,
+  GoldenSnapshot,
   HealthCheckResult,
   MaintenanceWindow,
   PutConnectorsConnectorIdPermissionsUserId200,
@@ -668,6 +670,32 @@ export const getDeleteConnectorsConnectorIdMaintenanceWindowResponseMock = (
   overrideResponse: Partial<Extract<DeleteConnectorsConnectorIdMaintenanceWindow200, object>> = {}
 ): DeleteConnectorsConnectorIdMaintenanceWindow200 => ({
   closed: faker.datatype.boolean(),
+  ...overrideResponse,
+});
+
+export const getGetConnectorsConnectorIdGoldenSnapshotResponseMock = (): GoldenSnapshot | null => ({
+  ...{
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
+
+export const getPostConnectorsConnectorIdGoldenSnapshotResponseMock = (
+  overrideResponse: Partial<Extract<GoldenSnapshot, object>> = {}
+): GoldenSnapshot => ({
+  connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
+
+export const getDeleteConnectorsConnectorIdGoldenSnapshotResponseMock = (
+  overrideResponse: Partial<Extract<DeleteConnectorsConnectorIdGoldenSnapshot200, object>> = {}
+): DeleteConnectorsConnectorIdGoldenSnapshot200 => ({
+  unpinned: faker.datatype.boolean(),
   ...overrideResponse,
 });
 

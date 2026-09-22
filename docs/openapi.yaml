@@ -1092,6 +1092,55 @@ paths:
                 properties:
                   closed: { type: boolean }
 
+  /connectors/{connectorId}/golden-snapshot:
+    get:
+      tags: [connectors]
+      summary: Get a connector's pinned golden snapshot, if any
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf: [{ $ref: '#/components/schemas/GoldenSnapshot' }]
+                nullable: true
+    post:
+      tags: [connectors]
+      summary: Pin a snapshot as the connector's golden configuration baseline
+      description: >
+        Later syncs are compared against this snapshot (not just the
+        immediately previous one) and a config_drift quality finding is
+        raised when attributes deviate. Operator-only.
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PinGoldenSnapshotRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoldenSnapshot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [connectors]
+      summary: Unpin a connector's golden snapshot (no-op if none)
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unpinned]
+                properties:
+                  unpinned: { type: boolean }
+
   /connectors/maintenance-windows:
     get:
       tags: [connectors]
@@ -2739,7 +2788,7 @@ components:
       enum: [pending, resolved, dismissed, snoozed]
     QualityCheckType:
       type: string
-      enum: [stale, empty, failing, ownership_incomplete, credential_rotation, compliance]
+      enum: [stale, empty, failing, ownership_incomplete, credential_rotation, compliance, config_drift]
     QualityFindingStatus:
       type: string
       enum: [open, resolved]
@@ -3022,6 +3071,18 @@ components:
       required: [durationMinutes]
       properties:
         durationMinutes: { type: integer, minimum: 1, description: 'e.g. 30, 60, 120, or a custom value' }
+    GoldenSnapshot:
+      type: object
+      required: [connectorId, snapshotId, pinnedBy, pinnedAt]
+      properties:
+        connectorId: { type: string }
+        snapshotId: { type: string }
+        pinnedBy: { type: string, description: 'User ID that pinned this snapshot' }
+        pinnedAt: { type: string, format: date-time }
+    PinGoldenSnapshotRequest:
+      type: object
+      properties:
+        snapshotId: { type: string, description: 'Snapshot to pin as golden; omit to pin the connector''s current latest snapshot' }
     ConnectorTypeSchema:
       type: object
       required: [category, type, displayName, fields]

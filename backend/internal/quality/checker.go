@@ -82,6 +82,9 @@ func (c *Checker) RunForConnector(ctx context.Context, connectorID string) error
 		{name: "credential_rotation", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
 			return c.checkCredentialRotation(ctx, connectorID)
 		}},
+		{name: "config_drift", run: func(ctx context.Context, connectorID string, _ []store.DocRecord) (*store.QualityFindingRecord, error) {
+			return c.checkConfigDrift(ctx, connectorID)
+		}},
 	}
 
 	var errs []error

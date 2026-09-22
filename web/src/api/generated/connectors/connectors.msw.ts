@@ -19,8 +19,10 @@ import type {
   ConnectorBulkRestartResponse,
   ConnectorBulkSyncResponse,
   ConnectorTypeSchema,
+  DeleteConnectorsConnectorIdGoldenSnapshot200,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
   GetConnectorsConnectorIdPermissions200Item,
+  GoldenSnapshot,
   HealthCheckResult,
   MaintenanceWindow,
   PutConnectorsConnectorIdPermissionsUserId200,
@@ -674,6 +676,32 @@ export const getDeleteConnectorsConnectorIdMaintenanceWindowResponseMock = (
   ...overrideResponse,
 });
 
+export const getGetConnectorsConnectorIdGoldenSnapshotResponseMock = (): GoldenSnapshot | null => ({
+  ...{
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
+
+export const getPostConnectorsConnectorIdGoldenSnapshotResponseMock = (
+  overrideResponse: Partial<Extract<GoldenSnapshot, object>> = {}
+): GoldenSnapshot => ({
+  connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
+
+export const getDeleteConnectorsConnectorIdGoldenSnapshotResponseMock = (
+  overrideResponse: Partial<Extract<DeleteConnectorsConnectorIdGoldenSnapshot200, object>> = {}
+): DeleteConnectorsConnectorIdGoldenSnapshot200 => ({
+  unpinned: faker.datatype.boolean(),
+  ...overrideResponse,
+});
+
 export const getGetConnectorsMaintenanceWindowsResponseMock = (): MaintenanceWindow[] =>
   Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
     id: faker.string.alpha({ length: { min: 10, max: 20 } }),
@@ -1284,6 +1312,81 @@ export const getDeleteConnectorsConnectorIdMaintenanceWindowMockHandler = (
   );
 };
 
+export const getGetConnectorsConnectorIdGoldenSnapshotMockHandler = (
+  overrideResponse?:
+    | GoldenSnapshot
+    | null
+    | ((
+        info: Parameters<Parameters<typeof http.get>[1]>[0]
+      ) => Promise<GoldenSnapshot | null> | GoldenSnapshot | null),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/connectors/:connectorId/golden-snapshot',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetConnectorsConnectorIdGoldenSnapshotResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getPostConnectorsConnectorIdGoldenSnapshotMockHandler = (
+  overrideResponse?:
+    | GoldenSnapshot
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<GoldenSnapshot> | GoldenSnapshot),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/connectors/:connectorId/golden-snapshot',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getPostConnectorsConnectorIdGoldenSnapshotResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
+export const getDeleteConnectorsConnectorIdGoldenSnapshotMockHandler = (
+  overrideResponse?:
+    | DeleteConnectorsConnectorIdGoldenSnapshot200
+    | ((
+        info: Parameters<Parameters<typeof http.delete>[1]>[0]
+      ) =>
+        | Promise<DeleteConnectorsConnectorIdGoldenSnapshot200>
+        | DeleteConnectorsConnectorIdGoldenSnapshot200),
+  options?: RequestHandlerOptions
+) => {
+  return http.delete(
+    '*/connectors/:connectorId/golden-snapshot',
+    async (info: Parameters<Parameters<typeof http.delete>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getDeleteConnectorsConnectorIdGoldenSnapshotResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
 export const getGetConnectorsMaintenanceWindowsMockHandler = (
   overrideResponse?:
     | MaintenanceWindow[]
@@ -1426,6 +1529,9 @@ export const getConnectorsMock = () => [
   getGetConnectorsConnectorIdMaintenanceWindowMockHandler(),
   getPostConnectorsConnectorIdMaintenanceWindowMockHandler(),
   getDeleteConnectorsConnectorIdMaintenanceWindowMockHandler(),
+  getGetConnectorsConnectorIdGoldenSnapshotMockHandler(),
+  getPostConnectorsConnectorIdGoldenSnapshotMockHandler(),
+  getDeleteConnectorsConnectorIdGoldenSnapshotMockHandler(),
   getGetConnectorsMaintenanceWindowsMockHandler(),
   getPostSyncMockHandler(),
   getGetConnectorsConnectorIdPermissionsMockHandler(),

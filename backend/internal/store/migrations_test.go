@@ -122,6 +122,12 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertGoldenSnapshotsExists(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() golden_snapshots error: %v", err)
+	}
+	assertGoldenSnapshotsExists(t, db, "sqlite", false)
+
 	if !hasColumn(t, db, "sqlite", "retention_settings", "health_check_days") {
 		t.Fatal("retention_settings.health_check_days missing after migrations")
 	}
@@ -236,6 +242,12 @@ func TestRunMigrationsDown(t *testing.T) {
 	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
 		t.Fatal("users.digest_cadence missing after reapply")
 	}
+	assertGoldenSnapshotsExists(t, db, "sqlite", true)
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, golden_snapshots error: %v", err)
+	}
+	assertGoldenSnapshotsExists(t, db, "sqlite", false)
+
 	if !hasColumn(t, db, "sqlite", "retention_settings", "health_check_days") {
 		t.Fatal("retention_settings.health_check_days missing after reapply")
 	}
@@ -418,6 +430,12 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	assertGoldenSnapshotsExists(t, db, "postgres", true)
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() golden_snapshots error: %v", err)
+	}
+	assertGoldenSnapshotsExists(t, db, "postgres", false)
+
 	if !hasColumn(t, db, "postgres", "retention_settings", "health_check_days") {
 		t.Fatal("retention_settings.health_check_days missing after migrations")
 	}
@@ -491,6 +509,7 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	assertSessionLastSeenIndex(t, db, "postgres", true)
 	assertKeysetPaginationIndexes(t, db, "postgres", true)
 	assertNtfyTelegramChannelsAllowed(t, db, "postgres", true)
+	assertGoldenSnapshotsExists(t, db, "postgres", true)
 	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'health_checks'`).Scan(&name); err != nil {
 		t.Errorf("health_checks should exist after reapply: %v", err)
 	}
@@ -755,6 +774,39 @@ func assertSessionLastSeenIndex(t *testing.T, db *sql.DB, driver string, present
 		}
 	} else if err != nil || !strings.Contains(definition, "(last_seen_at)") {
 		t.Errorf("%s should index sessions(last_seen_at), got %q, %v", name, definition, err)
+	}
+}
+
+// assertGoldenSnapshotsExists checks 000035_golden_snapshots' table and its
+// widened quality_findings.check_type CHECK constraint, in both directions
+// of the migration.
+func assertGoldenSnapshotsExists(t *testing.T, db *sql.DB, driver string, present bool) {
+	t.Helper()
+	tableQuery := `SELECT name FROM sqlite_master WHERE type='table' AND name='golden_snapshots'`
+	if driver == "postgres" {
+		tableQuery = `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'golden_snapshots'`
+	}
+	var name string
+	err := db.QueryRow(tableQuery).Scan(&name)
+	hasTable := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("read golden_snapshots table: %v", err)
+	}
+	if hasTable != present {
+		t.Errorf("golden_snapshots table present=%v, want %v", hasTable, present)
+	}
+
+	checkQuery := `SELECT sql FROM sqlite_master WHERE type='table' AND name='quality_findings'`
+	if driver == "postgres" {
+		checkQuery = `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'quality_findings_check_type_check'`
+	}
+	var definition string
+	if err := db.QueryRow(checkQuery).Scan(&definition); err != nil {
+		t.Fatalf("read quality_findings schema: %v", err)
+	}
+	hasConfigDrift := strings.Contains(definition, "'config_drift'")
+	if hasConfigDrift != present {
+		t.Errorf("quality_findings CHECK constraint config_drift present=%v, want %v (schema: %s)", hasConfigDrift, present, definition)
 	}
 }
 

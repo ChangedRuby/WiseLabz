@@ -33,6 +33,7 @@ func mountConnectorRoutes(r chi.Router, d routerDeps) {
 			r.Get("/{id}/removal-impact", d.connH.RemovalImpact)
 			r.Get("/{id}/config-fields", d.connH.ConfigFields)
 			r.Get("/{id}/maintenance-window", d.connH.GetMaintenanceWindow)
+			r.Get("/{id}/golden-snapshot", d.connH.GetGoldenSnapshot)
 		})
 
 		// Creating a connector has no existing grant to check against, so
@@ -65,6 +66,8 @@ func mountConnectorRoutes(r chi.Router, d routerDeps) {
 			r.Post("/{id}/sync", d.connH.Sync)
 			r.Post("/{id}/maintenance-window", d.connH.OpenMaintenanceWindow) // no elevation: reversible and time-boxed
 			r.Delete("/{id}/maintenance-window", d.connH.CloseMaintenanceWindow)
+			r.Post("/{id}/golden-snapshot", d.connH.PinGoldenSnapshot)
+			r.Delete("/{id}/golden-snapshot", d.connH.UnpinGoldenSnapshot)
 
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireElevation(cfg.JWT, cfg.Store, "connector.delete"))

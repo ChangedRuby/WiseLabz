@@ -32,16 +32,19 @@ import type {
   ConnectorCreate,
   ConnectorTypeSchema,
   ConnectorUpdate,
+  DeleteConnectorsConnectorIdGoldenSnapshot200,
   DeleteConnectorsConnectorIdMaintenanceWindow200,
   ElevationRequiredResponse,
   Error,
   ForbiddenResponse,
   GetConnectorsConnectorIdPermissions200Item,
   GetConnectorsConnectorIdSyncsParams,
+  GoldenSnapshot,
   HealthCheckResult,
   MaintenanceWindow,
   NotFoundResponse,
   OpenMaintenanceWindowRequest,
+  PinGoldenSnapshotRequest,
   PostConnectorsConnectorIdConfigPushBody,
   PostConnectorsConnectorIdRestartBody,
   PostConnectorsConnectorIdRestartParams,
@@ -3867,6 +3870,510 @@ export function useDeleteConnectorsConnectorIdMaintenanceWindow<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getDeleteConnectorsConnectorIdMaintenanceWindowQueryOptions(
+    connectorId,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Get a connector's pinned golden snapshot, if any
+ */
+export const getConnectorsConnectorIdGoldenSnapshot = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GoldenSnapshot | null>(
+    { url: `/connectors/${connectorId}/golden-snapshot`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdGoldenSnapshotQueryKey = (connectorId: string) => {
+  return [`/connectors/${connectorId}/golden-snapshot`] as const;
+};
+
+export const getGetConnectorsConnectorIdGoldenSnapshotQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetConnectorsConnectorIdGoldenSnapshotQueryKey(connectorId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>
+  > = ({ signal }) => getConnectorsConnectorIdGoldenSnapshot(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdGoldenSnapshotQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>
+>;
+export type GetConnectorsConnectorIdGoldenSnapshotQueryError = ErrorType<unknown>;
+
+export function useGetConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get a connector's pinned golden snapshot, if any
+ */
+
+export function useGetConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdGoldenSnapshotQueryOptions(connectorId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Later syncs are compared against this snapshot (not just the immediately previous one) and a config_drift quality finding is raised when attributes deviate. Operator-only.
+ * @summary Pin a snapshot as the connector's golden configuration baseline
+ */
+export const postConnectorsConnectorIdGoldenSnapshot = (
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<GoldenSnapshot>(
+    {
+      url: `/connectors/${connectorId}/golden-snapshot`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: pinGoldenSnapshotRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPostConnectorsConnectorIdGoldenSnapshotQueryKey = (
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>
+) => {
+  return ['POST', `/connectors/${connectorId}/golden-snapshot`, pinGoldenSnapshotRequest] as const;
+};
+
+export const getPostConnectorsConnectorIdGoldenSnapshotQueryOptions = <
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getPostConnectorsConnectorIdGoldenSnapshotQueryKey(connectorId, pinGoldenSnapshotRequest);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>
+  > = ({ signal }) =>
+    postConnectorsConnectorIdGoldenSnapshot(
+      connectorId,
+      pinGoldenSnapshotRequest,
+      requestOptions,
+      signal
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PostConnectorsConnectorIdGoldenSnapshotQueryResult = NonNullable<
+  Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>
+>;
+export type PostConnectorsConnectorIdGoldenSnapshotQueryError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export function usePostConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  pinGoldenSnapshotRequest: undefined | BodyType<PinGoldenSnapshotRequest>,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePostConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Pin a snapshot as the connector's golden configuration baseline
+ */
+
+export function usePostConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  pinGoldenSnapshotRequest?: BodyType<PinGoldenSnapshotRequest>,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof postConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPostConnectorsConnectorIdGoldenSnapshotQueryOptions(
+    connectorId,
+    pinGoldenSnapshotRequest,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Unpin a connector's golden snapshot (no-op if none)
+ */
+export const deleteConnectorsConnectorIdGoldenSnapshot = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<DeleteConnectorsConnectorIdGoldenSnapshot200>(
+    { url: `/connectors/${connectorId}/golden-snapshot`, method: 'DELETE', signal },
+    options
+  );
+};
+
+export const getDeleteConnectorsConnectorIdGoldenSnapshotQueryKey = (connectorId: string) => {
+  return ['DELETE', `/connectors/${connectorId}/golden-snapshot`] as const;
+};
+
+export const getDeleteConnectorsConnectorIdGoldenSnapshotQueryOptions = <
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDeleteConnectorsConnectorIdGoldenSnapshotQueryKey(connectorId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>
+  > = ({ signal }) =>
+    deleteConnectorsConnectorIdGoldenSnapshot(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type DeleteConnectorsConnectorIdGoldenSnapshotQueryResult = NonNullable<
+  Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>
+>;
+export type DeleteConnectorsConnectorIdGoldenSnapshotQueryError = ErrorType<unknown>;
+
+export function useDeleteConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+          TError,
+          Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useDeleteConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Unpin a connector's golden snapshot (no-op if none)
+ */
+
+export function useDeleteConnectorsConnectorIdGoldenSnapshot<
+  TData = Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof deleteConnectorsConnectorIdGoldenSnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getDeleteConnectorsConnectorIdGoldenSnapshotQueryOptions(
     connectorId,
     options
   );

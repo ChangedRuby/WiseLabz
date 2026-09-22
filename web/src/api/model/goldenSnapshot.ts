@@ -7,14 +7,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type QualityCheckType = (typeof QualityCheckType)[keyof typeof QualityCheckType];
-
-export const QualityCheckType = {
-  stale: 'stale',
-  empty: 'empty',
-  failing: 'failing',
-  ownership_incomplete: 'ownership_incomplete',
-  credential_rotation: 'credential_rotation',
-  compliance: 'compliance',
-  config_drift: 'config_drift',
-} as const;
+export interface GoldenSnapshot {
+  connectorId: string;
+  snapshotId: string;
+  /** User ID that pinned this snapshot */
+  pinnedBy: string;
+  pinnedAt: string;
+}
