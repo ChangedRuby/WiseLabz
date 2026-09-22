@@ -187,6 +187,93 @@ func TestConnectorsHealthRoleBoundary(t *testing.T) {
 	}
 }
 
+// TestConnectorsHealthRecordsTimeSeriesRow verifies a health check persists
+// a health_checks row (in addition to updating the connector's latest
+// status), so GetConnectorUptime has data to compute over.
+func TestConnectorsHealthRecordsTimeSeriesRow(t *testing.T) {
+	registerHealthFakeType(t, &healthFakeConnector{err: nil})
+
+	app := newTestApp(t)
+	opUserID, opToken := app.user(t, "operator")
+	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
+
+	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+
+	stats, err := app.Store.GetConnectorUptime(context.Background(), conn.ID, time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("GetConnectorUptime: %v", err)
+	}
+	if stats.CheckCount != 1 {
+		t.Fatalf("CheckCount = %d, want 1 (health check should persist a time-series row)", stats.CheckCount)
+	}
+}
+
+// TestConnectorsUptime exercises GET /api/connectors/{id}/uptime end to end:
+// two health checks, one online and one offline an hour apart, followed by
+// a request that should show partial (50%) availability in the 24h window.
+func TestConnectorsUptime(t *testing.T) {
+	app := newTestApp(t)
+	opUserID, opToken := app.user(t, "operator")
+	conn := seedHealthTestConnector(t, app)
+	app.connectorGrant(t, opUserID, conn.ID, "operator")
+
+	now := time.Now().UTC()
+	if err := app.Store.RecordHealthCheck(context.Background(), &store.HealthCheckRecord{
+		ConnectorID: conn.ID, Status: "offline", CheckedAt: now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("RecordHealthCheck(offline): %v", err)
+	}
+	if err := app.Store.RecordHealthCheck(context.Background(), &store.HealthCheckRecord{
+		ConnectorID: conn.ID, Status: "online", CheckedAt: now.Add(-time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("RecordHealthCheck(online): %v", err)
+	}
+
+	rec := app.req(t, http.MethodGet, "/api/connectors/"+conn.ID+"/uptime", nil, opToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+
+	var got struct {
+		ConnectorID string `json:"connectorId"`
+		Windows     map[string]struct {
+			CheckCount      int     `json:"checkCount"`
+			AvailabilityPct float64 `json:"availabilityPct"`
+			OutageCount     int     `json:"outageCount"`
+		} `json:"windows"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if got.ConnectorID != conn.ID {
+		t.Fatalf("connectorId = %q, want %q", got.ConnectorID, conn.ID)
+	}
+	for _, label := range []string{"24h", "7d", "30d"} {
+		w, ok := got.Windows[label]
+		if !ok {
+			t.Fatalf("windows missing %q: %+v", label, got.Windows)
+		}
+		if w.CheckCount != 2 {
+			t.Errorf("windows[%q].checkCount = %d, want 2", label, w.CheckCount)
+		}
+	}
+}
+
+func TestConnectorsUptimeUnknownConnector404s(t *testing.T) {
+	app := newTestApp(t)
+	opUserID, opToken := app.user(t, "operator")
+	app.connectorGrant(t, opUserID, "does-not-exist", "operator")
+
+	rec := app.req(t, http.MethodGet, "/api/connectors/does-not-exist/uptime", nil, opToken)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body)
+	}
+}
+
 // TestConnectorsHealthUnknownConnector404s pre-grants the caller on the
 // nonexistent ID so the request reaches the handler's own not-found check —
 // otherwise the default-deny connector-role gate would 403 first, which is

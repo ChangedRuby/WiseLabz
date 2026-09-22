@@ -28,6 +28,7 @@ func mountConnectorRoutes(r chi.Router, d routerDeps) {
 		r.Group(func(r chi.Router) {
 			r.Use(connViewer)
 			r.Get("/{id}/data", d.connH.Data)
+			r.Get("/{id}/uptime", d.connH.Uptime)
 			r.Get("/{id}/syncs", d.connH.Syncs)
 			r.Get("/{id}/removal-impact", d.connH.RemovalImpact)
 			r.Get("/{id}/config-fields", d.connH.ConfigFields)

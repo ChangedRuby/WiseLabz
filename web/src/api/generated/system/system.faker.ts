@@ -96,6 +96,7 @@ export const getGetSystemSettingsRetentionResponseMock = (
   alertDays: faker.number.int(),
   syncRunDays: faker.number.int(),
   auditDays: faker.number.int(),
+  healthCheckDays: faker.number.int(),
   cronExpr: faker.string.alpha({ length: { min: 10, max: 20 } }),
   updatedAt: faker.helpers.arrayElement([
     faker.date.past().toISOString().slice(0, 19) + 'Z',
@@ -112,6 +113,7 @@ export const getPutSystemSettingsRetentionResponseMock = (
   alertDays: faker.number.int(),
   syncRunDays: faker.number.int(),
   auditDays: faker.number.int(),
+  healthCheckDays: faker.number.int(),
   cronExpr: faker.string.alpha({ length: { min: 10, max: 20 } }),
   updatedAt: faker.helpers.arrayElement([
     faker.date.past().toISOString().slice(0, 19) + 'Z',

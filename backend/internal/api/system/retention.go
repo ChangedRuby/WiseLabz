@@ -27,34 +27,37 @@ func (h *Handler) GetRetentionSettings(w http.ResponseWriter, r *http.Request) {
 		// keep in sync with config.go retention defaults
 		slog.Warn("retention settings not found, returning default", "error", err)
 		rs = store.RetentionSettings{
-			SnapshotDays:   90,
-			DocVersionDays: 365,
-			AlertDays:      180,
-			SyncRunDays:    90,
-			AuditDays:      180,
-			CronExpr:       "0 0 * * *",
+			SnapshotDays:    90,
+			DocVersionDays:  365,
+			AlertDays:       180,
+			SyncRunDays:     90,
+			AuditDays:       180,
+			HealthCheckDays: 90,
+			CronExpr:        "0 0 * * *",
 		}
 	}
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
-		"snapshotDays":   rs.SnapshotDays,
-		"docVersionDays": rs.DocVersionDays,
-		"alertDays":      rs.AlertDays,
-		"syncRunDays":    rs.SyncRunDays,
-		"auditDays":      rs.AuditDays,
-		"cronExpr":       rs.CronExpr,
-		"updatedAt":      rs.UpdatedAt,
+		"snapshotDays":    rs.SnapshotDays,
+		"docVersionDays":  rs.DocVersionDays,
+		"alertDays":       rs.AlertDays,
+		"syncRunDays":     rs.SyncRunDays,
+		"auditDays":       rs.AuditDays,
+		"healthCheckDays": rs.HealthCheckDays,
+		"cronExpr":        rs.CronExpr,
+		"updatedAt":       rs.UpdatedAt,
 	})
 }
 
 // RetentionSettingsRequest is the request body for PUT /api/system/settings/retention.
 type RetentionSettingsRequest struct {
-	SnapshotDays   int    `json:"snapshotDays"`
-	DocVersionDays int    `json:"docVersionDays"`
-	AlertDays      int    `json:"alertDays"`
-	SyncRunDays    int    `json:"syncRunDays"`
-	AuditDays      int    `json:"auditDays"`
-	CronExpr       string `json:"cronExpr"`
+	SnapshotDays    int    `json:"snapshotDays"`
+	DocVersionDays  int    `json:"docVersionDays"`
+	AlertDays       int    `json:"alertDays"`
+	SyncRunDays     int    `json:"syncRunDays"`
+	AuditDays       int    `json:"auditDays"`
+	HealthCheckDays int    `json:"healthCheckDays"`
+	CronExpr        string `json:"cronExpr"`
 }
 
 // UpdateRetentionSettings handles PUT /api/system/settings/retention. Operator-only.
@@ -88,6 +91,7 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 		{"alertDays", req.AlertDays},
 		{"syncRunDays", req.SyncRunDays},
 		{"auditDays", req.AuditDays},
+		{"healthCheckDays", req.HealthCheckDays},
 	} {
 		if f.days < 0 {
 			dayErrs = append(dayErrs, httputil.FieldError{Field: f.name, Msg: "must be >= 0 (0 disables cleanup)"})
@@ -99,12 +103,13 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 	}
 
 	newSettings := store.RetentionSettings{
-		SnapshotDays:   req.SnapshotDays,
-		DocVersionDays: req.DocVersionDays,
-		AlertDays:      req.AlertDays,
-		SyncRunDays:    req.SyncRunDays,
-		AuditDays:      req.AuditDays,
-		CronExpr:       req.CronExpr,
+		SnapshotDays:    req.SnapshotDays,
+		DocVersionDays:  req.DocVersionDays,
+		AlertDays:       req.AlertDays,
+		SyncRunDays:     req.SyncRunDays,
+		AuditDays:       req.AuditDays,
+		HealthCheckDays: req.HealthCheckDays,
+		CronExpr:        req.CronExpr,
 	}
 	if err := h.Store.UpsertRetentionSettings(r.Context(), newSettings); err != nil {
 		httputil.Errorf(w, err)
@@ -118,13 +123,14 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 	h.reregisterRetentionJob(newSettings)
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
-		"snapshotDays":   newSettings.SnapshotDays,
-		"docVersionDays": newSettings.DocVersionDays,
-		"alertDays":      newSettings.AlertDays,
-		"syncRunDays":    newSettings.SyncRunDays,
-		"auditDays":      newSettings.AuditDays,
-		"cronExpr":       newSettings.CronExpr,
-		"updatedAt":      newSettings.UpdatedAt,
+		"snapshotDays":    newSettings.SnapshotDays,
+		"docVersionDays":  newSettings.DocVersionDays,
+		"alertDays":       newSettings.AlertDays,
+		"syncRunDays":     newSettings.SyncRunDays,
+		"auditDays":       newSettings.AuditDays,
+		"healthCheckDays": newSettings.HealthCheckDays,
+		"cronExpr":        newSettings.CronExpr,
+		"updatedAt":       newSettings.UpdatedAt,
 	})
 }
 
@@ -142,12 +148,13 @@ func (h *Handler) InitRetentionJob(ctx context.Context) {
 		}
 		slog.Info("initializing retention settings with defaults")
 		rs = store.RetentionSettings{
-			SnapshotDays:   h.Config.Retention.SnapshotDays,
-			DocVersionDays: h.Config.Retention.DocVersionDays,
-			AlertDays:      h.Config.Retention.AlertDays,
-			SyncRunDays:    h.Config.Retention.SyncRunDays,
-			AuditDays:      h.Config.Retention.AuditDays,
-			CronExpr:       h.Config.Retention.CronExpr,
+			SnapshotDays:    h.Config.Retention.SnapshotDays,
+			DocVersionDays:  h.Config.Retention.DocVersionDays,
+			AlertDays:       h.Config.Retention.AlertDays,
+			SyncRunDays:     h.Config.Retention.SyncRunDays,
+			AuditDays:       h.Config.Retention.AuditDays,
+			HealthCheckDays: h.Config.Retention.HealthCheckDays,
+			CronExpr:        h.Config.Retention.CronExpr,
 		}
 		if err := h.Store.UpsertRetentionSettings(ctx, rs); err != nil {
 			slog.Error("failed to initialize retention settings", "error", err)

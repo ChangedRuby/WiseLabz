@@ -852,6 +852,25 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ServiceSnapshot' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /connectors/{connectorId}/uptime:
+    get:
+      tags: [connectors]
+      summary: Availability % and MTTR over 24h/7d/30d windows
+      description: >
+        Computed from the health_checks time series recorded by POST
+        /connectors/{connectorId}/health. Availability is time-weighted
+        between consecutive checks, and MTTR (mean time to recovery) is the
+        mean time from an "offline" check to the next check that isn't,
+        counting only outages that both started and recovered inside each
+        window.
+      parameters: [{ $ref: '#/components/parameters/ConnectorId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UptimeReport' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /connectors/{connectorId}/test:
     post:
       tags: [connectors]
@@ -3120,6 +3139,35 @@ components:
         status: { $ref: '#/components/schemas/ServiceStatus' }
         message: { type: string }
         latencyMs: { type: integer }
+    UptimeWindowStats:
+      type: object
+      required: [windowStart, windowEnd, checkCount, availabilityPct, mttrSeconds, outageCount]
+      properties:
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        checkCount: { type: integer, description: Number of health_checks rows in this window }
+        availabilityPct:
+          {
+            type: number,
+            format: double,
+            description: Time-weighted % of the window spent in a non-offline status; 0 when checkCount is 0,
+          }
+        mttrSeconds:
+          {
+            type: number,
+            format: double,
+            description: 'Mean time to recovery, in seconds, over outages that both started and recovered inside the window; 0 when there were none.',
+          }
+        outageCount: { type: integer, description: Number of resolved outages the mttrSeconds mean is over }
+    UptimeReport:
+      type: object
+      required: [connectorId, windows]
+      properties:
+        connectorId: { type: string }
+        windows:
+          type: object
+          description: Keyed by window label ("24h", "7d", "30d")
+          additionalProperties: { $ref: '#/components/schemas/UptimeWindowStats' }
     SyncJobRef:
       type: object
       required: [jobId]
@@ -4178,13 +4226,14 @@ components:
         templateSections: { $ref: '#/components/schemas/BackupCounts' }
     RetentionSettings:
       type: object
-      required: [snapshotDays, docVersionDays, alertDays, syncRunDays, auditDays, cronExpr]
+      required: [snapshotDays, docVersionDays, alertDays, syncRunDays, auditDays, healthCheckDays, cronExpr]
       properties:
         snapshotDays: { type: integer, description: Delete service snapshots older than this many days; 0 disables cleanup for this category }
         docVersionDays: { type: integer, description: Delete doc revisions older than this many days; 0 disables cleanup for this category }
         alertDays: { type: integer, description: Delete resolved/dismissed alerts older than this many days; 0 disables cleanup for this category }
         syncRunDays: { type: integer, description: Delete sync run history older than this many days; 0 disables cleanup for this category }
         auditDays: { type: integer, description: Delete audit log records older than this many days; 0 disables cleanup for this category }
+        healthCheckDays: { type: integer, description: Delete health-check time-series rows older than this many days; 0 disables cleanup for this category }
         cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression, example: '0 0 * * *' }
         updatedAt: { type: string, format: date-time }
     BackupSchedule:

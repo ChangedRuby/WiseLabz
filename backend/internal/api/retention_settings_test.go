@@ -34,12 +34,13 @@ func TestRetentionSettingsGetPutRoundTrip(t *testing.T) {
 	}
 
 	putBody := map[string]any{
-		"snapshotDays":   30,
-		"docVersionDays": 60,
-		"alertDays":      90,
-		"syncRunDays":    14,
-		"auditDays":      120,
-		"cronExpr":       "0 1 * * *",
+		"snapshotDays":    30,
+		"docVersionDays":  60,
+		"alertDays":       90,
+		"syncRunDays":     14,
+		"auditDays":       120,
+		"healthCheckDays": 45,
+		"cronExpr":        "0 1 * * *",
 	}
 	putRec := app.req(t, http.MethodPut, "/api/system/settings/retention", putBody, opToken)
 	if putRec.Code != http.StatusOK {
@@ -66,6 +67,9 @@ func TestRetentionSettingsGetPutRoundTrip(t *testing.T) {
 	}
 	if getResp["syncRunDays"].(float64) != 14 {
 		t.Errorf("GET syncRunDays = %v, want 14", getResp["syncRunDays"])
+	}
+	if getResp["healthCheckDays"].(float64) != 45 {
+		t.Errorf("GET healthCheckDays = %v, want 45", getResp["healthCheckDays"])
 	}
 }
 

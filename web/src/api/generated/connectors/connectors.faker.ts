@@ -27,6 +27,7 @@ import type {
   SyncJobRef,
   SyncRun,
   TestResult,
+  UptimeReport,
 } from '../../model';
 
 export const getGetConnectorsResponseMock = (): Connector[] =>
@@ -447,6 +448,23 @@ export const getGetConnectorsConnectorIdDataResponseMock = (
     undefined,
   ]),
   fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
+
+export const getGetConnectorsConnectorIdUptimeResponseMock = (
+  overrideResponse: Partial<Extract<UptimeReport, object>> = {}
+): UptimeReport => ({
+  connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  windows: {
+    [faker.string.alphanumeric(5)]: {
+      windowStart: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      windowEnd: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      checkCount: faker.number.int(),
+      availabilityPct: faker.number.float({ fractionDigits: 2 }),
+      mttrSeconds: faker.number.float({ fractionDigits: 2 }),
+      outageCount: faker.number.int(),
+    },
+  },
   ...overrideResponse,
 });
 

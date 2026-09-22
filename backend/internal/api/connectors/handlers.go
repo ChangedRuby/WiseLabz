@@ -492,6 +492,19 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	latencyMs := latency.Milliseconds()
+	if err := h.Store.RecordHealthCheck(r.Context(), &store.HealthCheckRecord{
+		ConnectorID: id,
+		Status:      status,
+		Message:     message,
+		LatencyMs:   &latencyMs,
+	}); err != nil {
+		// Persisting the time-series point is additive to this endpoint's
+		// existing behavior — a write failure here shouldn't turn an
+		// otherwise-successful health check into an error response.
+		slog.Error("record health check", "connectorId", id, "error", err)
+	}
+
 	httputil.JSON(w, http.StatusOK, map[string]any{
 		"status":    status,
 		"message":   message,

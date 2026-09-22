@@ -60,6 +60,7 @@ import type {
   SyncRun,
   TestResult,
   UnauthorizedResponse,
+  UptimeReport,
 } from '../../model';
 
 import { customInstance } from '../../axios-instance';
@@ -2046,6 +2047,143 @@ export function useGetConnectorsConnectorIdData<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetConnectorsConnectorIdDataQueryOptions(connectorId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Computed from the health_checks time series recorded by POST /connectors/{connectorId}/health. Availability is time-weighted between consecutive checks, and MTTR (mean time to recovery) is the mean time from an "offline" check to the next check that isn't, counting only outages that both started and recovered inside each window.
+ * @summary Availability % and MTTR over 24h/7d/30d windows
+ */
+export const getConnectorsConnectorIdUptime = (
+  connectorId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<UptimeReport>(
+    { url: `/connectors/${connectorId}/uptime`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdUptimeQueryKey = (connectorId: string) => {
+  return [`/connectors/${connectorId}/uptime`] as const;
+};
+
+export const getGetConnectorsConnectorIdUptimeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetConnectorsConnectorIdUptimeQueryKey(connectorId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>> = ({
+    signal,
+  }) => getConnectorsConnectorIdUptime(connectorId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdUptimeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>
+>;
+export type GetConnectorsConnectorIdUptimeQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetConnectorsConnectorIdUptime<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdUptime<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdUptime<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Availability % and MTTR over 24h/7d/30d windows
+ */
+
+export function useGetConnectorsConnectorIdUptime<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdUptime>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdUptimeQueryOptions(connectorId, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

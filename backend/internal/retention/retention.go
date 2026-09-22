@@ -1,6 +1,7 @@
 // Package retention runs the background job that bounds the growth of
-// historical WiseLabz data (service snapshots, doc revisions, alerts, and
-// sync run history) by deleting rows past a configurable per-category age.
+// historical WiseLabz data (service snapshots, doc revisions, alerts, health
+// checks, and sync run history) by deleting rows past a configurable
+// per-category age.
 package retention
 
 import (
@@ -72,6 +73,15 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 			logger.Error("delete old audit records", "error", err)
 		} else if n > 0 {
 			logger.Info("Purged old audit records", "count", n)
+		}
+	}
+
+	if cfg.HealthCheckDays > 0 {
+		n, err := s.DeleteOldHealthChecks(ctx, cutoff(cfg.HealthCheckDays))
+		if err != nil {
+			logger.Error("delete old health checks", "error", err)
+		} else if n > 0 {
+			logger.Info("Purged old health checks", "count", n)
 		}
 	}
 

@@ -95,6 +95,52 @@ func TestRunCleanupSkipsDisabledCategories(t *testing.T) {
 	}
 }
 
+// TestRunCleanupPrunesOldHealthChecks verifies health_checks rows older than
+// the configured window are purged while recent ones survive, and that
+// HealthCheckDays=0 disables cleanup for the category like the other
+// *Days settings.
+func TestRunCleanupPrunesOldHealthChecks(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	c := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
+	if err := s.CreateConnector(ctx, c); err != nil {
+		t.Fatalf("CreateConnector() error: %v", err)
+	}
+
+	old := time.Now().UTC().AddDate(0, 0, -365).Format(time.RFC3339)
+	recent := time.Now().UTC().Format(time.RFC3339)
+
+	oldCheck := &store.HealthCheckRecord{ConnectorID: c.ID, Status: "offline", CheckedAt: old}
+	if err := s.RecordHealthCheck(ctx, oldCheck); err != nil {
+		t.Fatalf("RecordHealthCheck() old error: %v", err)
+	}
+	recentCheck := &store.HealthCheckRecord{ConnectorID: c.ID, Status: "online", CheckedAt: recent}
+	if err := s.RecordHealthCheck(ctx, recentCheck); err != nil {
+		t.Fatalf("RecordHealthCheck() recent error: %v", err)
+	}
+
+	// HealthCheckDays=0 disables cleanup: nothing purged.
+	RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 0}, testLogger())
+	stats, err := s.GetConnectorUptime(ctx, c.ID, time.Now().UTC().AddDate(-1, 0, -1), time.Now().UTC().AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("GetConnectorUptime() error: %v", err)
+	}
+	if stats.CheckCount != 2 {
+		t.Fatalf("check count after disabled cleanup = %d, want 2", stats.CheckCount)
+	}
+
+	// HealthCheckDays=30 purges the year-old row, keeps the recent one.
+	RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 30}, testLogger())
+	stats, err = s.GetConnectorUptime(ctx, c.ID, time.Now().UTC().AddDate(-1, 0, -1), time.Now().UTC().AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("GetConnectorUptime() error: %v", err)
+	}
+	if stats.CheckCount != 1 {
+		t.Fatalf("check count after cleanup = %d, want 1", stats.CheckCount)
+	}
+}
+
 // TestRunCleanupAllDBErrors verifies that when every delete call errors
 // (closed DB), RunCleanupOnce logs and returns without panicking.
 func TestRunCleanupAllDBErrors(t *testing.T) {

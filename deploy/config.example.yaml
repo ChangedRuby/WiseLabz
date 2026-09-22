@@ -82,6 +82,9 @@ retention:
   alert_days: 180
   # sync_runs (connector sync history) older than this (days) are purged
   sync_run_days: 90
+  # health_checks (connector health-check time series) older than this
+  # (days) are purged
+  health_check_days: 90
   # how often the cleanup job runs, in hours
   interval_hours: 24
 

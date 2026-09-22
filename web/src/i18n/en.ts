@@ -949,6 +949,7 @@ export const en = {
       alertDays: 'Resolved/dismissed alerts (days)',
       syncRunDays: 'Sync run history (days)',
       auditDays: 'Audit log (days)',
+      healthCheckDays: 'Health check history (days)',
       cronExpr: 'Cleanup schedule (cron)',
       cronHint: '5-field or 6-field (with leading seconds) cron expression.',
     },

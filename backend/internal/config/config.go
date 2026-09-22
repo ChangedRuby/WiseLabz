@@ -184,12 +184,13 @@ type LogSettings struct {
 // for that category (never delete). CronExpr defines the schedule for running
 // retention cleanup jobs.
 type RetentionSettings struct {
-	SnapshotDays   int    `mapstructure:"snapshot_days"`
-	DocVersionDays int    `mapstructure:"doc_version_days"`
-	AlertDays      int    `mapstructure:"alert_days"`
-	SyncRunDays    int    `mapstructure:"sync_run_days"`
-	AuditDays      int    `mapstructure:"audit_days"`
-	CronExpr       string `mapstructure:"cron_expr"` // cron expression for cleanup schedule
+	SnapshotDays    int    `mapstructure:"snapshot_days"`
+	DocVersionDays  int    `mapstructure:"doc_version_days"`
+	AlertDays       int    `mapstructure:"alert_days"`
+	SyncRunDays     int    `mapstructure:"sync_run_days"`
+	AuditDays       int    `mapstructure:"audit_days"`
+	HealthCheckDays int    `mapstructure:"health_check_days"`
+	CronExpr        string `mapstructure:"cron_expr"` // cron expression for cleanup schedule
 }
 
 // BackupSettings holds scheduled backup configuration.
@@ -252,6 +253,7 @@ func Load() (*Config, error) {
 	v.SetDefault("retention.alert_days", 180)
 	v.SetDefault("retention.sync_run_days", 90)
 	v.SetDefault("retention.audit_days", 180)
+	v.SetDefault("retention.health_check_days", 90)
 	v.SetDefault("retention.cron_expr", "0 0 * * *") // daily retention cleanup at midnight
 	v.SetDefault("backup.dir", "./data/backups")     // backups subdirectory in data folder
 	v.SetDefault("backup.cron_expr", "0 3 * * *")    // daily backups at 3 AM
@@ -282,7 +284,7 @@ func Load() (*Config, error) {
 		"quality.cron_expr",
 		"rotation.max_age_days", "rotation.warn_days",
 		"log.level", "log.format",
-		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.cron_expr",
+		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.health_check_days", "retention.cron_expr",
 		"backup.dir", "backup.cron_expr", "backup.max_backups", "backup.max_age_hours", "backup.enabled",
 		"doc_export.dir", "doc_export.cron_expr", "doc_export.enabled",
 	} {
