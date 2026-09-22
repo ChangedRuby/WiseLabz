@@ -50,7 +50,7 @@ export const getGetConnectorsResponseMock = (): Connector[] =>
     ]),
     verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
     lastSyncAt: faker.helpers.arrayElement([
-      faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+      faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
       undefined,
     ]),
     statusMessage: faker.helpers.arrayElement([
@@ -62,7 +62,7 @@ export const getGetConnectorsResponseMock = (): Connector[] =>
       undefined,
     ]),
     nextRunAt: faker.helpers.arrayElement([
-      faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+      faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
       undefined,
     ]),
     lastSyncDurationMs: faker.helpers.arrayElement([
@@ -75,7 +75,7 @@ export const getGetConnectorsResponseMock = (): Connector[] =>
     ]),
     retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
     credentialExpiresAt: faker.helpers.arrayElement([
-      faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+      faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
       undefined,
     ]),
     secretRotatedAt: faker.helpers.arrayElement([
@@ -83,7 +83,7 @@ export const getGetConnectorsResponseMock = (): Connector[] =>
       undefined,
     ]),
     userExpiresAt: faker.helpers.arrayElement([
-      faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+      faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
       undefined,
     ]),
     rotationMaxAgeDays: faker.helpers.arrayElement([
@@ -111,7 +111,7 @@ export const getPostConnectorsResponseMock = (
   ]),
   verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   lastSyncAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   statusMessage: faker.helpers.arrayElement([
@@ -123,7 +123,7 @@ export const getPostConnectorsResponseMock = (
     undefined,
   ]),
   nextRunAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   lastSyncDurationMs: faker.helpers.arrayElement([
@@ -136,7 +136,7 @@ export const getPostConnectorsResponseMock = (
   ]),
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   secretRotatedAt: faker.helpers.arrayElement([
@@ -144,7 +144,7 @@ export const getPostConnectorsResponseMock = (
     undefined,
   ]),
   userExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   rotationMaxAgeDays: faker.helpers.arrayElement([
@@ -226,7 +226,7 @@ export const getGetConnectorsConnectorIdResponseMock = (
   ]),
   verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   lastSyncAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   statusMessage: faker.helpers.arrayElement([
@@ -238,7 +238,7 @@ export const getGetConnectorsConnectorIdResponseMock = (
     undefined,
   ]),
   nextRunAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   lastSyncDurationMs: faker.helpers.arrayElement([
@@ -251,7 +251,7 @@ export const getGetConnectorsConnectorIdResponseMock = (
   ]),
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   secretRotatedAt: faker.helpers.arrayElement([
@@ -259,7 +259,7 @@ export const getGetConnectorsConnectorIdResponseMock = (
     undefined,
   ]),
   userExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   rotationMaxAgeDays: faker.helpers.arrayElement([
@@ -288,7 +288,7 @@ export const getPutConnectorsConnectorIdResponseMock = (
   ]),
   verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   lastSyncAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   statusMessage: faker.helpers.arrayElement([
@@ -300,7 +300,7 @@ export const getPutConnectorsConnectorIdResponseMock = (
     undefined,
   ]),
   nextRunAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   lastSyncDurationMs: faker.helpers.arrayElement([
@@ -313,7 +313,7 @@ export const getPutConnectorsConnectorIdResponseMock = (
   ]),
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   secretRotatedAt: faker.helpers.arrayElement([
@@ -321,7 +321,7 @@ export const getPutConnectorsConnectorIdResponseMock = (
     undefined,
   ]),
   userExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   rotationMaxAgeDays: faker.helpers.arrayElement([
@@ -582,7 +582,7 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
   ]),
   verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
   lastSyncAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   statusMessage: faker.helpers.arrayElement([
@@ -594,7 +594,7 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
     undefined,
   ]),
   nextRunAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   lastSyncDurationMs: faker.helpers.arrayElement([
@@ -607,7 +607,7 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
   ]),
   retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
   credentialExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   secretRotatedAt: faker.helpers.arrayElement([
@@ -615,7 +615,7 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
     undefined,
   ]),
   userExpiresAt: faker.helpers.arrayElement([
-    faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+    faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
     undefined,
   ]),
   rotationMaxAgeDays: faker.helpers.arrayElement([

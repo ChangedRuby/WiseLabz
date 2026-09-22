@@ -135,3 +135,76 @@ func TestGetNotFoundMatchesSpec(t *testing.T) {
 	}
 	apitest.AssertMatchesSpec(t, req, rr.Result())
 }
+
+// createForSpec creates a connector through the handler, asserts the 201
+// against the spec and returns its id, so each success-path test below starts
+// from a spec-checked record.
+func createForSpec(t *testing.T, h *Handler, body string) string {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/connectors", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.Create(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+	apitest.AssertMatchesSpec(t, req, rr.Result())
+
+	var created map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("no id in create response: %s", rr.Body.String())
+	}
+	return id
+}
+
+// TestConnectorSuccessPayloadsMatchSpec holds the connector success payloads to
+// docs/openapi.yaml. The Connector timestamp fields are serialised as "" when
+// unset (issue #351), so the spec declares them as plain strings that are
+// either RFC 3339 or empty; this test is what keeps the two in step.
+//
+// The fresh connector exercises the empty-string case and the second one, with
+// an operator-set expiry, the populated case.
+func TestConnectorSuccessPayloadsMatchSpec(t *testing.T) {
+	h := newTestHandler(t)
+
+	id := createForSpec(t, h, `{"name":"Spec","category":"virtualization","type":"custom","url":"https://spec.example.com"}`)
+	createForSpec(t, h, `{"name":"SpecExpiry","category":"virtualization","type":"custom",`+
+		`"url":"https://expiry.example.com","userExpiresAt":"2030-01-02T03:04:05Z"}`)
+
+	t.Run("list", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/connectors", nil)
+		rr := httptest.NewRecorder()
+		h.List(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		apitest.AssertMatchesSpec(t, req, rr.Result())
+	})
+
+	t.Run("get", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/connectors/"+id, nil)
+		req.SetPathValue("id", id)
+		rr := httptest.NewRecorder()
+		h.Get(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		apitest.AssertMatchesSpec(t, req, rr.Result())
+	})
+
+	t.Run("update", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, "/api/connectors/"+id,
+			strings.NewReader(`{"name":"Spec renamed","scheduleSeconds":300}`))
+		req.SetPathValue("id", id)
+		rr := httptest.NewRecorder()
+		h.Update(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusOK, rr.Body.String())
+		}
+		apitest.AssertMatchesSpec(t, req, rr.Result())
+	})
+}

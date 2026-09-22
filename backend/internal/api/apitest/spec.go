@@ -56,10 +56,9 @@ func loadSpec() (routers.Router, error) {
 //
 // It is deliberately opt-in. internal/api/* tests adopt it one at a time; the
 // shared harness does not impose it, so adding an endpoint never turns the
-// whole suite red at once. That matters today: several success payloads still
-// diverge from the spec (Connector, for one, sends "" for absent date-time
-// fields the spec declares as format: date-time), so a mandatory check would
-// fail on drift that predates this helper.
+// whole suite red at once. That matters while success payloads that predate
+// this helper still diverge from the spec; the connectors package has since
+// adopted it on its success paths too.
 //
 // req must carry the path as the router serves it, including the /api or
 // /api/v1 prefix. resp.Body is fully read and replaced with an equivalent

@@ -146,7 +146,7 @@ export const getGetSystemBackupExportResponseMock = (
       ]),
       verifyTls: faker.helpers.arrayElement([faker.datatype.boolean(), undefined]),
       lastSyncAt: faker.helpers.arrayElement([
-        faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+        faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
         undefined,
       ]),
       statusMessage: faker.helpers.arrayElement([
@@ -158,7 +158,7 @@ export const getGetSystemBackupExportResponseMock = (
         undefined,
       ]),
       nextRunAt: faker.helpers.arrayElement([
-        faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+        faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
         undefined,
       ]),
       lastSyncDurationMs: faker.helpers.arrayElement([
@@ -171,7 +171,7 @@ export const getGetSystemBackupExportResponseMock = (
       ]),
       retryCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
       credentialExpiresAt: faker.helpers.arrayElement([
-        faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+        faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
         undefined,
       ]),
       secretRotatedAt: faker.helpers.arrayElement([
@@ -179,7 +179,7 @@ export const getGetSystemBackupExportResponseMock = (
         undefined,
       ]),
       userExpiresAt: faker.helpers.arrayElement([
-        faker.helpers.arrayElement([faker.date.past().toISOString().slice(0, 19) + 'Z', null]),
+        faker.helpers.fromRegExp('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'),
         undefined,
       ]),
       rotationMaxAgeDays: faker.helpers.arrayElement([

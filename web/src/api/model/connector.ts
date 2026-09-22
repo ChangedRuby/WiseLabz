@@ -22,33 +22,39 @@ export interface Connector {
   status: ServiceStatus;
   url?: string;
   verifyTls?: boolean;
-  /** @nullable */
-  lastSyncAt?: string | null;
+  /**
+   * RFC 3339 timestamp of the last completed sync, or the empty string when the connector has never synced.
+   * @pattern ^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T
+   */
+  lastSyncAt?: string;
   statusMessage?: string;
   /**
    * Auto-sync cadence in seconds; null disables scheduled sync (manual only)
    * @nullable
    */
   scheduleSeconds?: number | null;
-  /** @nullable */
-  nextRunAt?: string | null;
+  /**
+   * RFC 3339 timestamp of the next scheduled sync, or the empty string when no sync is scheduled (manual-only connectors).
+   * @pattern ^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T
+   */
+  nextRunAt?: string;
   /** @nullable */
   lastSyncDurationMs?: number | null;
   lastSyncError?: string;
   /** Consecutive sync failures since the last success; resets to 0 on success */
   retryCount?: number;
   /**
-   * Null when credentials have no known expiry
-   * @nullable
+   * RFC 3339 timestamp when the stored credentials expire, or the empty string when they have no known expiry.
+   * @pattern ^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T
    */
-  credentialExpiresAt?: string | null;
+  credentialExpiresAt?: string;
   /** Read-only. When a secret-typed config field was last actually changed; set on create too */
   secretRotatedAt?: string;
   /**
-   * Optional operator-set expiry the credential_rotation check treats as an upper bound on the due date
-   * @nullable
+   * Optional operator-set expiry the credential_rotation check treats as an upper bound on the due date: an RFC 3339 timestamp, or the empty string when unset.
+   * @pattern ^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T
    */
-  userExpiresAt?: string | null;
+  userExpiresAt?: string;
   /**
    * Overrides the global rotation.max_age_days for this connector; null uses the global default
    * @nullable

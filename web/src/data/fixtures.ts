@@ -76,7 +76,7 @@ const connectorsBase: Connector[] = [
     verifyTls: false,
     lastSyncAt: minsAgo(6),
     scheduleSeconds: null,
-    nextRunAt: null,
+    nextRunAt: '',
     lastSyncDurationMs: 980,
     retryCount: 0,
   },

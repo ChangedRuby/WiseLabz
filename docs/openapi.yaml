@@ -2918,21 +2918,40 @@ components:
         status: { $ref: '#/components/schemas/ServiceStatus' }
         url: { type: string }
         verifyTls: { type: boolean }
-        lastSyncAt: { type: string, format: date-time, nullable: true }
+        lastSyncAt:
+          type: string
+          pattern: '^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+          description: >-
+            RFC 3339 timestamp of the last completed sync, or the empty string
+            when the connector has never synced.
         statusMessage: { type: string }
         scheduleSeconds:
           { type: integer, nullable: true, description: 'Auto-sync cadence in seconds; null disables scheduled sync (manual only)' }
-        nextRunAt: { type: string, format: date-time, nullable: true }
+        nextRunAt:
+          type: string
+          pattern: '^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+          description: >-
+            RFC 3339 timestamp of the next scheduled sync, or the empty string
+            when no sync is scheduled (manual-only connectors).
         lastSyncDurationMs: { type: integer, nullable: true }
         lastSyncError: { type: string }
         retryCount:
           { type: integer, description: Consecutive sync failures since the last success; resets to 0 on success }
         credentialExpiresAt:
-          { type: string, format: date-time, nullable: true, description: 'Null when credentials have no known expiry' }
+          type: string
+          pattern: '^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+          description: >-
+            RFC 3339 timestamp when the stored credentials expire, or the empty
+            string when they have no known expiry.
         secretRotatedAt:
           { type: string, format: date-time, description: 'Read-only. When a secret-typed config field was last actually changed; set on create too' }
         userExpiresAt:
-          { type: string, format: date-time, nullable: true, description: 'Optional operator-set expiry the credential_rotation check treats as an upper bound on the due date' }
+          type: string
+          pattern: '^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+          description: >-
+            Optional operator-set expiry the credential_rotation check treats as
+            an upper bound on the due date: an RFC 3339 timestamp, or the empty
+            string when unset.
         rotationMaxAgeDays:
           { type: integer, nullable: true, description: 'Overrides the global rotation.max_age_days for this connector; null uses the global default' }
     ConnectorCreate:

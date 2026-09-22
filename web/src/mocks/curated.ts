@@ -187,7 +187,7 @@ export const curatedHandlers = [
       status: 'online',
       url: String(body.url ?? ''),
       verifyTls: Boolean(body.verifyTls),
-      lastSyncAt: null,
+      lastSyncAt: '',
     };
     connectors.push(created as (typeof connectors)[number]);
     return HttpResponse.json(created, { status: 201 });

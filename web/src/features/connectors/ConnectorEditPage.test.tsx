@@ -19,7 +19,7 @@ let connectorData: Record<string, unknown> = {
   enabled: true,
   status: 'online',
   secretRotatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-  userExpiresAt: null,
+  userExpiresAt: '',
   rotationMaxAgeDays: null,
 };
 
