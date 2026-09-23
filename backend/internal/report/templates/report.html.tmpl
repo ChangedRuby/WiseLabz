@@ -1,0 +1,109 @@
+{{- /* Rendered with html/template: every field below is auto-escaped, */ -}}
+{{- /* including doc titles / finding titles / change summaries. */ -}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Definition.Name}}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem; color: #1a1a1a; background: #fff; }
+  h1 { margin-bottom: 0.25rem; }
+  .period { color: #666; margin-bottom: 1.5rem; }
+  .truncated { background: #fff3cd; border: 1px solid #ffe69c; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1.5rem; }
+  h2 { margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+  h3 { margin-top: 1rem; }
+  ul { padding-left: 1.25rem; }
+  li { margin-bottom: 0.35rem; }
+  .empty, .unavailable { color: #888; font-style: italic; }
+  .unavailable { color: #a94442; }
+  .sev-critical { color: #a94442; font-weight: 600; }
+  .sev-warning { color: #8a6d3b; font-weight: 600; }
+  .sev-info { color: #31708f; }
+  .summary-line { color: #444; }
+  table { border-collapse: collapse; margin-top: 0.5rem; }
+  td, th { padding: 0.25rem 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<h1>{{.Definition.Name}}</h1>
+<div class="period">{{fmtDate .PeriodStart}} &ndash; {{fmtDate .PeriodEnd}}</div>
+{{if .Truncated}}<div class="truncated">Window truncated to {{maxWindowDays}} days (report period capped).</div>{{end}}
+
+<h2>Documentation changed</h2>
+{{if .Sections.Docs.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Docs.Error}}</p>
+{{else}}
+  <p class="summary-line">{{.Sections.Docs.Total}} doc version(s) changed.</p>
+  {{if .Sections.Docs.Items}}
+  <ul>
+    {{range .Sections.Docs.Items}}<li><strong>{{.Title}}</strong> ({{.ConnectorName}}) &mdash; v{{.Version}}, {{fmtDate .ChangedAt}}</li>{{end}}
+  </ul>
+  {{else}}<p class="empty">None.</p>{{end}}
+{{end}}
+
+<h2>Compliance</h2>
+{{if .Sections.Compliance.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Compliance.Error}}</p>
+{{else}}
+  <p class="summary-line">{{.Sections.Compliance.DetectedCount}} new, {{.Sections.Compliance.ResolvedCount}} resolved, {{.Sections.Compliance.OpenCount}} still open.</p>
+  {{if .Sections.Compliance.Items}}
+  <ul>
+    {{range .Sections.Compliance.Items}}<li class="sev-{{.Severity}}">{{.Title}}</li> <span>({{.ConnectorName}}) &mdash; {{.Status}}</span>{{end}}
+  </ul>
+  {{else}}<p class="empty">None.</p>{{end}}
+{{end}}
+
+<h2>Secret rotations</h2>
+{{if .Sections.Rotations.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Rotations.Error}}</p>
+{{else}}
+  <p class="summary-line">{{len .Sections.Rotations.Rotated}} rotated, {{len .Sections.Rotations.Overdue}} overdue, {{len .Sections.Rotations.DueSoon}} due soon.</p>
+  <ul>
+    {{range .Sections.Rotations.Rotated}}<li>Rotated: <strong>{{.ConnectorName}}</strong>{{if .RotatedAt}} ({{fmtDate .RotatedAt}}){{end}}</li>{{end}}
+    {{range .Sections.Rotations.Overdue}}<li>Overdue: <strong>{{.ConnectorName}}</strong></li>{{end}}
+    {{range .Sections.Rotations.DueSoon}}<li>Due soon: <strong>{{.ConnectorName}}</strong></li>{{end}}
+  </ul>
+{{end}}
+
+<h2>Quality</h2>
+{{if .Sections.Quality.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Quality.Error}}</p>
+{{else}}
+  <p class="summary-line">{{.Sections.Quality.DetectedCount}} new, {{.Sections.Quality.ResolvedCount}} resolved, {{.Sections.Quality.OpenCount}} still open.</p>
+  {{if .Sections.Quality.Items}}
+  <ul>
+    {{range .Sections.Quality.Items}}<li class="sev-{{.Severity}}">{{.Title}}</li> <span>({{.ConnectorName}}) &mdash; {{.Status}}</span>{{end}}
+  </ul>
+  {{else}}<p class="empty">None.</p>{{end}}
+{{end}}
+
+<h2>Drift</h2>
+{{if .Sections.Drift.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Drift.Error}}</p>
+{{else}}
+  <p class="summary-line">{{.Sections.Drift.Total}} change(s) detected.</p>
+  <table>
+    <tr><th>Connector</th><th>Critical</th><th>Warning</th><th>Info</th></tr>
+    {{range .Sections.Drift.ByConnector}}<tr><td>{{.ConnectorName}}</td><td>{{.Counts.Critical}}</td><td>{{.Counts.Warning}}</td><td>{{.Counts.Info}}</td></tr>{{end}}
+  </table>
+  <h3>Most severe changes</h3>
+  {{if .Sections.Drift.TopChanges}}
+  <ul>
+    {{range .Sections.Drift.TopChanges}}<li class="sev-{{.Severity}}">{{.ConnectorName}}: {{.Summary}}</li> <span>({{fmtDate .DetectedAt}})</span>{{end}}
+  </ul>
+  {{else}}<p class="empty">None.</p>{{end}}
+{{end}}
+
+<h2>Job health</h2>
+{{if .Sections.Jobs.Error}}
+  <p class="unavailable">Unavailable: {{.Sections.Jobs.Error}}</p>
+{{else}}
+  <p class="summary-line">{{.Sections.Jobs.FailingCount}} job(s) currently failing.</p>
+  {{if .Sections.Jobs.Items}}
+  <ul>
+    {{range .Sections.Jobs.Items}}<li><strong>{{.Name}}</strong> &mdash; {{.Status}}{{if .LastError}}: {{.LastError}}{{end}}</li>{{end}}
+  </ul>
+  {{else}}<p class="empty">None.</p>{{end}}
+{{end}}
+</body>
+</html>

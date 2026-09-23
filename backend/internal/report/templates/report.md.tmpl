@@ -1,0 +1,97 @@
+{{- /* Markdown report body. Rendered with text/template (no auto-escaping); */ -}}
+{{- /* Markdown itself has no special-character concerns here, and stored */ -}}
+{{- /* titles/summaries come from data the user already controls. */ -}}
+# {{.Definition.Name}}
+
+_{{fmtDate .PeriodStart}} – {{fmtDate .PeriodEnd}}_
+{{- if .Truncated}}
+> Window truncated to {{maxWindowDays}} days (report period capped).
+{{- end}}
+
+## Documentation changed
+
+{{- if .Sections.Docs.Error}}
+_Unavailable: {{.Sections.Docs.Error}}_
+{{- else}}
+{{.Sections.Docs.Total}} doc version(s) changed.
+{{- range .Sections.Docs.Items}}
+- **{{.Title}}** ({{.ConnectorName}}) — v{{.Version}}, {{fmtDate .ChangedAt}}
+{{- else}}
+- None.
+{{- end}}
+{{- end}}
+
+## Compliance
+
+{{- if .Sections.Compliance.Error}}
+_Unavailable: {{.Sections.Compliance.Error}}_
+{{- else}}
+{{.Sections.Compliance.DetectedCount}} new, {{.Sections.Compliance.ResolvedCount}} resolved, {{.Sections.Compliance.OpenCount}} still open.
+{{- range .Sections.Compliance.Items}}
+- [{{.Severity}}] **{{.Title}}** ({{.ConnectorName}}) — {{.Status}}
+{{- else}}
+- None.
+{{- end}}
+{{- end}}
+
+## Secret rotations
+
+{{- if .Sections.Rotations.Error}}
+_Unavailable: {{.Sections.Rotations.Error}}_
+{{- else}}
+{{len .Sections.Rotations.Rotated}} rotated, {{len .Sections.Rotations.Overdue}} overdue, {{len .Sections.Rotations.DueSoon}} due soon.
+{{- range .Sections.Rotations.Rotated}}
+- Rotated: **{{.ConnectorName}}**{{if .RotatedAt}} ({{fmtDate .RotatedAt}}){{end}}
+{{- end}}
+{{- range .Sections.Rotations.Overdue}}
+- Overdue: **{{.ConnectorName}}**
+{{- end}}
+{{- range .Sections.Rotations.DueSoon}}
+- Due soon: **{{.ConnectorName}}**
+{{- end}}
+{{- end}}
+
+## Quality
+
+{{- if .Sections.Quality.Error}}
+_Unavailable: {{.Sections.Quality.Error}}_
+{{- else}}
+{{.Sections.Quality.DetectedCount}} new, {{.Sections.Quality.ResolvedCount}} resolved, {{.Sections.Quality.OpenCount}} still open.
+{{- range .Sections.Quality.Items}}
+- [{{.Severity}}] **{{.Title}}** ({{.ConnectorName}}) — {{.Status}}
+{{- else}}
+- None.
+{{- end}}
+{{- end}}
+
+## Drift
+
+{{- if .Sections.Drift.Error}}
+_Unavailable: {{.Sections.Drift.Error}}_
+{{- else}}
+{{.Sections.Drift.Total}} change(s) detected.
+{{- range .Sections.Drift.ByConnector}}
+- **{{.ConnectorName}}** — {{.Counts.Critical}} critical, {{.Counts.Warning}} warning, {{.Counts.Info}} info
+{{- end}}
+
+### Most severe changes
+
+{{- range .Sections.Drift.TopChanges}}
+- [{{.Severity}}] **{{.ConnectorName}}**: {{.Summary}} ({{fmtDate .DetectedAt}})
+{{- else}}
+- None.
+{{- end}}
+{{- end}}
+
+## Job health
+
+{{- if .Sections.Jobs.Error}}
+_Unavailable: {{.Sections.Jobs.Error}}_
+{{- else}}
+{{.Sections.Jobs.FailingCount}} job(s) currently failing.
+{{- range .Sections.Jobs.Items}}
+- **{{.Name}}** — {{.Status}}{{if .LastError}}: {{.LastError}}{{end}}
+{{- else}}
+- None.
+{{- end}}
+{{- end}}
