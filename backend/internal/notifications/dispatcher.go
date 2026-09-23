@@ -187,6 +187,40 @@ func (d *Dispatcher) NotifySystemEvent(ctx context.Context, eventType, severity,
 	}()
 }
 
+// NotifyReport delivers a generated report to every active user's in-app
+// inbox and directly to the enabled channel types selected by its definition.
+// Report delivery intentionally bypasses notification routing rules.
+func (d *Dispatcher) NotifyReport(ctx context.Context, title, message string, selected []string) {
+	users, _, err := d.store.ListUsers(ctx, 0, maxNotifyUsers)
+	if err != nil {
+		slog.Error("failed to list users for report notification", "error", err)
+		return
+	}
+	channels := d.loadChannels(ctx)
+	want := map[string]bool{}
+	for _, typ := range selected {
+		want[typ] = true
+	}
+	d.inflight.Add(1)
+	go func() {
+		defer d.inflight.Done()
+		for _, u := range users {
+			if u.Disabled {
+				continue
+			}
+			notificationID, ok := d.sendInApp(context.Background(), u.ID, "", "report.generated", title, message)
+			if !ok || u.DigestCadence != "off" {
+				continue
+			}
+			for typ := range want {
+				if cfg, enabled := findChannel(channels, typ); enabled {
+					d.attemptChannel(context.Background(), notificationID, typ, cfg, title, message)
+				}
+			}
+		}
+	}()
+}
+
 // fanOut sends one alert-less event to every active user, bounded by
 // fanoutSem. Users with a digest cadence get it in-app only; external
 // channels see it in their digest.

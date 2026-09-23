@@ -964,6 +964,7 @@ export const en = {
       syncRunDays: 'Sync run history (days)',
       auditDays: 'Audit log (days)',
       healthCheckDays: 'Health check history (days)',
+      reportDays: 'Generated reports (days)',
       cronExpr: 'Cleanup schedule (cron)',
       cronHint: '5-field or 6-field (with leading seconds) cron expression.',
     },

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -24,6 +25,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/quality"
+	"github.com/WiseLabz/wiselabz/internal/report"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
@@ -147,6 +149,18 @@ func main() {
 	// transition, reported via system.job_failed (#384) — see
 	// scheduler.Runner.SetHealthTracking.
 	jobRunner.SetHealthTracking(s, notifDispatcher)
+	reportGenerator := report.NewGenerator(s)
+	reportManager := report.NewManager(s, reportGenerator, jobRunner, func(ctx context.Context, rec store.ReportRecord, def store.ReportDefinitionRecord) {
+		var channels []string
+		_ = json.Unmarshal([]byte(def.Channels), &channels)
+		var data report.ReportData
+		_ = json.Unmarshal([]byte(rec.Data), &data)
+		notifDispatcher.NotifyReport(ctx, "Report: "+def.Name, report.Summary(data), channels)
+	})
+	if err := reportManager.Init(ctx); err != nil {
+		logger.Error("Failed to initialize report schedules", "error", err)
+		os.Exit(1)
+	}
 	if _, err := jobRunner.AddJob("quality", cfg.Quality.CronExpr, func(jobCtx context.Context) error {
 		return quality.RunStaleSweepOnce(jobCtx, s, wsHub, notifDispatcher, logger)
 	}); err != nil {
@@ -231,6 +245,7 @@ func main() {
 		AIRegistry:     aiRegistry,
 		EmbedRegistry:  embedRegistry,
 		QualityChecker: qualityChecker,
+		ReportManager:  reportManager,
 		Ready:          readyState,
 	}
 	if cfg.Server.Embed {

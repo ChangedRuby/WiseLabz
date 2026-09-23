@@ -20,6 +20,8 @@ export interface RetentionSettings {
   auditDays: number;
   /** Delete health-check time-series rows older than this many days; 0 disables cleanup for this category */
   healthCheckDays: number;
+  /** Delete generated reports older than this many days; 0 disables cleanup for this category */
+  reportDays: number;
   /** 5-field or 6-field (with leading seconds) cron expression */
   cronExpr: string;
   updatedAt?: string;

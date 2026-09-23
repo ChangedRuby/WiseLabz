@@ -25,6 +25,7 @@ interface FormState {
   syncRunDays: string;
   auditDays: string;
   healthCheckDays: string;
+  reportDays: string;
   cronExpr: string;
 }
 
@@ -35,6 +36,7 @@ function toForm(data: {
   syncRunDays: number;
   auditDays: number;
   healthCheckDays: number;
+  reportDays: number;
   cronExpr: string;
 }): FormState {
   return {
@@ -44,6 +46,7 @@ function toForm(data: {
     syncRunDays: String(data.syncRunDays),
     auditDays: String(data.auditDays),
     healthCheckDays: String(data.healthCheckDays),
+    reportDays: String(data.reportDays),
     cronExpr: data.cronExpr,
   };
 }
@@ -91,6 +94,7 @@ export function RetentionPage() {
     form.syncRunDays !== String(data.syncRunDays) ||
     form.auditDays !== String(data.auditDays) ||
     form.healthCheckDays !== String(data.healthCheckDays) ||
+    form.reportDays !== String(data.reportDays) ||
     form.cronExpr !== data.cronExpr;
 
   // Empty or non-numeric day fields must not silently coerce to 0 (which
@@ -102,7 +106,8 @@ export function RetentionPage() {
     isValidDays(form.alertDays) &&
     isValidDays(form.syncRunDays) &&
     isValidDays(form.auditDays) &&
-    isValidDays(form.healthCheckDays);
+    isValidDays(form.healthCheckDays) &&
+    isValidDays(form.reportDays);
 
   const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [field]: e.target.value } : f));
@@ -173,6 +178,9 @@ export function RetentionPage() {
               onChange={set('healthCheckDays')}
             />
           </Field>
+          <Field label={t('settings.retention.reportDays')} htmlFor="ret-report-days">
+            <TextInput id="ret-report-days" type="number" min={0} value={form.reportDays} onChange={set('reportDays')} />
+          </Field>
           <Field
             label={t('settings.retention.cronExpr')}
             htmlFor="ret-cron-expr"
@@ -199,6 +207,7 @@ export function RetentionPage() {
                 syncRunDays: Number(form.syncRunDays),
                 auditDays: Number(form.auditDays),
                 healthCheckDays: Number(form.healthCheckDays),
+                reportDays: Number(form.reportDays),
                 cronExpr: form.cronExpr,
               })
             }
