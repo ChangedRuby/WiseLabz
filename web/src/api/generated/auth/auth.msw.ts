@@ -270,8 +270,7 @@ export const getPostAuthRefreshMockHandler = (
 
 export const getPostAuthLogoutMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -359,8 +358,7 @@ export const getPostAuthApiKeysMockHandler = (
 
 export const getDeleteAuthApiKeysIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(

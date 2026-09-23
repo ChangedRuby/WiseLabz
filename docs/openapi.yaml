@@ -4488,6 +4488,18 @@ components:
         total: { type: integer }
         limit: { type: integer }
         offset: { type: integer }
+    JobInfo:
+      type: object
+      required: [name, cronExpr]
+      properties:
+        name: { type: string, description: 'Job name, e.g. "quality", "sync", "backup", "docexport"' }
+        cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression }
+        lastStatus: { type: string, enum: [ok, failing], description: Absent if the job has never run yet }
+        lastError: { type: string, description: Error from the most recent failing run; empty when lastStatus is ok }
+        lastRunAt: { type: string, format: date-time, description: Absent if the job has never run yet }
+        lastSuccessAt: { type: string, format: date-time, description: Absent if the job has never succeeded }
+        lastFailureAt: { type: string, format: date-time, description: Absent if the job has never failed }
+        nextRunAt: { type: string, format: date-time, description: Next scheduled run per the live cron entry }
 
     # ── diagnostics ──
     DiagnosticsBundle:

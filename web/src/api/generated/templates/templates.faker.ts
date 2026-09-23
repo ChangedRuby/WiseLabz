@@ -162,14 +162,15 @@ export const getPostTemplatesTemplateIdPreviewResponseMock = (
     })
   ),
   detail: faker.helpers.arrayElement([
-    {
-      ...{
+    faker.helpers.arrayElement([
+      {
         docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
         title: faker.string.alpha({ length: { min: 10, max: 20 } }),
         content: faker.string.alpha({ length: { min: 10, max: 20 } }),
       },
-    },
-    null,
+      null,
+    ]),
+    undefined,
   ]),
   ...overrideResponse,
 });

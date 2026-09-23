@@ -625,8 +625,7 @@ export const getPutReportsDefinitionsReportDefinitionIdMockHandler = (
 
 export const getDeleteReportsDefinitionsReportDefinitionIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(
@@ -644,8 +643,7 @@ export const getDeleteReportsDefinitionsReportDefinitionIdMockHandler = (
 
 export const getPostReportsDefinitionsReportDefinitionIdRunMockHandler = (
   overrideResponse?:
-    | Report
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Report> | Report),
+    Report | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Report> | Report),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -688,8 +686,7 @@ export const getGetReportsMockHandler = (
 
 export const getGetReportsReportIdMockHandler = (
   overrideResponse?:
-    | Report
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Report> | Report),
+    Report | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Report> | Report),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -710,8 +707,7 @@ export const getGetReportsReportIdMockHandler = (
 
 export const getGetReportsReportIdDownloadMockHandler = (
   overrideResponse?:
-    | string
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<string> | string),
+    string | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<string> | string),
   options?: RequestHandlerOptions
 ) => {
   return http.get(

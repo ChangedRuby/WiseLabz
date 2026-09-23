@@ -25,7 +25,6 @@ var (
 	specOnly = map[string]string{
 		"GET /healthz": "Root liveness probe; this spec operation overrides the API server URL.",
 		"GET /readyz":  "Root readiness probe; this spec operation overrides the API server URL.",
-
 	}
 )
 

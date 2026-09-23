@@ -262,8 +262,7 @@ export const getGetShareTokenDocsDocIdResponseMock = (): GetShareTokenDocsDocId2
 
 export const getGetDocsMockHandler = (
   overrideResponse?:
-    | DocPage
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocPage> | DocPage),
+    DocPage | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocPage> | DocPage),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -284,8 +283,7 @@ export const getGetDocsMockHandler = (
 
 export const getGetDocsTreeMockHandler = (
   overrideResponse?:
-    | DocNode
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocNode> | DocNode),
+    DocNode | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocNode> | DocNode),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -306,8 +304,7 @@ export const getGetDocsTreeMockHandler = (
 
 export const getGetDocsServiceConnectorIdMockHandler = (
   overrideResponse?:
-    | Doc
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Doc> | Doc),
+    Doc | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Doc> | Doc),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -328,8 +325,7 @@ export const getGetDocsServiceConnectorIdMockHandler = (
 
 export const getGetDocsDocIdMockHandler = (
   overrideResponse?:
-    | Doc
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Doc> | Doc),
+    Doc | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Doc> | Doc),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -350,8 +346,7 @@ export const getGetDocsDocIdMockHandler = (
 
 export const getPutDocsDocIdMockHandler = (
   overrideResponse?:
-    | Doc
-    | ((info: Parameters<Parameters<typeof http.put>[1]>[0]) => Promise<Doc> | Doc),
+    Doc | ((info: Parameters<Parameters<typeof http.put>[1]>[0]) => Promise<Doc> | Doc),
   options?: RequestHandlerOptions
 ) => {
   return http.put(
@@ -418,8 +413,7 @@ export const getGetDocsDocIdVersionsRevMockHandler = (
 
 export const getPostDocsDocIdVersionsRevRestoreMockHandler = (
   overrideResponse?:
-    | Doc
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Doc> | Doc),
+    Doc | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Doc> | Doc),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -464,8 +458,7 @@ export const getPostDocsDocIdAiSuggestMockHandler = (
 
 export const getGetDocsDocIdLockMockHandler = (
   overrideResponse?:
-    | DocLock
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocLock> | DocLock),
+    DocLock | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<DocLock> | DocLock),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -508,8 +501,7 @@ export const getPostDocsDocIdLockMockHandler = (
 
 export const getPostDocsDocIdLockReleaseMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -647,8 +639,7 @@ export const getPostDocsShareLinksMockHandler = (
 
 export const getDeleteDocsShareLinksIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(

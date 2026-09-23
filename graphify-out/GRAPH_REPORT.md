@@ -1,7 +1,7 @@
 # Graph Report - wiselabz-we  (2026-09-23)
 
 ## Corpus Check
-- 788 files · ~477,061 words
+- 788 files · ~477,192 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 19 file(s) not represented in the graph (top: (none) 10, .toml 2, .tmpl 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4ad3462b`
+- Built from commit: `be04041f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

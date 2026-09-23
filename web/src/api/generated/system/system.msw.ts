@@ -914,8 +914,7 @@ export const getGetSystemJobsMockHandler = (
 
 export const getGetHealthMockHandler = (
   overrideResponse?:
-    | Health
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Health> | Health),
+    Health | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Health> | Health),
   options?: RequestHandlerOptions
 ) => {
   return http.get(

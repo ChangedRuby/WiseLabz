@@ -84,8 +84,7 @@ export const getGetMeSessionsResponseMock = (): Session[] =>
 
 export const getGetMeMockHandler = (
   overrideResponse?:
-    | User
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<User> | User),
+    User | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<User> | User),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -106,8 +105,7 @@ export const getGetMeMockHandler = (
 
 export const getPatchMeMockHandler = (
   overrideResponse?:
-    | User
-    | ((info: Parameters<Parameters<typeof http.patch>[1]>[0]) => Promise<User> | User),
+    User | ((info: Parameters<Parameters<typeof http.patch>[1]>[0]) => Promise<User> | User),
   options?: RequestHandlerOptions
 ) => {
   return http.patch(
@@ -128,8 +126,7 @@ export const getPatchMeMockHandler = (
 
 export const getPostMePasswordMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -169,8 +166,7 @@ export const getGetMeSessionsMockHandler = (
 
 export const getDeleteMeSessionsSessionIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(

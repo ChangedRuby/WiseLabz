@@ -199,8 +199,7 @@ export const getGetAlertsMockHandler = (
 
 export const getGetAlertsAlertIdMockHandler = (
   overrideResponse?:
-    | Alert
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Alert> | Alert),
+    Alert | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Alert> | Alert),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -221,8 +220,7 @@ export const getGetAlertsAlertIdMockHandler = (
 
 export const getPostAlertsAlertIdResolveMockHandler = (
   overrideResponse?:
-    | Alert
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
+    Alert | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -243,8 +241,7 @@ export const getPostAlertsAlertIdResolveMockHandler = (
 
 export const getPostAlertsAlertIdDismissMockHandler = (
   overrideResponse?:
-    | Alert
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
+    Alert | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -265,8 +262,7 @@ export const getPostAlertsAlertIdDismissMockHandler = (
 
 export const getPostAlertsAlertIdSnoozeMockHandler = (
   overrideResponse?:
-    | Alert
-    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
+    Alert | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<Alert> | Alert),
   options?: RequestHandlerOptions
 ) => {
   return http.post(

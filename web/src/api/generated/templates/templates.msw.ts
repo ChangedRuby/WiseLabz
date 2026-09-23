@@ -165,14 +165,15 @@ export const getPostTemplatesTemplateIdPreviewResponseMock = (
     })
   ),
   detail: faker.helpers.arrayElement([
-    {
-      ...{
+    faker.helpers.arrayElement([
+      {
         docId: faker.string.alpha({ length: { min: 10, max: 20 } }),
         title: faker.string.alpha({ length: { min: 10, max: 20 } }),
         content: faker.string.alpha({ length: { min: 10, max: 20 } }),
       },
-    },
-    null,
+      null,
+    ]),
+    undefined,
   ]),
   ...overrideResponse,
 });
@@ -350,8 +351,7 @@ export const getPutTemplatesTemplateIdMockHandler = (
 
 export const getDeleteTemplatesTemplateIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(

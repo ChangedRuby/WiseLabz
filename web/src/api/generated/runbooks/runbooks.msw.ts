@@ -149,8 +149,7 @@ export const getPostRunbooksMockHandler = (
 
 export const getGetRunbooksRunbookIdMockHandler = (
   overrideResponse?:
-    | Runbook
-    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Runbook> | Runbook),
+    Runbook | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<Runbook> | Runbook),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -171,8 +170,7 @@ export const getGetRunbooksRunbookIdMockHandler = (
 
 export const getPutRunbooksRunbookIdMockHandler = (
   overrideResponse?:
-    | Runbook
-    | ((info: Parameters<Parameters<typeof http.put>[1]>[0]) => Promise<Runbook> | Runbook),
+    Runbook | ((info: Parameters<Parameters<typeof http.put>[1]>[0]) => Promise<Runbook> | Runbook),
   options?: RequestHandlerOptions
 ) => {
   return http.put(
@@ -193,8 +191,7 @@ export const getPutRunbooksRunbookIdMockHandler = (
 
 export const getDeleteRunbooksRunbookIdMockHandler = (
   overrideResponse?:
-    | void
-    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(
