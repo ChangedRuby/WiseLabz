@@ -200,10 +200,12 @@ function handle(frame: WsEvent, qc: ReturnType<typeof useQueryClient>) {
       qc.invalidateQueries({ queryKey: getGetFindingsQueryKey() });
       break;
     }
-    case 'finding.created': {
-      // Per-user notification dispatch (Dispatcher.NotifyFindingCreated), not
-      // the broadcast-to-everyone 'quality.finding.created' above — refresh
-      // the notification bell the same way 'alert.resolved' does.
+    case 'finding.created':
+    case 'system.job_failed': {
+      // Per-user notification dispatch (Dispatcher.NotifyFindingCreated /
+      // NotifySystemEvent), not the broadcast-to-everyone
+      // 'quality.finding.created' above — refresh the notification bell the
+      // same way 'alert.resolved' does.
       qc.invalidateQueries({ queryKey: getGetNotificationsQueryKey() });
       break;
     }

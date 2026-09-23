@@ -3892,7 +3892,7 @@ components:
       properties:
         id: { type: string }
         alertId: { type: string, nullable: true, description: 'Deep-link target when set — the affected alert.' }
-        eventType: { type: string, description: 'e.g. alert.created' }
+        eventType: { type: string, description: 'e.g. alert.created, finding.created, system.job_failed, digest.summary' }
         title: { type: string }
         message: { type: string }
         read: { type: boolean }
@@ -4128,7 +4128,7 @@ components:
       type: object
       required: [eventType, channel, enabled]
       properties:
-        eventType: { type: string, description: 'e.g. alert.created, change.detected, sync.complete' }
+        eventType: { type: string, description: 'Event type the route applies to. Emitted today: alert.created, finding.created, system.job_failed (scheduled job failing/recovered).' }
         channel: { $ref: '#/components/schemas/NotificationChannelType' }
         enabled: { type: boolean }
         minSeverity: { $ref: '#/components/schemas/Severity' }

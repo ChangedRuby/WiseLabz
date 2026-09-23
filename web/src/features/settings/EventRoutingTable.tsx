@@ -6,7 +6,12 @@
  * owns the NotificationConfig and persists it.
  */
 import { useTranslation } from 'react-i18next';
-import type { NotificationConfig, NotificationChannelType, Severity } from '../../api/model';
+import type {
+  NotificationConfig,
+  NotificationChannelType,
+  NotificationRoute,
+  Severity,
+} from '../../api/model';
 import { Severity as SeverityEnum, ConnectorCategory } from '../../api/model';
 import { useGetConnectors } from '../../api/generated/connectors/connectors';
 import { Toggle, Select } from './parts';
@@ -21,6 +26,13 @@ const CHANNEL_LABELS: Record<NotificationChannelType, string> = {
   ntfy: 'ntfy',
   telegram: 'Telegram',
 };
+
+/**
+ * Event types the backend dispatcher emits to users. Always shown as rows, even
+ * before any route exists for them, so a new event (e.g. system.job_failed) can
+ * be routed without hand-editing the saved config.
+ */
+const KNOWN_EVENT_TYPES = ['alert.created', 'finding.created', 'system.job_failed'] as const;
 
 function eventLabel(eventType: string): string {
   return eventType.replace(/[._]/g, ' ');
@@ -37,16 +49,49 @@ export function EventRoutingTable({
 }) {
   const { t } = useTranslation();
   const channels = config.channels;
-  const eventTypes = Array.from(new Set(config.routing.map((r) => r.eventType)));
+  const eventTypes = Array.from(
+    new Set<string>([...KNOWN_EVENT_TYPES, ...config.routing.map((r) => r.eventType)])
+  );
+  // The backend treats an empty routing list as "no routing": every enabled
+  // channel receives every event. Mirror that in the matrix.
+  const unrouted = config.routing.length === 0;
   const { data: connectors = [] } = useGetConnectors();
 
   const findRoute = (eventType: string, channel: NotificationChannelType) =>
     config.routing.find((r) => r.eventType === eventType && r.channel === channel);
 
+  /**
+   * Returns the routing with a route for every channel of eventType, so edits to
+   * a row that has none yet take effect. From an empty ("unrouted") config, every
+   * row is materialized as enabled first, so the first edit doesn't silently cut
+   * off the events that were being delivered.
+   */
+  const withRow = (eventType: string): NotificationRoute[] => {
+    const base: NotificationRoute[] = unrouted
+      ? eventTypes.flatMap((ev) =>
+          channels.map((c) => ({
+            eventType: ev,
+            channel: c.type,
+            enabled: true,
+            minSeverity: SeverityEnum.info,
+          }))
+        )
+      : config.routing;
+    const missing = channels
+      .filter((c) => !base.some((r) => r.eventType === eventType && r.channel === c.type))
+      .map((c) => ({
+        eventType,
+        channel: c.type,
+        enabled: false,
+        minSeverity: rowSeverity(eventType),
+      }));
+    return [...base, ...missing];
+  };
+
   const setCell = (eventType: string, channel: NotificationChannelType, enabled: boolean) => {
     onChange({
       ...config,
-      routing: config.routing.map((r) =>
+      routing: withRow(eventType).map((r) =>
         r.eventType === eventType && r.channel === channel ? { ...r, enabled } : r
       ),
     });
@@ -55,7 +100,9 @@ export function EventRoutingTable({
   const setRowSeverity = (eventType: string, minSeverity: Severity) => {
     onChange({
       ...config,
-      routing: config.routing.map((r) => (r.eventType === eventType ? { ...r, minSeverity } : r)),
+      routing: withRow(eventType).map((r) =>
+        r.eventType === eventType ? { ...r, minSeverity } : r
+      ),
     });
   };
 
@@ -65,7 +112,7 @@ export function EventRoutingTable({
   const setRowConnectorCategory = (eventType: string, connectorCategory: string) => {
     onChange({
       ...config,
-      routing: config.routing.map((r) =>
+      routing: withRow(eventType).map((r) =>
         r.eventType === eventType
           ? {
               ...r,
@@ -82,7 +129,7 @@ export function EventRoutingTable({
   const setRowConnectorId = (eventType: string, connectorId: string) => {
     onChange({
       ...config,
-      routing: config.routing.map((r) =>
+      routing: withRow(eventType).map((r) =>
         r.eventType === eventType
           ? { ...r, connectorId: connectorId === '' ? undefined : connectorId }
           : r
@@ -134,13 +181,13 @@ export function EventRoutingTable({
               </td>
               {channels.map((c) => {
                 const route = findRoute(eventType, c.type);
-                const cellDisabled = disabled || !c.enabled || !route;
+                const cellDisabled = disabled || !c.enabled;
                 return (
                   <td key={c.type} className="px-3 py-2.5">
                     <div className="flex justify-center">
                       <Toggle
                         size="sm"
-                        checked={Boolean(route?.enabled) && c.enabled}
+                        checked={(unrouted || Boolean(route?.enabled)) && c.enabled}
                         disabled={cellDisabled}
                         onChange={(enabled) => setCell(eventType, c.type, enabled)}
                         label={`${eventLabel(eventType)} → ${CHANNEL_LABELS[c.type]}`}
