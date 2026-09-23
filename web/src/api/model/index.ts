@@ -159,6 +159,8 @@ export * from './healthCheckResult';
 export * from './healthComponentsItem';
 export * from './healthComponentsItemStatus';
 export * from './healthStatus';
+export * from './jobInfo';
+export * from './jobInfoLastStatus';
 export * from './liveness';
 export * from './livenessStatus';
 export * from './loginRequest';
