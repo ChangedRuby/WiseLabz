@@ -19,6 +19,7 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/crypto"
+	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
 
 // maxWebhookResponseBytes bounds how much of a webhook response is read before the body is
@@ -39,14 +40,10 @@ var webhookClient = newWebhookClient()
 // unspecified and multicast targets (RFC 1918 stays reachable for self-hosted receivers)
 // and which never follows redirects.
 func newWebhookClient() *http.Client {
-	dialer := connector.GuardedDialer(10 * time.Second)
-	return &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: &http.Transport{DialContext: dialer.DialContext},
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	return httpx.NewClient(httpx.Options{
+		Timeout:     10 * time.Second,
+		DialContext: connector.GuardedDialer(10 * time.Second).DialContext,
+	})
 }
 
 // signWebhook returns the signature header value for the given timestamp and body.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"sync"
 )
 
@@ -169,7 +168,3 @@ func (s *StubProvider) SuggestStream(_ context.Context, _ *SuggestRequest) (<-ch
 	}()
 	return ch, nil
 }
-
-// noRedirect blocks redirects so a configured base URL cannot bounce
-// requests (and credentials) to another host.
-func noRedirect(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
