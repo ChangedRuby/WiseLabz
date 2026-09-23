@@ -4449,7 +4449,7 @@ components:
         templateSections: { $ref: '#/components/schemas/BackupCounts' }
     RetentionSettings:
       type: object
-      required: [snapshotDays, docVersionDays, alertDays, syncRunDays, auditDays, healthCheckDays, cronExpr]
+      required: [snapshotDays, docVersionDays, alertDays, syncRunDays, auditDays, healthCheckDays, reportDays, cronExpr]
       properties:
         snapshotDays: { type: integer, description: Delete service snapshots older than this many days; 0 disables cleanup for this category }
         docVersionDays: { type: integer, description: Delete doc revisions older than this many days; 0 disables cleanup for this category }
@@ -4457,6 +4457,7 @@ components:
         syncRunDays: { type: integer, description: Delete sync run history older than this many days; 0 disables cleanup for this category }
         auditDays: { type: integer, description: Delete audit log records older than this many days; 0 disables cleanup for this category }
         healthCheckDays: { type: integer, description: Delete health-check time-series rows older than this many days; 0 disables cleanup for this category }
+        reportDays: { type: integer, description: Delete generated reports older than this many days; 0 disables cleanup for this category }
         cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression, example: '0 0 * * *' }
         updatedAt: { type: string, format: date-time }
     BackupSchedule:

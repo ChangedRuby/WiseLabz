@@ -96,6 +96,16 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		}
 	}
 
+	if cfg.ReportDays > 0 {
+		n, err := s.DeleteOldReports(ctx, cutoff(cfg.ReportDays))
+		if err != nil {
+			logger.Error("delete old reports", "error", err)
+			errs = append(errs, fmt.Errorf("delete old reports: %w", err))
+		} else if n > 0 {
+			logger.Info("Purged old reports", "count", n)
+		}
+	}
+
 	// Tables without a configurable *Days setting use fixed windows.
 	fixed := []struct {
 		name   string

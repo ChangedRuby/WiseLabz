@@ -33,6 +33,7 @@ func (h *Handler) GetRetentionSettings(w http.ResponseWriter, r *http.Request) {
 			SyncRunDays:     90,
 			AuditDays:       180,
 			HealthCheckDays: 90,
+			ReportDays:      90,
 			CronExpr:        "0 0 * * *",
 		}
 	}
@@ -44,6 +45,7 @@ func (h *Handler) GetRetentionSettings(w http.ResponseWriter, r *http.Request) {
 		"syncRunDays":     rs.SyncRunDays,
 		"auditDays":       rs.AuditDays,
 		"healthCheckDays": rs.HealthCheckDays,
+		"reportDays":      rs.ReportDays,
 		"cronExpr":        rs.CronExpr,
 		"updatedAt":       rs.UpdatedAt,
 	})
@@ -57,6 +59,7 @@ type RetentionSettingsRequest struct {
 	SyncRunDays     int    `json:"syncRunDays"`
 	AuditDays       int    `json:"auditDays"`
 	HealthCheckDays int    `json:"healthCheckDays"`
+	ReportDays      int    `json:"reportDays"`
 	CronExpr        string `json:"cronExpr"`
 }
 
@@ -92,6 +95,7 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 		{"syncRunDays", req.SyncRunDays},
 		{"auditDays", req.AuditDays},
 		{"healthCheckDays", req.HealthCheckDays},
+		{"reportDays", req.ReportDays},
 	} {
 		if f.days < 0 {
 			dayErrs = append(dayErrs, httputil.FieldError{Field: f.name, Msg: "must be >= 0 (0 disables cleanup)"})
@@ -109,6 +113,7 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 		SyncRunDays:     req.SyncRunDays,
 		AuditDays:       req.AuditDays,
 		HealthCheckDays: req.HealthCheckDays,
+		ReportDays:      req.ReportDays,
 		CronExpr:        req.CronExpr,
 	}
 	if err := h.Store.UpsertRetentionSettings(r.Context(), newSettings); err != nil {
@@ -129,6 +134,7 @@ func (h *Handler) UpdateRetentionSettings(w http.ResponseWriter, r *http.Request
 		"syncRunDays":     newSettings.SyncRunDays,
 		"auditDays":       newSettings.AuditDays,
 		"healthCheckDays": newSettings.HealthCheckDays,
+		"reportDays":      newSettings.ReportDays,
 		"cronExpr":        newSettings.CronExpr,
 		"updatedAt":       newSettings.UpdatedAt,
 	})
@@ -154,6 +160,7 @@ func (h *Handler) InitRetentionJob(ctx context.Context) {
 			SyncRunDays:     h.Config.Retention.SyncRunDays,
 			AuditDays:       h.Config.Retention.AuditDays,
 			HealthCheckDays: h.Config.Retention.HealthCheckDays,
+			ReportDays:      h.Config.Retention.ReportDays,
 			CronExpr:        h.Config.Retention.CronExpr,
 		}
 		if err := h.Store.UpsertRetentionSettings(ctx, rs); err != nil {
