@@ -24,23 +24,38 @@ type Options struct {
 	// InsecureSkipVerify disables TLS certificate verification.
 	InsecureSkipVerify bool
 	// DialContext overrides the dialer, e.g. connector.GuardedDialer to
-	// block loopback/link-local targets. Nil uses a plain net.Dialer.
+	// block loopback/link-local targets. Nil uses a plain net.Dialer and
+	// honors HTTP(S)_PROXY. When set, proxy environment variables are ignored
+	// so the dialer always sees the real target (a proxy would bypass a guard).
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
+// defaultResponseHeaderTimeout bounds the wait for response headers when the
+// client has no overall timeout.
+const defaultResponseHeaderTimeout = 30 * time.Second
+
 // NewTransport returns an *http.Transport with TLS 1.2+ and bounded
-// dial/handshake/header timeouts.
+// dial/handshake/header timeouts. The response-header timeout matches the
+// effective client timeout so slow non-streaming responses (e.g. LLM
+// completions) are not cut off before the client deadline.
 func NewTransport(o Options) *http.Transport {
 	dial := o.DialContext
+	proxy := http.ProxyFromEnvironment
 	if dial == nil {
 		dial = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	} else {
+		proxy = nil
+	}
+	headerTimeout := clientTimeout(o.Timeout)
+	if headerTimeout == 0 {
+		headerTimeout = defaultResponseHeaderTimeout
 	}
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 proxy,
 		DialContext:           dial,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: o.InsecureSkipVerify}, //nolint:gosec // opt-in per caller
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		ResponseHeaderTimeout: headerTimeout,
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          100,
 	}
@@ -49,18 +64,23 @@ func NewTransport(o Options) *http.Transport {
 // NewClient returns an *http.Client using NewTransport(o) that never follows
 // redirects.
 func NewClient(o Options) *http.Client {
-	timeout := o.Timeout
-	switch {
-	case timeout == 0:
-		timeout = DefaultTimeout
-	case timeout < 0:
-		timeout = 0
-	}
 	return &http.Client{
-		Timeout:       timeout,
+		Timeout:       clientTimeout(o.Timeout),
 		Transport:     NewTransport(o),
 		CheckRedirect: NoRedirect,
 	}
+}
+
+// clientTimeout resolves Options.Timeout to an http.Client.Timeout:
+// zero becomes DefaultTimeout and negative becomes 0 (no timeout).
+func clientTimeout(t time.Duration) time.Duration {
+	switch {
+	case t == 0:
+		return DefaultTimeout
+	case t < 0:
+		return 0
+	}
+	return t
 }
 
 // NoRedirect is an http.Client.CheckRedirect func that returns the redirect
