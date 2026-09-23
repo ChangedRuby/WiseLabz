@@ -30,6 +30,7 @@ func mountSystemRoutes(r chi.Router, d routerDeps) {
 	r.Get("/system/info", d.sysH.Info)
 	r.Get("/system/audit", d.sysH.ListAudit)
 	r.Get("/system/audit/export", d.sysH.ExportAudit)
+	r.Get("/system/jobs", d.sysH.GetJobs)
 
 	r.Get("/system/settings/retention", d.sysH.GetRetentionSettings)
 	r.Put("/system/settings/retention", d.sysH.UpdateRetentionSettings)

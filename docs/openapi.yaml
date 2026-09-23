@@ -2518,6 +2518,26 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DiagnosticsBundle' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /system/jobs:
+    get:
+      tags: [system]
+      summary: >-
+        Every scheduled background job currently registered with the
+        scheduler (quality, sync, digest, backup, backup-verify, retention,
+        docexport, …) — operator. Combines the job's live next-run time with
+        its persisted health: `lastStatus` flips to `failing` on the first
+        failed run and back to `ok` on the next success, surviving a server
+        restart (#384). A job that has never run yet still appears, with only
+        `name`/`cronExpr`/`nextRunAt` set.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/JobInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /health:
     get:
       tags: [system]
@@ -4325,6 +4345,18 @@ components:
         total: { type: integer }
         limit: { type: integer }
         offset: { type: integer }
+    JobInfo:
+      type: object
+      required: [name, cronExpr]
+      properties:
+        name: { type: string, description: 'Job name, e.g. "quality", "sync", "backup", "docexport"' }
+        cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression }
+        lastStatus: { type: string, enum: [ok, failing], description: Absent if the job has never run yet }
+        lastError: { type: string, description: Error from the most recent failing run; empty when lastStatus is ok }
+        lastRunAt: { type: string, format: date-time, description: Absent if the job has never run yet }
+        lastSuccessAt: { type: string, format: date-time, description: Absent if the job has never succeeded }
+        lastFailureAt: { type: string, format: date-time, description: Absent if the job has never failed }
+        nextRunAt: { type: string, format: date-time, description: Next scheduled run per the live cron entry }
 
     # ── diagnostics ──
     DiagnosticsBundle:

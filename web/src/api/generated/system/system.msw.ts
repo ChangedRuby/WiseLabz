@@ -22,6 +22,7 @@ import type {
   BackupSchedule,
   DiagnosticsBundle,
   Health,
+  JobInfo,
   Liveness,
   PostWsTicket200,
   Readiness,
@@ -530,6 +531,36 @@ export const getGetSystemDiagnosticsResponseMock = (
   ...overrideResponse,
 });
 
+export const getGetSystemJobsResponseMock = (): JobInfo[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    cronExpr: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    lastStatus: faker.helpers.arrayElement([
+      faker.helpers.arrayElement(['ok', 'failing'] as const),
+      undefined,
+    ]),
+    lastError: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+    lastRunAt: faker.helpers.arrayElement([
+      faker.date.past().toISOString().slice(0, 19) + 'Z',
+      undefined,
+    ]),
+    lastSuccessAt: faker.helpers.arrayElement([
+      faker.date.past().toISOString().slice(0, 19) + 'Z',
+      undefined,
+    ]),
+    lastFailureAt: faker.helpers.arrayElement([
+      faker.date.past().toISOString().slice(0, 19) + 'Z',
+      undefined,
+    ]),
+    nextRunAt: faker.helpers.arrayElement([
+      faker.date.past().toISOString().slice(0, 19) + 'Z',
+      undefined,
+    ]),
+  }));
+
 export const getGetHealthResponseMock = (
   overrideResponse: Partial<Extract<Health, object>> = {}
 ): Health => ({
@@ -857,6 +888,28 @@ export const getGetSystemDiagnosticsMockHandler = (
   );
 };
 
+export const getGetSystemJobsMockHandler = (
+  overrideResponse?:
+    | JobInfo[]
+    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<JobInfo[]> | JobInfo[]),
+  options?: RequestHandlerOptions
+) => {
+  return http.get(
+    '*/system/jobs',
+    async (info: Parameters<Parameters<typeof http.get>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getGetSystemJobsResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
+
 export const getGetHealthMockHandler = (
   overrideResponse?:
     | Health
@@ -959,6 +1012,7 @@ export const getSystemMock = () => [
   getGetSystemBackupRunsMockHandler(),
   getPostSystemBackupRunMockHandler(),
   getGetSystemDiagnosticsMockHandler(),
+  getGetSystemJobsMockHandler(),
   getGetHealthMockHandler(),
   getGetHealthzMockHandler(),
   getGetReadyzMockHandler(),

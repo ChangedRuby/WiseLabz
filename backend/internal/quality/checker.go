@@ -476,14 +476,18 @@ func (c *Checker) checkCredentialRotation(ctx context.Context, connectorID strin
 	return c.upsert(ctx, finding)
 }
 
-// RunStaleSweepOnce performs one pass of every quality check for all connectors.
-// Its legacy name is kept because the quality cron already calls it.
-func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifier FindingNotifier, logger *slog.Logger) {
+// RunStaleSweepOnce performs one pass of every quality check for all
+// connectors. Its legacy name is kept because the quality cron already
+// calls it. Like sync's RunDueSyncs, only the sweep-level error (listing
+// connectors) is returned for job health (#384) purposes; a single
+// connector's check failing is logged and skipped rather than flagging the
+// whole job as failing, since a transient error on one of many connectors
+// shouldn't page anyone.
+func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifier FindingNotifier, logger *slog.Logger) error {
 	checker := NewChecker(s, hub, notifier, RotationConfig{})
 	connectors, err := checker.store.ListAllConnectors(ctx)
 	if err != nil {
-		logger.Error("list connectors for stale sweep", "error", err)
-		return
+		return fmt.Errorf("list connectors for stale sweep: %w", err)
 	}
 	for _, connector := range connectors {
 		if err := checker.RunForConnector(ctx, connector.ID); err != nil {
@@ -491,4 +495,5 @@ func RunStaleSweepOnce(ctx context.Context, s *store.Store, hub *ws.Hub, notifie
 			continue
 		}
 	}
+	return nil
 }

@@ -72,7 +72,9 @@ func TestRunCleanupSkipsDisabledCategories(t *testing.T) {
 		CronExpr:       "0 0 * * *",
 	}
 
-	RunCleanupOnce(ctx, s, cfg, testLogger())
+	if err := RunCleanupOnce(ctx, s, cfg, testLogger()); err != nil {
+		t.Fatalf("RunCleanupOnce: %v", err)
+	}
 
 	runs, err := s.ListSyncRunsByConnector(ctx, c.ID, 20)
 	if err != nil {
@@ -121,7 +123,9 @@ func TestRunCleanupPrunesOldHealthChecks(t *testing.T) {
 	}
 
 	// HealthCheckDays=0 disables cleanup: nothing purged.
-	RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 0}, testLogger())
+	if err := RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 0}, testLogger()); err != nil {
+		t.Fatalf("RunCleanupOnce: %v", err)
+	}
 	stats, err := s.GetConnectorUptime(ctx, c.ID, time.Now().UTC().AddDate(-1, 0, -1), time.Now().UTC().AddDate(0, 0, 1))
 	if err != nil {
 		t.Fatalf("GetConnectorUptime() error: %v", err)
@@ -131,7 +135,9 @@ func TestRunCleanupPrunesOldHealthChecks(t *testing.T) {
 	}
 
 	// HealthCheckDays=30 purges the year-old row, keeps the recent one.
-	RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 30}, testLogger())
+	if err := RunCleanupOnce(ctx, s, store.RetentionSettings{HealthCheckDays: 30}, testLogger()); err != nil {
+		t.Fatalf("RunCleanupOnce: %v", err)
+	}
 	stats, err = s.GetConnectorUptime(ctx, c.ID, time.Now().UTC().AddDate(-1, 0, -1), time.Now().UTC().AddDate(0, 0, 1))
 	if err != nil {
 		t.Fatalf("GetConnectorUptime() error: %v", err)
@@ -154,7 +160,11 @@ func TestRunCleanupAllDBErrors(t *testing.T) {
 		SnapshotDays: 30, DocVersionDays: 30, AlertDays: 30, SyncRunDays: 30, AuditDays: 30,
 	}
 
-	RunCleanupOnce(ctx, s, cfg, testLogger()) // must not panic
+	// Must not panic; every category errors on the closed DB, so the joined
+	// error (job health, #384) must be non-nil.
+	if err := RunCleanupOnce(ctx, s, cfg, testLogger()); err == nil {
+		t.Fatal("RunCleanupOnce() with a closed DB: want an error, got nil")
+	}
 }
 
 // TestRunCleanupPartialFailure verifies that an error in one category
@@ -179,7 +189,11 @@ func TestRunCleanupPartialFailure(t *testing.T) {
 
 	cfg := store.RetentionSettings{SyncRunDays: 30, AuditDays: 30}
 
-	RunCleanupOnce(ctx, s, cfg, testLogger()) // sync_runs errors, audit_log must still run
+	// sync_runs errors, audit_log must still run; the returned error must
+	// still reflect the sync_runs failure (job health, #384).
+	if err := RunCleanupOnce(ctx, s, cfg, testLogger()); err == nil {
+		t.Fatal("RunCleanupOnce() with sync_runs dropped: want an error, got nil")
+	}
 
 	_, auditTotal, err := s.ListAuditRecords(ctx, "", "", "", "", 0, 20)
 	if err != nil {
@@ -207,8 +221,13 @@ func TestRunCleanupIdempotent(t *testing.T) {
 
 	cfg := store.RetentionSettings{SyncRunDays: 30, CronExpr: "@daily"}
 
-	RunCleanupOnce(ctx, s, cfg, testLogger())
-	RunCleanupOnce(ctx, s, cfg, testLogger()) // must not error or panic on an already-clean table
+	if err := RunCleanupOnce(ctx, s, cfg, testLogger()); err != nil {
+		t.Fatalf("RunCleanupOnce: %v", err)
+	}
+	// Must not error or panic on an already-clean table.
+	if err := RunCleanupOnce(ctx, s, cfg, testLogger()); err != nil {
+		t.Fatalf("RunCleanupOnce (second pass): %v", err)
+	}
 
 	runs, err := s.ListSyncRunsByConnector(ctx, c.ID, 20)
 	if err != nil {

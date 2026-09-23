@@ -180,8 +180,11 @@ func newScratchStore(ctx context.Context) (*store.Store, error) {
 // result (see RecordVerification), and logs pass/fail — following the same
 // log-on-failure convention as other scheduled jobs (e.g.
 // internal/retention.RunCleanupOnce). It's the function the scheduled
-// "backup-verify" cron job and the server wiring in cmd/server/main.go call.
-func RunVerifyOnce(ctx context.Context, dir string, logger *slog.Logger) {
+// "backup-verify" cron job and the server wiring in cmd/server/main.go
+// call. Returns an error whenever there's no bundle to verify, verification
+// fails, or the result can't be recorded, so the scheduler's job health
+// (#384) reflects it.
+func RunVerifyOnce(ctx context.Context, dir string, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -189,7 +192,7 @@ func RunVerifyOnce(ctx context.Context, dir string, logger *slog.Logger) {
 	path, err := LatestBundle(dir)
 	if err != nil {
 		logger.Warn("backup verify: no backup bundle to verify", "dir", dir, "error", err)
-		return
+		return fmt.Errorf("backup verify: no backup bundle to verify: %w", err)
 	}
 
 	res := VerifyBundleFile(ctx, path)
@@ -199,7 +202,8 @@ func RunVerifyOnce(ctx context.Context, dir string, logger *slog.Logger) {
 
 	if res.Status == "pass" {
 		logger.Info("backup verify: passed", "bundle", path, "checksum", res.Checksum)
-		return
+		return nil
 	}
 	logger.Error("backup verify: failed", "bundle", path, "error", res.Error)
+	return fmt.Errorf("backup verify: failed: %s", res.Error)
 }

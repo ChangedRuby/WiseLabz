@@ -35,7 +35,9 @@ func TestExpireAlertsOnceNotifiesViaDispatcher(t *testing.T) {
 	}
 
 	logger := testLogger()
-	expireAlertsOnce(ctx, s, dispatcher, logger)
+	if err := expireAlertsOnce(ctx, s, dispatcher, logger); err != nil {
+		t.Fatalf("expireAlertsOnce: %v", err)
+	}
 	dispatcher.Wait()
 
 	got, err := s.GetAlert(ctx, alert.ID)
@@ -66,6 +68,8 @@ func TestExpireAlertsOnceNoExpiredAlertsIsNoop(t *testing.T) {
 	dispatcher := notifications.NewDispatcher(s, nil)
 	logger := testLogger()
 
-	expireAlertsOnce(ctx, s, dispatcher, logger)
+	if err := expireAlertsOnce(ctx, s, dispatcher, logger); err != nil {
+		t.Fatalf("expireAlertsOnce: %v", err)
+	}
 	dispatcher.Wait()
 }

@@ -345,8 +345,8 @@ func (h *Handler) reregisterBackupJob(sched store.BackupSchedule) {
 
 	// Register the new job (if enabled)
 	if sched.Enabled {
-		id, err := h.Scheduler.AddJob("backup", sched.CronExpr, func(jobCtx context.Context) {
-			h.runBackupJob(jobCtx, sched)
+		id, err := h.Scheduler.AddJob("backup", sched.CronExpr, func(jobCtx context.Context) error {
+			return h.runBackupJob(jobCtx, sched)
 		})
 		if err != nil {
 			// err wraps sched.CronExpr (user-controlled via PUT /schedule); strip
@@ -363,11 +363,10 @@ func (h *Handler) reregisterBackupJob(sched store.BackupSchedule) {
 }
 
 // runBackupJob is the actual backup job that runs on schedule.
-func (h *Handler) runBackupJob(ctx context.Context, sched store.BackupSchedule) {
+func (h *Handler) runBackupJob(ctx context.Context, sched store.BackupSchedule) error {
 	run, err := backup.ExportToFile(ctx, h.Store, h.BackupDir)
 	if err != nil {
-		slog.Error("backup export to file", "error", err)
-		return
+		return fmt.Errorf("backup export to file: %w", err)
 	}
 
 	run.TriggeredBy = "schedule"
@@ -381,8 +380,7 @@ func (h *Handler) runBackupJob(ctx context.Context, sched store.BackupSchedule) 
 		CreatedAt:   run.CreatedAt,
 	}
 	if err := h.Store.CreateBackupRun(ctx, dbRun); err != nil {
-		slog.Error("create backup run", "error", err)
-		return
+		return fmt.Errorf("create backup run: %w", err)
 	}
 
 	// Apply pruning
@@ -400,6 +398,7 @@ func (h *Handler) runBackupJob(ctx context.Context, sched store.BackupSchedule) 
 	}
 
 	slog.Info("Backup created", "id", run.ID, "size", run.SizeBytes)
+	return nil
 }
 
 // stripLogControlChars removes CR/LF from a string before it's logged, so a

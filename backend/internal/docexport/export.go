@@ -35,11 +35,9 @@ const exportPageSize = 1000
 type Exporter struct {
 	store *store.Store
 
-	git      *gitTarget // nil: local-directory mode
-	notifier Notifier   // nil: failures are only logged
+	git *gitTarget // nil: local-directory mode
 
-	mu      sync.Mutex // serializes runs (the Git worktree isn't concurrency-safe)
-	failing bool       // last run failed; in memory only, so a restart re-notifies
+	mu sync.Mutex // serializes runs (the Git worktree isn't concurrency-safe)
 }
 
 // NewExporter creates a new Exporter backed by s.
@@ -189,14 +187,14 @@ func slugify(s string) string {
 	return strings.TrimSuffix(b.String(), "-")
 }
 
-// RunExportOnce runs a single export pass and logs the outcome. It's the
-// function the scheduled "docexport" cron job (wired in cmd/server/main.go)
-// calls, following the same log-on-failure convention as other scheduled
-// jobs (e.g. internal/backup.RunVerifyOnce). In Git mode dir is the
-// persistent clone and the docs go to its configured subdirectory. When a
-// Notifier is set, a system.job_failed event is sent on the ok→failing and
-// failing→ok transitions only.
-func RunExportOnce(ctx context.Context, e *Exporter, dir string, logger *slog.Logger) {
+// RunExportOnce runs a single export pass and logs the outcome, returning
+// any error so the scheduler's centralized health tracking (#384) can
+// persist it and fire a system.job_failed notification on an ok<->failing
+// transition — see scheduler.Runner.SetHealthTracking. It's the function
+// the scheduled "docexport" cron job (wired in cmd/server/main.go) calls. In
+// Git mode dir is the persistent clone and the docs go to its configured
+// subdirectory.
+func RunExportOnce(ctx context.Context, e *Exporter, dir string, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -216,29 +214,7 @@ func RunExportOnce(ctx context.Context, e *Exporter, dir string, logger *slog.Lo
 
 	if err != nil {
 		logger.Error("doc export: failed", "dir", dir, "error", err)
-		if !e.failing && e.notifier != nil {
-			e.notifier.NotifySystemEvent(ctx, EventJobFailed, "warning",
-				"Doc export failing", fmt.Sprintf("The scheduled doc export job failed and will retry on its next run: %v", err))
-		}
-		e.failing = true
-		return
+		return fmt.Errorf("doc export: %w", err)
 	}
-	if e.failing && e.notifier != nil {
-		e.notifier.NotifySystemEvent(ctx, EventJobFailed, "info",
-			"Doc export recovered", "The scheduled doc export job succeeded again.")
-	}
-	e.failing = false
+	return nil
 }
-
-// EventJobFailed is the notification event type sent when a scheduled job
-// starts failing (severity warning) or recovers (severity info). It must
-// match notifications.EventSystemJobFailed.
-const EventJobFailed = "system.job_failed"
-
-// Notifier is the slice of notifications.Dispatcher the exporter uses.
-type Notifier interface {
-	NotifySystemEvent(ctx context.Context, eventType, severity, title, message string)
-}
-
-// SetNotifier installs the notifier used for failure/recovery events.
-func (e *Exporter) SetNotifier(n Notifier) { e.notifier = n }

@@ -143,26 +143,30 @@ func main() {
 	// to live here) are registered by api.NewRouter, via the system
 	// handler's InitBackupJob/InitRetentionJob — see those for why.
 	jobRunner := scheduler.New(logger)
-	if _, err := jobRunner.AddJob("quality", cfg.Quality.CronExpr, func(jobCtx context.Context) {
-		quality.RunStaleSweepOnce(jobCtx, s, wsHub, notifDispatcher, logger)
+	// Every job's ok/failing status is persisted to job_health and, on a
+	// transition, reported via system.job_failed (#384) — see
+	// scheduler.Runner.SetHealthTracking.
+	jobRunner.SetHealthTracking(s, notifDispatcher)
+	if _, err := jobRunner.AddJob("quality", cfg.Quality.CronExpr, func(jobCtx context.Context) error {
+		return quality.RunStaleSweepOnce(jobCtx, s, wsHub, notifDispatcher, logger)
 	}); err != nil {
 		logger.Error("Failed to add quality job", "error", err)
 		os.Exit(1)
 	}
-	if _, err := jobRunner.AddJob("sync", cfg.Sync.PollCronExpr, func(jobCtx context.Context) {
-		syncEngine.RunDueSyncs(jobCtx, logger)
+	if _, err := jobRunner.AddJob("sync", cfg.Sync.PollCronExpr, func(jobCtx context.Context) error {
+		return syncEngine.RunDueSyncs(jobCtx, logger)
 	}); err != nil {
 		logger.Error("Failed to add sync job", "error", err)
 		os.Exit(1)
 	}
-	if _, err := jobRunner.AddJob("digest", "0 * * * *", func(jobCtx context.Context) {
-		notifDispatcher.RunDigestSweep(jobCtx, time.Now().UTC(), logger)
+	if _, err := jobRunner.AddJob("digest", "0 * * * *", func(jobCtx context.Context) error {
+		return notifDispatcher.RunDigestSweep(jobCtx, time.Now().UTC(), logger)
 	}); err != nil {
 		logger.Error("Failed to add digest job", "error", err)
 		os.Exit(1)
 	}
-	if _, err := jobRunner.AddJob("alertExpirer", "0 * * * * *", func(jobCtx context.Context) {
-		expireAlertsOnce(jobCtx, s, notifDispatcher, logger)
+	if _, err := jobRunner.AddJob("alertExpirer", "0 * * * * *", func(jobCtx context.Context) error {
+		return expireAlertsOnce(jobCtx, s, notifDispatcher, logger)
 	}); err != nil {
 		logger.Error("Failed to add alert expirer job", "error", err)
 		os.Exit(1)
@@ -173,8 +177,8 @@ func main() {
 	// PUT /schedule), the verify job has no persisted schedule of its own —
 	// it just registers here on a fixed cadence, same as "quality"/"digest"
 	// above.
-	if _, err := jobRunner.AddJob("backup-verify", backup.DefaultVerifyCronExpr, func(jobCtx context.Context) {
-		backup.RunVerifyOnce(jobCtx, backupDir, logger)
+	if _, err := jobRunner.AddJob("backup-verify", backup.DefaultVerifyCronExpr, func(jobCtx context.Context) error {
+		return backup.RunVerifyOnce(jobCtx, backupDir, logger)
 	}); err != nil {
 		logger.Error("Failed to add backup verify job", "error", err)
 		os.Exit(1)
@@ -186,10 +190,10 @@ func main() {
 	// same as "quality"/"digest"/"backup-verify" above — no operator-facing
 	// API to change it at runtime. Opt-in via doc_export.enabled since it
 	// writes to disk on a schedule. Failures notify system.job_failed on
-	// state transitions only.
+	// state transitions only, via the scheduler's centralized health
+	// tracking (#384) — see jobRunner.SetHealthTracking above.
 	if cfg.DocExport.Enabled {
 		docExporter := docexport.NewExporter(s)
-		docExporter.SetNotifier(notifDispatcher)
 		if g := cfg.DocExport.Git; g.Enabled() {
 			if err := docExporter.ConfigureGit(docexport.GitOptions{
 				Remote: g.Remote, Branch: g.Branch, Path: g.Path,
@@ -205,8 +209,8 @@ func main() {
 			}
 			logger.Info("doc export: Git target configured", "remote", logsafe.Sanitize(g.Remote), "branch", g.Branch, "path", g.Path)
 		}
-		if _, err := jobRunner.AddJob("docexport", cfg.DocExport.CronExpr, func(jobCtx context.Context) {
-			docexport.RunExportOnce(jobCtx, docExporter, cfg.DocExport.Dir, logger)
+		if _, err := jobRunner.AddJob("docexport", cfg.DocExport.CronExpr, func(jobCtx context.Context) error {
+			return docexport.RunExportOnce(jobCtx, docExporter, cfg.DocExport.Dir, logger)
 		}); err != nil {
 			logger.Error("Failed to add doc export job", "error", err)
 			os.Exit(1)
@@ -312,24 +316,23 @@ func runHealthcheck() {
 // notifies affected users via the dispatcher, same fanout as a newly created
 // alert (it's actionable again). Runs as a scheduler job instead of its own
 // hand-rolled select-then-sleep loop.
-func expireAlertsOnce(ctx context.Context, s *store.Store, d *notifications.Dispatcher, logger *slog.Logger) {
+func expireAlertsOnce(ctx context.Context, s *store.Store, d *notifications.Dispatcher, logger *slog.Logger) error {
 	expired, err := s.GetExpiredSnoozedAlerts(ctx)
 	if err != nil {
-		logger.Error("get expired snoozed alerts", "error", err)
-		return
+		return fmt.Errorf("get expired snoozed alerts: %w", err)
 	}
 	if len(expired) == 0 {
-		return
+		return nil
 	}
 	n, err := s.UnsnoozeExpiredAlerts(ctx)
 	if err != nil {
-		logger.Error("unsnooze expired alerts", "error", err)
-		return
+		return fmt.Errorf("unsnooze expired alerts: %w", err)
 	}
 	if n > 0 {
 		logger.Info("un-snoozed expired alerts", "count", n)
 		d.NotifyAlertsCreated(ctx, expired)
 	}
+	return nil
 }
 
 func newLogger(cfg config.LogSettings) *slog.Logger {
