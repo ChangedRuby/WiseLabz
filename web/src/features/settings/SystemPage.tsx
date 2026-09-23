@@ -6,7 +6,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useGetSystemInfo, useGetHealth } from '../../api/generated/system/system';
+import {
+  useGetSystemInfo,
+  useGetHealth,
+  useGetSystemJobs,
+} from '../../api/generated/system/system';
 import {
   getSystemBackupSchedule,
   putSystemBackupSchedule,
@@ -15,7 +19,7 @@ import {
   postSystemBackupRun,
   getGetSystemBackupRunsQueryKey,
 } from '../../api/generated/system/system';
-import type { BackupSchedule, HealthComponentsItemStatus } from '../../api/model';
+import type { BackupSchedule, HealthComponentsItemStatus, JobInfo } from '../../api/model';
 import { AXIOS_INSTANCE } from '../../api/axios-instance';
 import { useLive, type WsState } from '../../store/live';
 import { Panel, PanelHeader } from '../../components/ui/Panel';
@@ -53,6 +57,7 @@ export function SystemPage() {
   const ws = useLive((s) => s.ws);
   const info = useGetSystemInfo();
   const health = useGetHealth();
+  const jobs = useGetSystemJobs();
 
   if (info.isLoading || health.isLoading) return <Loading />;
 
@@ -147,7 +152,91 @@ export function SystemPage() {
       <DiagnosticsSection />
 
       <BackupSection />
+
+      <JobsSection jobs={jobs} />
     </div>
+  );
+}
+
+function JobsSection({ jobs }: { jobs: ReturnType<typeof useGetSystemJobs> }) {
+  const { t } = useTranslation();
+
+  return (
+    <Section
+      title={t('settings.system.jobs.title')}
+      description={t('settings.system.jobs.subtitle')}
+    >
+      {jobs.isLoading ? (
+        <SkeletonRows rows={4} className="p-0" />
+      ) : jobs.isError || !jobs.data ? (
+        <ErrorState
+          description={t('settings.system.jobs.loadError')}
+          onRetry={() => jobs.refetch()}
+        />
+      ) : jobs.data.length === 0 ? (
+        <EmptyState title={t('settings.system.jobs.empty')} />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-225 text-left text-xs">
+            <thead className="border-b border-line-soft font-mono text-2xs text-ink-faint">
+              <tr>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.name')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.status')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.lastRun')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.lastSuccess')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.lastFailure')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.nextRun')}</th>
+                <th className="px-2 py-2 font-normal">{t('settings.system.jobs.lastError')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line-soft">
+              {jobs.data.map((job) => (
+                <JobRow key={job.name} job={job} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function JobRow({ job }: { job: JobInfo }) {
+  const { t } = useTranslation();
+  const status = job.lastStatus;
+  const tone = status === 'failing' ? 'err' : status === 'ok' ? 'ok' : 'idle';
+
+  return (
+    <tr>
+      <td className="px-2 py-2.5">
+        <p className="font-mono text-xs text-ink">{job.name}</p>
+        <p className="font-mono text-2xs text-ink-faint">{job.cronExpr}</p>
+      </td>
+      <td className="px-2 py-2.5">
+        <ToneTag tone={tone} label={status ?? t('settings.system.jobs.neverRun')} />
+      </td>
+      <JobTime at={job.lastRunAt} />
+      <JobTime at={job.lastSuccessAt} />
+      <JobTime at={job.lastFailureAt} />
+      <JobTime at={job.nextRunAt} />
+      <td className="max-w-48 px-2 py-2.5 text-err">
+        {job.lastError ? (
+          <span className="block truncate" title={job.lastError}>
+            {job.lastError}
+          </span>
+        ) : (
+          '—'
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function JobTime({ at }: { at?: string }) {
+  return (
+    <td className="whitespace-nowrap px-2 py-2.5 text-ink-muted">
+      {at ? <TimeAgo at={at} /> : '—'}
+    </td>
   );
 }
 

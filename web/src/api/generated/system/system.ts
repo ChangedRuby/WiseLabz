@@ -34,6 +34,7 @@ import type {
   GetSystemAuditParams,
   GetSystemBackupRunsParams,
   Health,
+  JobInfo,
   Liveness,
   PostWsTicket200,
   Readiness,
@@ -1557,6 +1558,113 @@ export function useGetSystemDiagnostics<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetSystemDiagnosticsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Every scheduled background job currently registered with the scheduler (quality, sync, digest, backup, backup-verify, retention, docexport, …) — operator. Combines the job's live next-run time with its persisted health: `lastStatus` flips to `failing` on the first failed run and back to `ok` on the next success, surviving a server restart (#384). A job that has never run yet still appears, with only `name`/`cronExpr`/`nextRunAt` set.
+ */
+export const getSystemJobs = (
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<JobInfo[]>({ url: `/system/jobs`, method: 'GET', signal }, options);
+};
+
+export const getGetSystemJobsQueryKey = () => {
+  return [`/system/jobs`] as const;
+};
+
+export const getGetSystemJobsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemJobs>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSystemJobs>>, TError, TData>>;
+  request?: SecondParameter<typeof customInstance>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSystemJobsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSystemJobs>>> = ({ signal }) =>
+    getSystemJobs(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemJobs>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetSystemJobsQueryResult = NonNullable<Awaited<ReturnType<typeof getSystemJobs>>>;
+export type GetSystemJobsQueryError = ErrorType<ForbiddenResponse>;
+
+export function useGetSystemJobs<
+  TData = Awaited<ReturnType<typeof getSystemJobs>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSystemJobs>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSystemJobs>>,
+          TError,
+          Awaited<ReturnType<typeof getSystemJobs>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetSystemJobs<
+  TData = Awaited<ReturnType<typeof getSystemJobs>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSystemJobs>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSystemJobs>>,
+          TError,
+          Awaited<ReturnType<typeof getSystemJobs>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetSystemJobs<
+  TData = Awaited<ReturnType<typeof getSystemJobs>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSystemJobs>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every scheduled background job currently registered with the scheduler (quality, sync, digest, backup, backup-verify, retention, docexport, …) — operator. Combines the job's live next-run time with its persisted health: `lastStatus` flips to `failing` on the first failed run and back to `ok` on the next success, surviving a server restart (#384). A job that has never run yet still appears, with only `name`/`cronExpr`/`nextRunAt` set.
+ */
+
+export function useGetSystemJobs<
+  TData = Awaited<ReturnType<typeof getSystemJobs>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSystemJobs>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSystemJobsQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
