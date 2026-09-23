@@ -122,6 +122,17 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	var jobHealthTable string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); err != nil {
+		t.Fatalf("job_health table missing after migrations: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() job_health error: %v", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("job_health table should not exist after rolling back its migration (err=%v)", err)
+	}
+
 	assertGoldenSnapshotsExists(t, db, "sqlite", true)
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() golden_snapshots error: %v", err)
@@ -241,6 +252,15 @@ func TestRunMigrationsDown(t *testing.T) {
 	}
 	if !hasColumn(t, db, "sqlite", "users", "digest_cadence") {
 		t.Fatal("users.digest_cadence missing after reapply")
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); err != nil {
+		t.Fatalf("job_health table missing after reapply: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, job_health error: %v", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("job_health should not exist after rolling back its migration (err=%v)", err)
 	}
 	assertGoldenSnapshotsExists(t, db, "sqlite", true)
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
@@ -428,6 +448,17 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
+	}
+
+	var jobHealthTable string
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'job_health'`).Scan(&jobHealthTable); err != nil {
+		t.Fatalf("job_health table missing after migrations: %v", err)
+	}
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() job_health error: %v", err)
+	}
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'job_health'`).Scan(&jobHealthTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("job_health table should not exist after rolling back its migration (err=%v)", err)
 	}
 
 	assertGoldenSnapshotsExists(t, db, "postgres", true)
