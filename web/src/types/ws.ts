@@ -18,6 +18,7 @@ export type WsEventType =
   | 'quality.finding.created'
   | 'quality.findings.changed'
   | 'finding.created'
+  | 'system.job_failed'
   | 'doc.generated'
   | 'doc.ai_suggestion'
   | 'doc.lock.acquired'
@@ -43,13 +44,7 @@ export interface ServiceStatusPayload {
   lastChecked: string;
 }
 
-export type SyncPhase =
-  | 'queued'
-  | 'fetching'
-  | 'diffing'
-  | 'generating'
-  | 'done'
-  | 'error';
+export type SyncPhase = 'queued' | 'fetching' | 'diffing' | 'generating' | 'done' | 'error';
 
 export interface SyncProgressPayload {
   serviceId: string | null;
@@ -98,6 +93,10 @@ export interface FindingNotificationPayload {
   title: string;
   message: string;
 }
+
+/** Per-user system event dispatch (Dispatcher.NotifySystemEvent): a scheduled
+ * job started failing, or recovered. alertId is always "". */
+export type SystemJobFailedPayload = FindingNotificationPayload;
 
 export interface QualityFindingCreatedPayload {
   findingId: string;
@@ -169,6 +168,7 @@ export interface WsEventMap {
   'quality.finding.created': QualityFindingCreatedPayload;
   'quality.findings.changed': QualityFindingsChangedPayload;
   'finding.created': FindingNotificationPayload;
+  'system.job_failed': SystemJobFailedPayload;
   'doc.generated': DocGeneratedPayload;
   'doc.ai_suggestion': DocAiSuggestionPayload;
   'doc.lock.acquired': DocLockAcquiredPayload;

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +78,13 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.DocExport.Enabled {
 		t.Errorf("doc_export.enabled = true, want false")
+	}
+	wantGit := DocExportGitSettings{Branch: "main", Path: "docs", AuthorName: "WiseLabz", AuthorEmail: "wiselabz@localhost"}
+	if cfg.DocExport.Git != wantGit {
+		t.Errorf("doc_export.git = %+v, want %+v", cfg.DocExport.Git, wantGit)
+	}
+	if cfg.DocExport.Git.Enabled() {
+		t.Error("doc_export.git enabled by default, want disabled")
 	}
 }
 
@@ -265,6 +273,12 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		"WISELABZ_DOC_EXPORT_DIR":                  "/tmp/docexport",
 		"WISELABZ_DOC_EXPORT_CRON_EXPR":            "0 6 * * *",
 		"WISELABZ_DOC_EXPORT_ENABLED":              "true",
+		"WISELABZ_DOC_EXPORT_GIT_REMOTE":           "https://git.example.com/org/docs.git",
+		"WISELABZ_DOC_EXPORT_GIT_BRANCH":           "export",
+		"WISELABZ_DOC_EXPORT_GIT_PATH":             "lab/docs",
+		"WISELABZ_DOC_EXPORT_GIT_AUTHOR_NAME":      "Bot",
+		"WISELABZ_DOC_EXPORT_GIT_AUTHOR_EMAIL":     "bot@example.com",
+		"WISELABZ_DOC_EXPORT_GIT_TOKEN":            "tok",
 	}
 	for k, v := range env {
 		t.Setenv(k, v)
@@ -290,7 +304,10 @@ func TestLoadEnvOverrideAllFields(t *testing.T) {
 		Log:       LogSettings{Level: "debug", Format: "json"},
 		Retention: RetentionSettings{SnapshotDays: 1, DocVersionDays: 2, AlertDays: 3, SyncRunDays: 4, AuditDays: 5, HealthCheckDays: 6, CronExpr: "0 4 * * *"},
 		Backup:    BackupSettings{Dir: "/tmp/backups", CronExpr: "0 5 * * *", MaxBackups: 1, MaxAgeHours: 2, Enabled: false},
-		DocExport: DocExportSettings{Dir: "/tmp/docexport", CronExpr: "0 6 * * *", Enabled: true},
+		DocExport: DocExportSettings{Dir: "/tmp/docexport", CronExpr: "0 6 * * *", Enabled: true, Git: DocExportGitSettings{
+			Remote: "https://git.example.com/org/docs.git", Branch: "export", Path: "lab/docs",
+			AuthorName: "Bot", AuthorEmail: "bot@example.com", Token: "tok",
+		}},
 	}
 
 	got := *cfg
@@ -443,6 +460,78 @@ func TestRefreshTokenTTLDuration(t *testing.T) {
 			a := AuthSettings{RefreshTokenTTL: tt.ttl}
 			if got := a.RefreshTokenTTLDuration(); got != tt.expected {
 				t.Errorf("RefreshTokenTTLDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestLoadEnvOverrideDocExportGitSSH covers the SSH-only env keys, which
+// can't share TestLoadEnvOverrideAllFields with the (mutually exclusive) token.
+func TestLoadEnvOverrideDocExportGitSSH(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)          //nolint:errcheck
+	defer os.Chdir(oldDir) //nolint:errcheck
+
+	t.Setenv("WISELABZ_DOC_EXPORT_GIT_REMOTE", "ssh://git@git.example.com/org/docs.git")
+	t.Setenv("WISELABZ_DOC_EXPORT_GIT_SSH_KEY_PATH", "/keys/id_ed25519")
+	t.Setenv("WISELABZ_DOC_EXPORT_GIT_SSH_KNOWN_HOSTS", "/keys/known_hosts")
+	t.Setenv("WISELABZ_DOC_EXPORT_GIT_INSECURE_SKIP_HOST_KEY", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	g := cfg.DocExport.Git
+	if g.SSHKeyPath != "/keys/id_ed25519" || g.SSHKnownHosts != "/keys/known_hosts" || !g.InsecureSkipHostKey {
+		t.Errorf("doc_export.git ssh settings = %+v", g)
+	}
+}
+
+func TestDocExportGitValidate(t *testing.T) {
+	base := func(remote string) DocExportGitSettings {
+		return DocExportGitSettings{Remote: remote, Branch: "main", Path: "docs", AuthorName: "WiseLabz", AuthorEmail: "wiselabz@localhost"}
+	}
+	tests := []struct {
+		name    string
+		mutate  func(g *DocExportGitSettings)
+		remote  string
+		wantErr bool
+	}{
+		{name: "disabled when remote empty", remote: "", mutate: func(g *DocExportGitSettings) { g.Branch = ""; g.Token = "x"; g.SSHKeyPath = "k" }},
+		{name: "https without auth", remote: "https://h/o/r.git"},
+		{name: "https with token", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Token = "s3cr3t-tok" }},
+		{name: "http rejected", remote: "http://h/o/r.git", wantErr: true},
+		{name: "file rejected", remote: "file:///tmp/r.git", wantErr: true},
+		{name: "git protocol rejected", remote: "git://h/o/r.git", wantErr: true},
+		{name: "bare path rejected", remote: "/srv/r.git", wantErr: true},
+		{name: "ssh with key and known_hosts", remote: "ssh://git@h/o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKeyPath = "k"; g.SSHKnownHosts = "kh" }},
+		{name: "scp-style ssh", remote: "git@h:o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKeyPath = "k"; g.SSHKnownHosts = "kh" }},
+		{name: "ssh insecure without known_hosts", remote: "ssh://git@h/o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKeyPath = "k"; g.InsecureSkipHostKey = true }},
+		{name: "ssh missing known_hosts", remote: "ssh://git@h/o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKeyPath = "k" }, wantErr: true},
+		{name: "ssh missing key", remote: "ssh://git@h/o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKnownHosts = "kh" }, wantErr: true},
+		{name: "ssh with token", remote: "ssh://git@h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Token = "s3cr3t-tok"; g.SSHKeyPath = "k"; g.SSHKnownHosts = "kh" }, wantErr: true},
+		{name: "https with token and ssh key", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Token = "s3cr3t-tok"; g.SSHKeyPath = "k" }, wantErr: true},
+		{name: "https with ssh key", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.SSHKeyPath = "k" }, wantErr: true},
+		{name: "https with insecure flag", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.InsecureSkipHostKey = true }, wantErr: true},
+		{name: "empty branch", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Branch = "" }, wantErr: true},
+		{name: "absolute path", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Path = "/etc" }, wantErr: true},
+		{name: "escaping path", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Path = "../x" }, wantErr: true},
+		{name: "credentials in remote", remote: "https://bot:pw@h/o/r.git", wantErr: true},
+		{name: "empty path", remote: "https://h/o/r.git", mutate: func(g *DocExportGitSettings) { g.Path = "" }, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := base(tt.remote)
+			if tt.mutate != nil {
+				tt.mutate(&g)
+			}
+			err := g.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && g.Token != "" && strings.Contains(err.Error(), g.Token) {
+				t.Errorf("error leaks token: %v", err)
 			}
 		})
 	}

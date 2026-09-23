@@ -14,7 +14,7 @@ export interface Notification {
    * @nullable
    */
   alertId?: string | null;
-  /** e.g. alert.created */
+  /** e.g. alert.created, finding.created, system.job_failed, digest.summary */
   eventType: string;
   title: string;
   message: string;

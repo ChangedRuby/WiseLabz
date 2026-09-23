@@ -10,7 +10,7 @@ import type { NotificationChannelType } from './notificationChannelType';
 import type { Severity } from './severity';
 
 export interface NotificationRoute {
-  /** e.g. alert.created, change.detected, sync.complete */
+  /** Event type the route applies to. Emitted today: alert.created, finding.created, system.job_failed (scheduled job failing/recovered). */
   eventType: string;
   channel: NotificationChannelType;
   enabled: boolean;

@@ -162,6 +162,35 @@ func (d *Dispatcher) NotifyFindingCreated(ctx context.Context, findingID, title,
 // notification/WS payload has no finding deep-link yet — add one (a real
 // findingId column) if the UI needs to navigate straight to it.
 func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channelCfg, routes []routeCfg, severity, connectorID, title, message string) {
+	d.fanOut(users, channels, routes, "finding.created", severity, connectorID, title, message)
+}
+
+// EventSystemJobFailed is sent when a scheduled background job starts failing
+// (severity "warning") and again when it recovers (severity "info").
+const EventSystemJobFailed = "system.job_failed"
+
+// NotifySystemEvent dispatches a system-level event (not tied to an alert,
+// finding or connector, e.g. EventSystemJobFailed) to every active user,
+// fanning out like NotifyFindingCreated and honouring per-event routing.
+func (d *Dispatcher) NotifySystemEvent(ctx context.Context, eventType, severity, title, message string) {
+	users, _, err := d.store.ListUsers(ctx, 0, maxNotifyUsers)
+	if err != nil {
+		slog.Error("failed to list users for system notification", "error", err, "eventType", eventType)
+		return
+	}
+	channels := d.loadChannels(ctx)
+	routes := d.loadRouting(ctx)
+	d.inflight.Add(1)
+	go func() {
+		defer d.inflight.Done()
+		d.fanOut(users, channels, routes, eventType, severity, "", title, message)
+	}()
+}
+
+// fanOut sends one alert-less event to every active user, bounded by
+// fanoutSem. Users with a digest cadence get it in-app only; external
+// channels see it in their digest.
+func (d *Dispatcher) fanOut(users []store.User, channels []channelCfg, routes []routeCfg, eventType, severity, connectorID, title, message string) {
 	for _, u := range users {
 		if u.Disabled {
 			continue
@@ -171,7 +200,7 @@ func (d *Dispatcher) notifyFindingCreated(users []store.User, channels []channel
 		go func(userID string, skipExternal bool) {
 			defer d.inflight.Done()
 			defer func() { <-d.fanoutSem }()
-			d.notifyAlert(context.Background(), channels, routes, "", userID, "finding.created", severity, connectorID, title, message, skipExternal)
+			d.notifyAlert(context.Background(), channels, routes, "", userID, eventType, severity, connectorID, title, message, skipExternal)
 		}(u.ID, u.DigestCadence != "off")
 	}
 }

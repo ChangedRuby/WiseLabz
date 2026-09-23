@@ -18,6 +18,13 @@ import (
 	_ "github.com/WiseLabz/wiselabz/internal/connector/all"
 )
 
+// Doc IDs are UUIDs in production; the export filename keeps their first 8
+// hex characters, which is what the safe prune matches on.
+const (
+	id1 = "0000000a-0000-4000-8000-000000000001"
+	id2 = "0000000b-0000-4000-8000-000000000002"
+)
+
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
@@ -53,10 +60,10 @@ func readFile(t *testing.T, path string) string {
 func TestExportAllWritesExpectedFilesAndContent(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-1", Title: "Runbook", Kind: "service", Content: "# Runbook\n\nsteps"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Kind: "service", Content: "# Runbook\n\nsteps"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-2", Title: "Lab Topology", Kind: "lab", Content: "# Lab Topology\n\ngraph"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id2, Title: "Lab Topology", Kind: "lab", Content: "# Lab Topology\n\ngraph"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
 
@@ -83,8 +90,8 @@ func TestExportAllWritesExpectedFilesAndContent(t *testing.T) {
 	}
 
 	wantContent := map[string]string{
-		"runbook-doc-1.md":      "# Runbook\n\nsteps",
-		"lab-topology-doc-2.md": "# Lab Topology\n\ngraph",
+		"runbook-0000000a.md":      "# Runbook\n\nsteps",
+		"lab-topology-0000000b.md": "# Lab Topology\n\ngraph",
 	}
 	for name, want := range wantContent {
 		got := readFile(t, filepath.Join(dir, name))
@@ -97,7 +104,7 @@ func TestExportAllWritesExpectedFilesAndContent(t *testing.T) {
 func TestExportAllPrunesStaleFilesOnRerun(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-1", Title: "Runbook", Content: "v1"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "v1"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
 
@@ -109,10 +116,10 @@ func TestExportAllPrunesStaleFilesOnRerun(t *testing.T) {
 
 	// Delete the doc and add a different one; the old doc's file should be
 	// removed on the next run instead of lingering as a stale copy.
-	if err := s.DeleteDoc(ctx, "doc-1"); err != nil {
+	if err := s.DeleteDoc(ctx, id1); err != nil {
 		t.Fatalf("delete doc: %v", err)
 	}
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-2", Title: "New Doc", Content: "v2"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id2, Title: "New Doc", Content: "v2"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
 
@@ -120,16 +127,16 @@ func TestExportAllPrunesStaleFilesOnRerun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ExportAll: %v", err)
 	}
-	if len(res.Removed) != 1 || res.Removed[0] != "runbook-doc-1.md" {
-		t.Fatalf("Removed = %v, want [runbook-doc-1.md]", res.Removed)
+	if len(res.Removed) != 1 || res.Removed[0] != "runbook-0000000a.md" {
+		t.Fatalf("Removed = %v, want [runbook-0000000a.md]", res.Removed)
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read dir: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "new-doc-doc-2.md" {
-		t.Fatalf("dir entries = %v, want [new-doc-doc-2.md]", entries)
+	if len(entries) != 1 || entries[0].Name() != "new-doc-0000000b.md" {
+		t.Fatalf("dir entries = %v, want [new-doc-0000000b.md]", entries)
 	}
 }
 
@@ -145,7 +152,7 @@ func TestExportAllEmptyDirName(t *testing.T) {
 func TestRunExportOnceCreatesDirectory(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-1", Title: "Runbook", Content: "steps"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "steps"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
 
@@ -180,7 +187,7 @@ func TestDocExportDefaultCronExprIsValid(t *testing.T) {
 func TestScheduledExportRunsAndFires(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "doc-1", Title: "Runbook", Content: "steps"}); err != nil {
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "steps"}); err != nil {
 		t.Fatalf("create doc: %v", err)
 	}
 
@@ -213,5 +220,60 @@ func TestScheduledExportRunsAndFires(t *testing.T) {
 
 	if len(entries) != 1 {
 		t.Fatalf("dir has %d entries after scheduled run, want 1", len(entries))
+	}
+}
+
+func TestIsGeneratedName(t *testing.T) {
+	tests := map[string]bool{
+		"runbook-0000000a.md":                     true,
+		"lab-topology-deadbeef.md":                true,
+		"untitled-12345678.md":                    true,
+		"0000000a-0000-4000-8000-000000000001.md": true, // collision fallback: <id>.md
+		"README.md":                               false,
+		"readme.md":                               false,
+		"notes.md":                                false,
+		"runbook-0000000a.md.bak":                 false,
+		"runbook-0000000A.md":                     false,
+		"runbook-000000.md":                       false,
+		"a-b-c-0000000a.md":                       true,
+		"Runbook-0000000a.md":                     false,
+		".hidden-0000000a.md":                     false,
+		"runbook-0000000a.txt":                    false,
+	}
+	for name, want := range tests {
+		if got := docexport.IsGeneratedName(name); got != want {
+			t.Errorf("IsGeneratedName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestExportAllKeepsOperatorFiles covers the safe prune: only files matching
+// the generated <slug>-<8 hex>.md pattern are removed, so an operator's
+// README.md (or any other hand-written file) survives every run.
+func TestExportAllKeepsOperatorFiles(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "v1"}); err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	dir := t.TempDir()
+	for _, name := range []string{"README.md", "notes.md", "old-page-deadbeef.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("keep?"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res, err := docexport.NewExporter(s).ExportAll(ctx, dir)
+	if err != nil {
+		t.Fatalf("ExportAll: %v", err)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != "old-page-deadbeef.md" {
+		t.Fatalf("Removed = %v, want [old-page-deadbeef.md]", res.Removed)
+	}
+	for _, name := range []string{"README.md", "notes.md", "runbook-0000000a.md"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s should survive: %v", name, err)
+		}
 	}
 }
