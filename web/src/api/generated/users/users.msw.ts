@@ -92,7 +92,8 @@ export const getPatchUsersUserIdResponseMock = (
 
 export const getGetUsersMockHandler = (
   overrideResponse?:
-    User[] | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<User[]> | User[]),
+    | User[]
+    | ((info: Parameters<Parameters<typeof http.get>[1]>[0]) => Promise<User[]> | User[]),
   options?: RequestHandlerOptions
 ) => {
   return http.get(
@@ -113,7 +114,8 @@ export const getGetUsersMockHandler = (
 
 export const getPostUsersMockHandler = (
   overrideResponse?:
-    User | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<User> | User),
+    | User
+    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<User> | User),
   options?: RequestHandlerOptions
 ) => {
   return http.post(
@@ -134,7 +136,8 @@ export const getPostUsersMockHandler = (
 
 export const getPatchUsersUserIdMockHandler = (
   overrideResponse?:
-    User | ((info: Parameters<Parameters<typeof http.patch>[1]>[0]) => Promise<User> | User),
+    | User
+    | ((info: Parameters<Parameters<typeof http.patch>[1]>[0]) => Promise<User> | User),
   options?: RequestHandlerOptions
 ) => {
   return http.patch(
@@ -155,7 +158,8 @@ export const getPatchUsersUserIdMockHandler = (
 
 export const getDeleteUsersUserIdMockHandler = (
   overrideResponse?:
-    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(
@@ -173,7 +177,8 @@ export const getDeleteUsersUserIdMockHandler = (
 
 export const getPostUsersUserIdResetPasswordMockHandler = (
   overrideResponse?:
-    void | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
+    | void
+    | ((info: Parameters<Parameters<typeof http.post>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.post(

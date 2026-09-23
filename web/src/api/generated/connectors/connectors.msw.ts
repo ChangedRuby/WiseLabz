@@ -646,18 +646,16 @@ export const getPutConnectorsConnectorIdEnabledResponseMock = (
 });
 
 export const getGetConnectorsConnectorIdMaintenanceWindowResponseMock =
-  (): MaintenanceWindow | null =>
-    faker.helpers.arrayElement([
-      {
-        id: faker.string.alpha({ length: { min: 10, max: 20 } }),
-        connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
-        startsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
-        endsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
-        createdBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
-        createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
-      },
-      null,
-    ]);
+  (): MaintenanceWindow | null => ({
+    ...{
+      id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      startsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      endsAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+      createdBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    },
+  });
 
 export const getPostConnectorsConnectorIdMaintenanceWindowResponseMock = (
   overrideResponse: Partial<Extract<MaintenanceWindow, object>> = {}
@@ -678,16 +676,14 @@ export const getDeleteConnectorsConnectorIdMaintenanceWindowResponseMock = (
   ...overrideResponse,
 });
 
-export const getGetConnectorsConnectorIdGoldenSnapshotResponseMock = (): GoldenSnapshot | null =>
-  faker.helpers.arrayElement([
-    {
-      connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
-      snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
-      pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
-      pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
-    },
-    null,
-  ]);
+export const getGetConnectorsConnectorIdGoldenSnapshotResponseMock = (): GoldenSnapshot | null => ({
+  ...{
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    snapshotId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    pinnedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  },
+});
 
 export const getPostConnectorsConnectorIdGoldenSnapshotResponseMock = (
   overrideResponse: Partial<Extract<GoldenSnapshot, object>> = {}
@@ -848,7 +844,8 @@ export const getPutConnectorsConnectorIdMockHandler = (
 
 export const getDeleteConnectorsConnectorIdMockHandler = (
   overrideResponse?:
-    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(
@@ -1490,7 +1487,8 @@ export const getPutConnectorsConnectorIdPermissionsUserIdMockHandler = (
 
 export const getDeleteConnectorsConnectorIdPermissionsUserIdMockHandler = (
   overrideResponse?:
-    void | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
+    | void
+    | ((info: Parameters<Parameters<typeof http.delete>[1]>[0]) => Promise<void> | void),
   options?: RequestHandlerOptions
 ) => {
   return http.delete(
