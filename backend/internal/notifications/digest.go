@@ -45,12 +45,14 @@ func digestDue(cadence, lastSentAt string, localHour int, now time.Time) bool {
 // RunDigestSweep runs one pass of the hourly digest job: for every user with
 // digest_cadence != "off" whose local time is in the send window, it collects
 // notifications accumulated since their last digest, sends a single summary
-// through their configured channels, and advances digest_last_sent_at.
-func (d *Dispatcher) RunDigestSweep(ctx context.Context, now time.Time, logger *slog.Logger) {
+// through their configured channels, and advances digest_last_sent_at. Only
+// the sweep-level error (listing users) is returned for job health (#384)
+// purposes — a single user's timezone or delivery failure is logged and
+// skipped rather than flagging the whole job as failing.
+func (d *Dispatcher) RunDigestSweep(ctx context.Context, now time.Time, logger *slog.Logger) error {
 	users, _, err := d.store.ListUsers(ctx, 0, 10000)
 	if err != nil {
-		logger.Error("digest sweep: failed to list users", "error", err)
-		return
+		return fmt.Errorf("digest sweep: list users: %w", err)
 	}
 
 	channels := d.loadChannels(ctx)
@@ -91,6 +93,7 @@ func (d *Dispatcher) RunDigestSweep(ctx context.Context, now time.Time, logger *
 			logger.Error("digest sweep: failed to advance watermark", "userID", u.ID, "error", err)
 		}
 	}
+	return nil
 }
 
 // formatDigest builds a plain-text summary: count by severity/event type,

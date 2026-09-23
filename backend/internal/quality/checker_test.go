@@ -285,7 +285,9 @@ func TestRunStaleSweepOnceCoversConnectorsWithNoRecentSync(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	RunStaleSweepOnce(ctx, s, nil, nil, logger)
+	if err := RunStaleSweepOnce(ctx, s, nil, nil, logger); err != nil {
+		t.Fatalf("RunStaleSweepOnce: %v", err)
+	}
 
 	if got := findings(t, s, connector.ID, "stale", "open"); len(got) != 1 {
 		t.Fatalf("open stale findings = %d, want 1", len(got))

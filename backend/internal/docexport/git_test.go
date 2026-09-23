@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 
 	"github.com/WiseLabz/wiselabz/internal/docexport"
-	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
@@ -28,31 +26,11 @@ import (
 // git binary.
 func init() { client.InstallProtocol("file", server.DefaultServer) }
 
-type notifyCall struct{ eventType, severity, title string }
-
-type fakeNotifier struct {
-	mu    sync.Mutex
-	calls []notifyCall
-}
-
-func (f *fakeNotifier) NotifySystemEvent(_ context.Context, eventType, severity, title, _ string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, notifyCall{eventType, severity, title})
-}
-
-func (f *fakeNotifier) snapshot() []notifyCall {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]notifyCall(nil), f.calls...)
-}
-
 type gitFixture struct {
 	t        *testing.T
 	ctx      context.Context
 	store    *store.Store
 	exporter *docexport.Exporter
-	notifier *fakeNotifier
 	bare     string
 	remote   string
 	workdir  string
@@ -66,14 +44,13 @@ func newGitFixture(t *testing.T) *gitFixture {
 		t.Fatalf("init bare remote: %v", err)
 	}
 	f := &gitFixture{
-		t:        t,
-		ctx:      context.Background(),
-		store:    newTestStore(t),
-		notifier: &fakeNotifier{},
-		bare:     bare,
-		remote:   "file://" + bare,
-		workdir:  filepath.Join(t.TempDir(), "clone"),
-		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		t:       t,
+		ctx:     context.Background(),
+		store:   newTestStore(t),
+		bare:    bare,
+		remote:  "file://" + bare,
+		workdir: filepath.Join(t.TempDir(), "clone"),
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	f.exporter = docexport.NewExporter(f.store)
 	if err := f.exporter.ConfigureGit(docexport.GitOptions{
@@ -82,11 +59,17 @@ func newGitFixture(t *testing.T) *gitFixture {
 	}); err != nil {
 		t.Fatalf("ConfigureGit: %v", err)
 	}
-	f.exporter.SetNotifier(f.notifier)
 	return f
 }
 
-func (f *gitFixture) run() { docexport.RunExportOnce(f.ctx, f.exporter, f.workdir, f.logger) }
+// run runs one export pass and returns whatever error RunExportOnce
+// reported. Job failure/recovery notifications are no longer docexport's
+// concern (#384 moved that to the scheduler's centralized health
+// tracking — see internal/scheduler), so tests here only assert on this
+// return value.
+func (f *gitFixture) run() error {
+	return docexport.RunExportOnce(f.ctx, f.exporter, f.workdir, f.logger)
+}
 
 func (f *gitFixture) createDoc(id, title, content string) {
 	f.t.Helper()
@@ -181,7 +164,9 @@ func TestGitExportLifecycle(t *testing.T) {
 	f.createDoc(id2, "Lab Topology", "# Topology")
 
 	// First run against an empty remote creates the branch.
-	f.run()
+	if err := f.run(); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
 	if n := f.commitCount(); n != 1 {
 		t.Fatalf("after first run: %d commits, want 1", n)
 	}
@@ -204,7 +189,9 @@ func TestGitExportLifecycle(t *testing.T) {
 	}
 
 	// No doc changes: no new commit.
-	f.run()
+	if err := f.run(); err != nil {
+		t.Fatalf("unchanged run: %v", err)
+	}
 	if n := f.commitCount(); n != 1 {
 		t.Fatalf("after unchanged run: %d commits, want 1", n)
 	}
@@ -213,7 +200,9 @@ func TestGitExportLifecycle(t *testing.T) {
 	if err := f.store.UpdateDoc(f.ctx, id1, "# Runbook v2", nil); err != nil {
 		t.Fatal(err)
 	}
-	f.run()
+	if err := f.run(); err != nil {
+		t.Fatalf("edit run: %v", err)
+	}
 	if n := f.commitCount(); n != 2 {
 		t.Fatalf("after edit: %d commits, want 2", n)
 	}
@@ -232,7 +221,9 @@ func TestGitExportLifecycle(t *testing.T) {
 	if err := f.store.DeleteDoc(f.ctx, id2); err != nil {
 		t.Fatal(err)
 	}
-	f.run()
+	if err := f.run(); err != nil {
+		t.Fatalf("delete run: %v", err)
+	}
 	if n := f.commitCount(); n != 5 {
 		t.Fatalf("after delete: %d commits, want 5", n)
 	}
@@ -244,16 +235,19 @@ func TestGitExportLifecycle(t *testing.T) {
 	if strings.Join(keys(got), ",") != strings.Join(wantKeys, ",") {
 		t.Fatalf("remote files = %v, want %v", keys(got), wantKeys)
 	}
-
-	if calls := f.notifier.snapshot(); len(calls) != 0 {
-		t.Errorf("unexpected notifications: %+v", calls)
-	}
 }
 
-func TestGitExportPushRejectionNotifiesOnTransitions(t *testing.T) {
+// TestGitExportPushRejectionReturnsError verifies RunExportOnce reports an
+// error on a rejected (non-fast-forward) push, and nil again once the next
+// run succeeds. Job health/notification transitions on these ok<->failing
+// changes are the scheduler's job now (#384, see internal/scheduler), not
+// docexport's, so this only asserts on RunExportOnce's return value.
+func TestGitExportPushRejectionReturnsError(t *testing.T) {
 	f := newGitFixture(t)
 	f.createDoc(id1, "Runbook", "v1")
-	f.run() // seed the remote
+	if err := f.run(); err != nil { // seed the remote
+		t.Fatalf("seed run: %v", err)
+	}
 	if n := f.commitCount(); n != 1 {
 		t.Fatalf("seed: %d commits, want 1", n)
 	}
@@ -269,23 +263,18 @@ func TestGitExportPushRejectionNotifiesOnTransitions(t *testing.T) {
 		if err := f.store.UpdateDoc(f.ctx, id1, content, nil); err != nil {
 			t.Fatal(err)
 		}
-		f.run()
+		if err := f.run(); err == nil {
+			t.Fatalf("run %d: want an error from the rejected push, got nil", i)
+		}
 		if msg := f.head().Message; msg != "external edit" {
 			t.Fatalf("run %d: remote head = %q, want the external commit (push must not be forced)", i, msg)
 		}
 	}
-	calls := f.notifier.snapshot()
-	if len(calls) != 1 || calls[0] != (notifyCall{"system.job_failed", "warning", "Doc export failing"}) {
-		t.Fatalf("after two failures: notifications = %+v, want exactly one warning", calls)
-	}
 
-	// Next run succeeds on top of the external commits and notifies recovery once.
+	// Next run succeeds on top of the external commits.
 	docexport.SetBeforePushForTest(f.exporter, nil)
-	f.run()
-	f.run()
-	calls = f.notifier.snapshot()
-	if len(calls) != 2 || calls[1] != (notifyCall{"system.job_failed", "info", "Doc export recovered"}) {
-		t.Fatalf("after recovery: notifications = %+v, want warning then one info", calls)
+	if err := f.run(); err != nil {
+		t.Fatalf("recovery run: %v", err)
 	}
 	got := f.files()
 	if got["docs/runbook-0000000a.md"] != "v3" || got["external.txt"] != "xx" {
@@ -302,9 +291,8 @@ func TestGitExportRefusesForeignDirectory(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(f.workdir, "important.txt"), []byte("mine"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		f.run()
-		if calls := f.notifier.snapshot(); len(calls) != 1 || calls[0].severity != "warning" {
-			t.Fatalf("notifications = %+v, want one warning", calls)
+		if err := f.run(); err == nil {
+			t.Fatal("want an error refusing the foreign directory, got nil")
 		}
 		if data, err := os.ReadFile(filepath.Join(f.workdir, "important.txt")); err != nil || string(data) != "mine" {
 			t.Fatalf("operator file touched: %q, %v", data, err)
@@ -324,22 +312,11 @@ func TestGitExportRefusesForeignDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.createDoc(id1, "Runbook", "v1")
-		f.run()
-		if calls := f.notifier.snapshot(); len(calls) != 1 || calls[0].severity != "warning" {
-			t.Fatalf("notifications = %+v, want one warning", calls)
+		if err := f.run(); err == nil {
+			t.Fatal("want an error refusing the foreign clone, got nil")
 		}
 		if _, err := os.Stat(filepath.Join(f.workdir, "docs")); !os.IsNotExist(err) {
 			t.Fatalf("export ran into a foreign clone: %v", err)
 		}
 	})
-}
-
-// The exporter talks to the real dispatcher through Notifier, and both
-// packages must agree on the event name.
-var _ docexport.Notifier = (*notifications.Dispatcher)(nil)
-
-func TestEventJobFailedMatchesDispatcher(t *testing.T) {
-	if docexport.EventJobFailed != notifications.EventSystemJobFailed {
-		t.Fatalf("docexport.EventJobFailed = %q, notifications.EventSystemJobFailed = %q", docexport.EventJobFailed, notifications.EventSystemJobFailed)
-	}
 }

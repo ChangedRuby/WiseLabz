@@ -38,7 +38,7 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 	}
 	e := NewEngine(s, nil, nil, nil, "")
 	done := make(chan struct{})
-	go func() { defer close(done); e.RunDueSyncs(context.Background(), slog.Default()) }()
+	go func() { defer close(done); _ = e.RunDueSyncs(context.Background(), slog.Default()) }()
 	select {
 	case ctx := <-c.entered:
 		deadline, ok := ctx.Deadline()
@@ -71,7 +71,7 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Another engine cannot claim the same scheduled run while its lease is live.
-	NewEngine(s, nil, nil, nil, "").RunDueSyncs(context.Background(), slog.Default())
+	_ = NewEngine(s, nil, nil, nil, "").RunDueSyncs(context.Background(), slog.Default())
 	close(c.release)
 	select {
 	case <-done:

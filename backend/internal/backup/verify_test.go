@@ -116,7 +116,9 @@ func TestRunVerifyOnceRecordsResult(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	backup.RunVerifyOnce(ctx, tmpDir, logger)
+	if err := backup.RunVerifyOnce(ctx, tmpDir, logger); err != nil {
+		t.Fatalf("RunVerifyOnce: %v", err)
+	}
 
 	results, err := backup.ListVerifications(tmpDir, 0)
 	if err != nil {
@@ -133,8 +135,11 @@ func TestRunVerifyOnceRecordsResult(t *testing.T) {
 func TestRunVerifyOnceNoBundles(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	// Must not panic when the directory has no bundles yet.
-	backup.RunVerifyOnce(context.Background(), tmpDir, logger)
+	// Must not panic when the directory has no bundles yet, and must report
+	// the error (job health, #384) rather than swallowing it.
+	if err := backup.RunVerifyOnce(context.Background(), tmpDir, logger); err == nil {
+		t.Fatal("RunVerifyOnce() with no bundles: want an error, got nil")
+	}
 
 	results, err := backup.ListVerifications(tmpDir, 0)
 	if err != nil {

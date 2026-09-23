@@ -177,8 +177,8 @@ func (h *Handler) reregisterRetentionJob(rs store.RetentionSettings) {
 		h.Scheduler.RemoveJob(h.RetentionJobID)
 	}
 
-	id, err := h.Scheduler.AddJob("retention", rs.CronExpr, func(jobCtx context.Context) {
-		retention.RunCleanupOnce(jobCtx, h.Store, rs, slog.Default())
+	id, err := h.Scheduler.AddJob("retention", rs.CronExpr, func(jobCtx context.Context) error {
+		return retention.RunCleanupOnce(jobCtx, h.Store, rs, slog.Default())
 	})
 	if err != nil {
 		// err wraps rs.CronExpr (user-controlled via PUT /settings/retention);

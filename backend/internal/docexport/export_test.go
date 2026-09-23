@@ -158,7 +158,9 @@ func TestRunExportOnceCreatesDirectory(t *testing.T) {
 
 	dir := filepath.Join(t.TempDir(), "nested", "export")
 	e := docexport.NewExporter(s)
-	docexport.RunExportOnce(ctx, e, dir, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err := docexport.RunExportOnce(ctx, e, dir, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))); err != nil {
+		t.Fatalf("RunExportOnce() error: %v", err)
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -173,7 +175,7 @@ func TestDocExportDefaultCronExprIsValid(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	r := scheduler.New(logger)
 
-	if _, err := r.AddJob("docexport", docexport.DefaultCronExpr, func(_ context.Context) {}); err != nil {
+	if _, err := r.AddJob("docexport", docexport.DefaultCronExpr, func(_ context.Context) error { return nil }); err != nil {
 		t.Fatalf("AddJob(docexport.DefaultCronExpr) error: %v", err)
 	}
 	if r.EntryCount() != 1 {
@@ -196,8 +198,8 @@ func TestScheduledExportRunsAndFires(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	r := scheduler.New(logger)
 
-	if _, err := r.AddJob("docexport", "*/1 * * * * *", func(jobCtx context.Context) {
-		docexport.RunExportOnce(jobCtx, e, dir, logger)
+	if _, err := r.AddJob("docexport", "*/1 * * * * *", func(jobCtx context.Context) error {
+		return docexport.RunExportOnce(jobCtx, e, dir, logger)
 	}); err != nil {
 		t.Fatalf("AddJob() error: %v", err)
 	}

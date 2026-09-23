@@ -1260,7 +1260,9 @@ func TestRunDigestSweep_DailyDigest(t *testing.T) {
 
 	// Run digest sweep with now at UTC hour 8 (eligible hour)
 	d := NewDispatcher(s, nil)
-	d.RunDigestSweep(ctx, now, logger)
+	if err := d.RunDigestSweep(ctx, now, logger); err != nil {
+		t.Fatalf("RunDigestSweep: %v", err)
+	}
 
 	// Check: exactly one digest.summary notification was created
 	notifs, _, err := s.ListNotifications(ctx, u.ID, false, 0, 10)

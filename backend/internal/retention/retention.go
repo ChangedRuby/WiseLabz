@@ -6,6 +6,8 @@ package retention
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -25,16 +27,20 @@ const (
 // RunCleanupOnce performs one cleanup pass: for every category whose *Days
 // config value is > 0, deletes rows older than the cutoff. A category with
 // Days <= 0 is skipped (retention disabled). Errors in one category are
-// logged and do not stop the others from running.
-func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSettings, logger *slog.Logger) {
+// logged and do not stop the others from running, but are joined into the
+// returned error so the scheduler's job health (#384) reflects a partial
+// cleanup pass.
+func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSettings, logger *slog.Logger) error {
 	cutoff := func(days int) string {
 		return time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
 	}
+	var errs []error
 
 	if cfg.SnapshotDays > 0 {
 		n, err := s.DeleteOldSnapshots(ctx, cutoff(cfg.SnapshotDays))
 		if err != nil {
 			logger.Error("delete old snapshots", "error", err)
+			errs = append(errs, fmt.Errorf("delete old snapshots: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old snapshots", "count", n)
 		}
@@ -44,6 +50,7 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := s.DeleteOldDocVersions(ctx, cutoff(cfg.DocVersionDays))
 		if err != nil {
 			logger.Error("delete old doc versions", "error", err)
+			errs = append(errs, fmt.Errorf("delete old doc versions: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old doc versions", "count", n)
 		}
@@ -53,6 +60,7 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := s.DeleteOldAlerts(ctx, cutoff(cfg.AlertDays))
 		if err != nil {
 			logger.Error("delete old alerts", "error", err)
+			errs = append(errs, fmt.Errorf("delete old alerts: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old alerts", "count", n)
 		}
@@ -62,6 +70,7 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := s.DeleteOldSyncRuns(ctx, cutoff(cfg.SyncRunDays))
 		if err != nil {
 			logger.Error("delete old sync runs", "error", err)
+			errs = append(errs, fmt.Errorf("delete old sync runs: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old sync runs", "count", n)
 		}
@@ -71,6 +80,7 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := s.DeleteOldAuditRecords(ctx, cutoff(cfg.AuditDays))
 		if err != nil {
 			logger.Error("delete old audit records", "error", err)
+			errs = append(errs, fmt.Errorf("delete old audit records: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old audit records", "count", n)
 		}
@@ -80,6 +90,7 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := s.DeleteOldHealthChecks(ctx, cutoff(cfg.HealthCheckDays))
 		if err != nil {
 			logger.Error("delete old health checks", "error", err)
+			errs = append(errs, fmt.Errorf("delete old health checks: %w", err))
 		} else if n > 0 {
 			logger.Info("Purged old health checks", "count", n)
 		}
@@ -102,8 +113,11 @@ func RunCleanupOnce(ctx context.Context, s *store.Store, cfg store.RetentionSett
 		n, err := f.delete(ctx, cutoff(f.days))
 		if err != nil {
 			logger.Error("delete old "+f.name, "error", err)
+			errs = append(errs, fmt.Errorf("delete old %s: %w", f.name, err))
 		} else if n > 0 {
 			logger.Info("Purged old "+f.name, "count", n)
 		}
 	}
+
+	return errors.Join(errs...)
 }
