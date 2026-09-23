@@ -38,11 +38,13 @@ func TestRedacted(t *testing.T) {
 	c.DB.DSN = "postgres://wl:hunter2@db:5432/wl"
 	c.AI.APIKey = "sk-ai"
 	c.AI.EmbedAPIKey = "sk-embed"
+	c.DocExport.Git.Token = "ghp-doc-token"
+	c.DocExport.Git.Remote = "https://bot:remote-pass@git.example.com/o/r.git"
 	c.Auth.OIDC = []OIDCProvider{{ID: "x", ClientSecret: "oidc-secret"}}
 
 	r := c.Redacted()
 	out, _ := json.Marshal(r)
-	for _, secret := range []string{"hunter2", "sk-ai", "sk-embed", "oidc-secret", c.Auth.Secret, c.Encryption.Key} {
+	for _, secret := range []string{"hunter2", "sk-ai", "sk-embed", "oidc-secret", "ghp-doc-token", "remote-pass", c.Auth.Secret, c.Encryption.Key} {
 		if strings.Contains(string(out), secret) {
 			t.Errorf("redacted output leaks %q", secret)
 		}
@@ -71,16 +73,18 @@ func TestRedactDSN(t *testing.T) {
 	}
 }
 
-// TestEveryKeyEnvOverridable ensures each scalar Config field can be set via
+// TestEveryKeyEnvOverridable ensures each scalar Config field (including
+// fields of nested sections such as doc_export.git) can be set via
 // WISELABZ_<SECTION>_<KEY>, so a new field can't silently miss its BindEnv.
 func TestEveryKeyEnvOverridable(t *testing.T) {
-	rt := reflect.TypeOf(Config{})
-	for i := 0; i < rt.NumField(); i++ {
-		sec := rt.Field(i)
-		for j := 0; j < sec.Type.NumField(); j++ {
-			f := sec.Type.Field(j)
-			name := sec.Tag.Get("mapstructure") + "_" + f.Tag.Get("mapstructure")
+	var setEnv func(prefix string, rt reflect.Type)
+	setEnv = func(prefix string, rt reflect.Type) {
+		for j := 0; j < rt.NumField(); j++ {
+			f := rt.Field(j)
+			name := prefix + "_" + f.Tag.Get("mapstructure")
 			switch {
+			case f.Type.Kind() == reflect.Struct:
+				setEnv(name, f.Type)
 			case f.Type.Kind() == reflect.Slice: // OIDC providers: file-only
 			case f.Type.Kind() == reflect.Int:
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "7")
@@ -93,21 +97,40 @@ func TestEveryKeyEnvOverridable(t *testing.T) {
 			}
 		}
 	}
+	rt := reflect.TypeOf(Config{})
+	for i := 0; i < rt.NumField(); i++ {
+		sec := rt.Field(i)
+		setEnv(sec.Tag.Get("mapstructure"), sec.Type)
+	}
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := reflect.ValueOf(*cfg)
-	for i := 0; i < v.NumField(); i++ {
-		sec := v.Field(i)
-		for j := 0; j < sec.NumField(); j++ {
-			f := sec.Field(j)
-			if f.Kind() == reflect.Slice {
-				continue
-			}
-			if f.IsZero() {
-				t.Errorf("%s.%s not set by its WISELABZ_ env var", v.Type().Field(i).Name, sec.Type().Field(j).Name)
+	var check func(path string, v reflect.Value)
+	check = func(path string, v reflect.Value) {
+		for j := 0; j < v.NumField(); j++ {
+			f := v.Field(j)
+			name := path + "." + v.Type().Field(j).Name
+			switch {
+			case f.Kind() == reflect.Struct:
+				check(name, f)
+			case f.Kind() == reflect.Slice:
+			case f.IsZero():
+				t.Errorf("%s not set by its WISELABZ_ env var", name)
 			}
 		}
+	}
+	v := reflect.ValueOf(*cfg)
+	for i := 0; i < v.NumField(); i++ {
+		check(v.Type().Field(i).Name, v.Field(i))
+	}
+}
+
+func TestValidateRejectsInvalidDocExportGit(t *testing.T) {
+	c := validConfig()
+	c.DocExport.Git = DocExportGitSettings{Remote: "http://git.example.com/o/r.git", Branch: "main", Path: "docs"}
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "doc_export.git.remote") {
+		t.Fatalf("Validate() error = %v, want doc_export.git.remote error", err)
 	}
 }

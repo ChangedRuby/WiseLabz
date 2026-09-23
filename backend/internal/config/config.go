@@ -4,7 +4,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -203,13 +205,84 @@ type BackupSettings struct {
 }
 
 // DocExportSettings holds scheduled doc export configuration: writing every
-// generated doc as Markdown to a local directory on a cron schedule. This
-// first cut is directory-only; exporting to a Git remote (clone/pull/commit/
-// push) is tracked as a follow-up.
+// generated doc as Markdown to a local directory on a cron schedule, and
+// optionally committing and pushing it to a Git remote (see Git).
 type DocExportSettings struct {
-	Dir      string `mapstructure:"dir"`       // directory where exported Markdown docs are written
-	CronExpr string `mapstructure:"cron_expr"` // cron expression for scheduled export
-	Enabled  bool   `mapstructure:"enabled"`   // enable/disable scheduled doc export
+	Dir      string               `mapstructure:"dir"`       // directory where exported Markdown docs are written (the persistent clone in Git mode)
+	CronExpr string               `mapstructure:"cron_expr"` // cron expression for scheduled export
+	Enabled  bool                 `mapstructure:"enabled"`   // enable/disable scheduled doc export
+	Git      DocExportGitSettings `mapstructure:"git"`       // optional Git remote target; disabled while Remote is empty
+}
+
+// DocExportGitSettings configures pushing the doc export to a Git remote.
+// Git mode is on when Remote is set. Token (HTTPS) and SSHKeyPath (SSH) are
+// mutually exclusive; Token is a secret and must never be logged.
+type DocExportGitSettings struct {
+	Remote              string `mapstructure:"remote"`                 // https://… or ssh://… (or scp-style user@host:path)
+	Branch              string `mapstructure:"branch"`                 // branch to fetch, reset to and push
+	Path                string `mapstructure:"path"`                   // subdirectory of the repo the docs are written to
+	AuthorName          string `mapstructure:"author_name"`            // commit author/committer name
+	AuthorEmail         string `mapstructure:"author_email"`           // commit author/committer email
+	Token               string `mapstructure:"token"`                  // HTTPS access token (sent as x-access-token basic auth)
+	SSHKeyPath          string `mapstructure:"ssh_key_path"`           // private key file for SSH remotes
+	SSHKnownHosts       string `mapstructure:"ssh_known_hosts"`        // known_hosts file used to verify the SSH host key
+	InsecureSkipHostKey bool   `mapstructure:"insecure_skip_host_key"` // skip SSH host key verification (logs WARN on every run)
+}
+
+// Enabled reports whether a Git remote is configured.
+func (g DocExportGitSettings) Enabled() bool { return g.Remote != "" }
+
+// IsSSHRemote reports whether remote uses SSH, either as an ssh:// URL or
+// the scp-like user@host:path form.
+func IsSSHRemote(remote string) bool {
+	if strings.HasPrefix(remote, "ssh://") {
+		return true
+	}
+	if strings.Contains(remote, "://") {
+		return false
+	}
+	at := strings.Index(remote, "@")
+	colon := strings.Index(remote, ":")
+	return at > 0 && colon > at+1
+}
+
+// Validate checks the Git target settings. It is a no-op when Remote is empty.
+func (g DocExportGitSettings) Validate() error {
+	if !g.Enabled() {
+		return nil
+	}
+	ssh := IsSSHRemote(g.Remote)
+	if !ssh && !strings.HasPrefix(g.Remote, "https://") {
+		return errors.New("doc_export.git.remote must be an https:// or ssh:// URL")
+	}
+	if u, err := url.Parse(g.Remote); err == nil && u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			return errors.New("doc_export.git.remote must not embed credentials; use doc_export.git.token")
+		}
+	}
+	if g.Branch == "" {
+		return errors.New("doc_export.git.branch must not be empty")
+	}
+	if g.Path == "" || filepath.IsAbs(g.Path) || strings.HasPrefix(filepath.Clean(g.Path), "..") {
+		return errors.New("doc_export.git.path must be a relative path inside the repository")
+	}
+	if g.Token != "" && (g.SSHKeyPath != "" || g.SSHKnownHosts != "" || g.InsecureSkipHostKey) {
+		return errors.New("doc_export.git.token and the ssh_* settings are mutually exclusive")
+	}
+	if ssh {
+		if g.Token != "" {
+			return errors.New("doc_export.git.token only applies to https remotes")
+		}
+		if g.SSHKeyPath == "" {
+			return errors.New("doc_export.git.ssh_key_path is required for ssh remotes")
+		}
+		if g.SSHKnownHosts == "" && !g.InsecureSkipHostKey {
+			return errors.New("doc_export.git.ssh_known_hosts is required for ssh remotes (or set insecure_skip_host_key)")
+		}
+	} else if g.SSHKeyPath != "" || g.SSHKnownHosts != "" || g.InsecureSkipHostKey {
+		return errors.New("doc_export.git.ssh_* settings only apply to ssh remotes")
+	}
+	return nil
 }
 
 // Load reads configuration from file and environment, returning a populated Config.
@@ -263,6 +336,10 @@ func Load() (*Config, error) {
 	v.SetDefault("doc_export.dir", "./data/docexport")
 	v.SetDefault("doc_export.cron_expr", "0 2 * * *") // daily doc export at 2 AM
 	v.SetDefault("doc_export.enabled", false)         // opt-in: operator must configure a target directory
+	v.SetDefault("doc_export.git.branch", "main")
+	v.SetDefault("doc_export.git.path", "docs")
+	v.SetDefault("doc_export.git.author_name", "WiseLabz")
+	v.SetDefault("doc_export.git.author_email", "wiselabz@localhost")
 
 	// Bind every field to its WISELABZ_ env var. viper's AutomaticEnv alone
 	// does not reliably resolve nested keys through Unmarshal, so each key
@@ -287,6 +364,9 @@ func Load() (*Config, error) {
 		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.health_check_days", "retention.cron_expr",
 		"backup.dir", "backup.cron_expr", "backup.max_backups", "backup.max_age_hours", "backup.enabled",
 		"doc_export.dir", "doc_export.cron_expr", "doc_export.enabled",
+		"doc_export.git.remote", "doc_export.git.branch", "doc_export.git.path",
+		"doc_export.git.author_name", "doc_export.git.author_email", "doc_export.git.token",
+		"doc_export.git.ssh_key_path", "doc_export.git.ssh_known_hosts", "doc_export.git.insecure_skip_host_key",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind env %q: %w", key, err)

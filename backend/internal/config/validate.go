@@ -33,6 +33,9 @@ func (c *Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		errs = append(errs, fmt.Errorf("server.port %d out of range 1-65535", c.Server.Port))
 	}
+	if err := c.DocExport.Git.Validate(); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 
@@ -45,6 +48,8 @@ func (c *Config) Redacted() Config {
 	r.Auth.Secret = mask(r.Auth.Secret)
 	r.AI.APIKey = mask(r.AI.APIKey)
 	r.AI.EmbedAPIKey = mask(r.AI.EmbedAPIKey)
+	r.DocExport.Git.Token = mask(r.DocExport.Git.Token)
+	r.DocExport.Git.Remote = redactDSN(r.DocExport.Git.Remote)
 	if c.Auth.OIDC != nil {
 		r.Auth.OIDC = make([]OIDCProvider, len(c.Auth.OIDC))
 		copy(r.Auth.OIDC, c.Auth.OIDC)
