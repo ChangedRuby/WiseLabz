@@ -21,8 +21,9 @@ func TestAddJobRegistersAndFires(t *testing.T) {
 	r := New(logger)
 
 	execCount := 0
-	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) {
+	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
 		execCount++
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -51,7 +52,7 @@ func TestAddJobInvalidExpression(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	_, err := r.AddJob("test", "invalid cron", func(_ context.Context) {})
+	_, err := r.AddJob("test", "invalid cron", func(_ context.Context) error { return nil })
 	if err == nil {
 		t.Fatalf("AddJob() should reject invalid cron expression, got nil error")
 	}
@@ -63,8 +64,9 @@ func TestRemoveJobDeregisters(t *testing.T) {
 	r := New(logger)
 
 	execCount := 0
-	entryID, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) {
+	entryID, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
 		execCount++
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -103,11 +105,12 @@ func TestPanicRecovery(t *testing.T) {
 	r := New(logger)
 
 	executionCount := 0
-	_, err := r.AddJob("panic-test", "*/1 * * * * *", func(_ context.Context) {
+	_, err := r.AddJob("panic-test", "*/1 * * * * *", func(_ context.Context) error {
 		executionCount++
 		if executionCount == 1 {
 			panic("intentional panic")
 		}
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -139,8 +142,9 @@ func TestStopViaContextCancellation(t *testing.T) {
 
 	started := false
 
-	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) {
+	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
 		started = true
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -174,15 +178,17 @@ func TestMultipleJobsSchedule(t *testing.T) {
 	count1 := 0
 	count2 := 0
 
-	_, err := r.AddJob("job1", "*/1 * * * * *", func(_ context.Context) {
+	_, err := r.AddJob("job1", "*/1 * * * * *", func(_ context.Context) error {
 		count1++
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob(job1) error: %v", err)
 	}
 
-	_, err = r.AddJob("job2", "*/1 * * * * *", func(_ context.Context) {
+	_, err = r.AddJob("job2", "*/1 * * * * *", func(_ context.Context) error {
 		count2++
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob(job2) error: %v", err)
@@ -218,12 +224,12 @@ func TestInvalidJobNameHandled(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	_, err := r.AddJob("", "*/1 * * * * *", func(_ context.Context) {})
+	_, err := r.AddJob("", "*/1 * * * * *", func(_ context.Context) error { return nil })
 	if err != nil {
 		t.Fatalf("AddJob() with empty name should not error: %v", err)
 	}
 
-	_, err = r.AddJob(fmt.Sprintf("job-%d", time.Now().Unix()), "*/1 * * * * *", func(_ context.Context) {})
+	_, err = r.AddJob(fmt.Sprintf("job-%d", time.Now().Unix()), "*/1 * * * * *", func(_ context.Context) error { return nil })
 	if err != nil {
 		t.Fatalf("AddJob() with complex name should not error: %v", err)
 	}
@@ -245,7 +251,7 @@ func TestJobContextDerivedFromStart(t *testing.T) {
 	sawValue := make(chan bool, 1)
 	sawCancelPropagated := make(chan bool, 1)
 	var once sync.Once
-	_, err := r.AddJob("test", "*/1 * * * * *", func(jobCtx context.Context) {
+	_, err := r.AddJob("test", "*/1 * * * * *", func(jobCtx context.Context) error {
 		once.Do(func() {
 			sawValue <- (jobCtx.Value(key) == "test-value")
 		})
@@ -261,6 +267,7 @@ func TestJobContextDerivedFromStart(t *testing.T) {
 			}
 		case <-time.After(4 * time.Second):
 		}
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -292,10 +299,11 @@ func TestContextGivenToJobFunction(t *testing.T) {
 	r := New(logger)
 
 	receivedCtx := false
-	_, err := r.AddJob("test", "*/1 * * * * *", func(ctx context.Context) {
+	_, err := r.AddJob("test", "*/1 * * * * *", func(ctx context.Context) error {
 		if ctx != nil {
 			receivedCtx = true
 		}
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("AddJob() error: %v", err)
@@ -323,7 +331,7 @@ func TestJobSkipsOverlappingInvocations(t *testing.T) {
 	r := New(testLogger())
 	entered := make(chan struct{}, 2)
 	release := make(chan struct{})
-	id, err := r.AddJob("blocking", "* * * * * *", func(context.Context) { entered <- struct{}{}; <-release })
+	id, err := r.AddJob("blocking", "* * * * * *", func(context.Context) error { entered <- struct{}{}; <-release; return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
