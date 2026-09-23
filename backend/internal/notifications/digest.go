@@ -70,7 +70,7 @@ func (d *Dispatcher) RunDigestSweep(ctx context.Context, now time.Time, logger *
 			continue
 		}
 
-		notifications, err := d.store.ListNotificationsSince(ctx, u.ID, u.DigestLastSentAt, []string{"alert.created", "finding.created"})
+		notifications, err := d.store.ListNotificationsSince(ctx, u.ID, u.DigestLastSentAt, []string{"alert.created", "finding.created", EventSystemJobFailed})
 		if err != nil {
 			logger.Error("digest sweep: failed to list notifications", "userID", u.ID, "error", err)
 			continue

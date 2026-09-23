@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1369,5 +1370,53 @@ func TestNotifyAlertsCreatedBatch(t *testing.T) {
 	_, total, err = s.ListNotifications(ctx, disabled.ID, false, 0, 10)
 	if err != nil || total != 0 {
 		t.Fatalf("disabled user: notifications=%d, err=%v", total, err)
+	}
+}
+
+// TestNotifySystemEvent_FansOutAndHonoursRouting verifies system events reach
+// every active user in-app with their own event type, and that external
+// channels follow the per-event routing (a warning routes, an info below the
+// route's minSeverity doesn't).
+func TestNotifySystemEvent_FansOutAndHonoursRouting(t *testing.T) {
+	s := newTestStore(t)
+	var hits int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	routing := `[{"eventType":"system.job_failed","channel":"webhook","enabled":true,"minSeverity":"warning"}]`
+	setChannelAndRoutingConfig(t, s, "webhook", srv.URL, routing)
+
+	u := &store.User{Email: "ops@example.com"}
+	if err := s.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	d := NewDispatcher(s, nil)
+	d.NotifySystemEvent(context.Background(), EventSystemJobFailed, "warning", "Doc export failing", "boom")
+	waitForDispatch(t, d)
+	d.NotifySystemEvent(context.Background(), EventSystemJobFailed, "info", "Doc export recovered", "ok")
+	waitForDispatch(t, d)
+
+	notifs, _, err := s.ListNotifications(context.Background(), u.ID, false, 0, 10)
+	if err != nil {
+		t.Fatalf("list notifications: %v", err)
+	}
+	if len(notifs) != 2 {
+		t.Fatalf("expected 2 in-app notifications, got %d", len(notifs))
+	}
+	for _, n := range notifs {
+		if n.EventType != EventSystemJobFailed {
+			t.Errorf("event type = %q, want %q", n.EventType, EventSystemJobFailed)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits != 1 {
+		t.Errorf("webhook hits = %d, want 1 (warning routed, info below minSeverity)", hits)
 	}
 }
