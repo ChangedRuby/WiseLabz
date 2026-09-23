@@ -137,6 +137,12 @@ const AppearancePage = lazy(() =>
 const RulesPage = lazy(() =>
   import('./features/settings').then(({ RulesPage }) => ({ default: RulesPage }))
 );
+const ReportsPage = lazy(() =>
+  import('./features/reports').then(({ ReportsPage }) => ({ default: ReportsPage }))
+);
+const ReportDetailPage = lazy(() =>
+  import('./features/reports').then(({ ReportDetailPage }) => ({ default: ReportDetailPage }))
+);
 
 function NotFound() {
   return (
@@ -209,6 +215,22 @@ const router = createBrowserRouter([
       { path: 'attention', element: <AttentionPage /> },
       { path: 'alerts', element: <AlertsPage /> },
       { path: 'findings', element: <FindingsPage /> },
+      {
+        path: 'reports',
+        element: (
+          <RequireInstanceAdmin>
+            <ReportsPage />
+          </RequireInstanceAdmin>
+        ),
+      },
+      {
+        path: 'reports/:id',
+        element: (
+          <RequireInstanceAdmin>
+            <ReportDetailPage />
+          </RequireInstanceAdmin>
+        ),
+      },
       {
         path: 'templates',
         element: (

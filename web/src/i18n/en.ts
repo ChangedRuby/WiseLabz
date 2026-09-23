@@ -54,6 +54,7 @@ export const en = {
     attention: 'Attention',
     alerts: 'Alerts',
     findings: 'Findings',
+    reports: 'Reports',
     settings: 'Settings',
   },
   status: {
