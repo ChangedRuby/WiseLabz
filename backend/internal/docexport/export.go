@@ -4,9 +4,9 @@
 // engine already renders and persists (store.DocRecord.Content) rather than
 // re-rendering anything itself.
 //
-// Git remote support (clone/pull/commit/push a target repo) is intentionally
-// out of scope for this package — see the follow-up issue filed alongside
-// it. This first cut only writes to a local directory.
+// Optionally (see ConfigureGit) the directory is a persistent clone of a Git
+// remote: each run fetches, hard-resets to the remote branch, re-exports,
+// commits the difference and pushes it (never forcing).
 package docexport
 
 import (
@@ -15,7 +15,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -32,6 +34,12 @@ const exportPageSize = 1000
 // directory.
 type Exporter struct {
 	store *store.Store
+
+	git      *gitTarget // nil: local-directory mode
+	notifier Notifier   // nil: failures are only logged
+
+	mu      sync.Mutex // serializes runs (the Git worktree isn't concurrency-safe)
+	failing bool       // last run failed; in memory only, so a restart re-notifies
 }
 
 // NewExporter creates a new Exporter backed by s.
@@ -110,8 +118,17 @@ func fetchAllDocs(ctx context.Context, s *store.Store) ([]store.DocRecord, error
 	}
 }
 
-// pruneStale removes any top-level *.md file in dir that isn't in keep,
-// leaving other files (e.g. a README the operator dropped in) untouched.
+// generatedName matches the filenames fileName (and its collision fallback,
+// a bare UUID) produces. Only these are ever pruned, so anything else an
+// operator keeps next to the export (README.md, notes.md, …) survives.
+var generatedName = regexp.MustCompile(`^(?:[a-z0-9-]+-[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$`)
+
+// IsGeneratedName reports whether name looks like a file ExportAll writes,
+// i.e. one pruneStale is allowed to delete.
+func IsGeneratedName(name string) bool { return generatedName.MatchString(name) }
+
+// pruneStale removes any top-level generated doc file in dir that isn't in
+// keep, leaving other files (e.g. a README the operator dropped in) untouched.
 func pruneStale(dir string, keep map[string]bool) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -124,7 +141,7 @@ func pruneStale(dir string, keep map[string]bool) ([]string, error) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".md") || keep[name] {
+		if !IsGeneratedName(name) || keep[name] {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
@@ -175,17 +192,53 @@ func slugify(s string) string {
 // RunExportOnce runs a single export pass and logs the outcome. It's the
 // function the scheduled "docexport" cron job (wired in cmd/server/main.go)
 // calls, following the same log-on-failure convention as other scheduled
-// jobs (e.g. internal/backup.RunVerifyOnce).
+// jobs (e.g. internal/backup.RunVerifyOnce). In Git mode dir is the
+// persistent clone and the docs go to its configured subdirectory. When a
+// Notifier is set, a system.job_failed event is sent on the ok→failing and
+// failing→ok transitions only.
 func RunExportOnce(ctx context.Context, e *Exporter, dir string, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-	res, err := e.ExportAll(ctx, dir)
-	if err != nil {
-		logger.Error("doc export: failed", "dir", dir, "error", err)
-		return
+	var err error
+	if e.git != nil {
+		err = e.runGit(ctx, dir, logger)
+	} else {
+		var res Result
+		res, err = e.ExportAll(ctx, dir)
+		if err == nil {
+			logger.Info("doc export: completed", "dir", res.Dir, "count", res.Count, "removed", len(res.Removed))
+		}
 	}
 
-	logger.Info("doc export: completed", "dir", res.Dir, "count", res.Count, "removed", len(res.Removed))
+	if err != nil {
+		logger.Error("doc export: failed", "dir", dir, "error", err)
+		if !e.failing && e.notifier != nil {
+			e.notifier.NotifySystemEvent(ctx, EventJobFailed, "warning",
+				"Doc export failing", fmt.Sprintf("The scheduled doc export job failed and will retry on its next run: %v", err))
+		}
+		e.failing = true
+		return
+	}
+	if e.failing && e.notifier != nil {
+		e.notifier.NotifySystemEvent(ctx, EventJobFailed, "info",
+			"Doc export recovered", "The scheduled doc export job succeeded again.")
+	}
+	e.failing = false
 }
+
+// EventJobFailed is the notification event type sent when a scheduled job
+// starts failing (severity warning) or recovers (severity info). It must
+// match notifications.EventSystemJobFailed.
+const EventJobFailed = "system.job_failed"
+
+// Notifier is the slice of notifications.Dispatcher the exporter uses.
+type Notifier interface {
+	NotifySystemEvent(ctx context.Context, eventType, severity, title, message string)
+}
+
+// SetNotifier installs the notifier used for failure/recovery events.
+func (e *Exporter) SetNotifier(n Notifier) { e.notifier = n }

@@ -21,6 +21,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/docexport"
+	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/quality"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
@@ -179,13 +180,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Scheduled doc export (issue #283): writes every generated doc as
-	// Markdown to a local directory. Config-file only for now, same as
-	// "quality"/"digest"/"backup-verify" above — no operator-facing API to
-	// change it at runtime. Opt-in via doc_export.enabled since it writes to
-	// disk on a schedule.
+	// Scheduled doc export (issues #283, #377): writes every generated doc as
+	// Markdown to a local directory and, when doc_export.git.remote is set,
+	// commits and pushes it to that Git remote. Config-file only for now,
+	// same as "quality"/"digest"/"backup-verify" above — no operator-facing
+	// API to change it at runtime. Opt-in via doc_export.enabled since it
+	// writes to disk on a schedule. Failures notify system.job_failed on
+	// state transitions only.
 	if cfg.DocExport.Enabled {
 		docExporter := docexport.NewExporter(s)
+		docExporter.SetNotifier(notifDispatcher)
+		if g := cfg.DocExport.Git; g.Enabled() {
+			if err := docExporter.ConfigureGit(docexport.GitOptions{
+				Remote: g.Remote, Branch: g.Branch, Path: g.Path,
+				AuthorName: g.AuthorName, AuthorEmail: g.AuthorEmail,
+				Token: g.Token, SSHKeyPath: g.SSHKeyPath, SSHKnownHosts: g.SSHKnownHosts,
+				InsecureSkipHostKey: g.InsecureSkipHostKey,
+			}); err != nil {
+				logger.Error("Failed to configure doc export Git target", "error", err)
+				os.Exit(1)
+			}
+			if g.InsecureSkipHostKey {
+				logger.Warn("doc export: SSH host key verification is disabled (doc_export.git.insecure_skip_host_key); pushes are open to MITM")
+			}
+			logger.Info("doc export: Git target configured", "remote", logsafe.Sanitize(g.Remote), "branch", g.Branch, "path", g.Path)
+		}
 		if _, err := jobRunner.AddJob("docexport", cfg.DocExport.CronExpr, func(jobCtx context.Context) {
 			docexport.RunExportOnce(jobCtx, docExporter, cfg.DocExport.Dir, logger)
 		}); err != nil {
