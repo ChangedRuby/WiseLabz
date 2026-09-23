@@ -34,6 +34,7 @@ tags:
   - name: saved-views
   - name: settings
   - name: system
+  - name: reports
 
 security:
   - bearerAuth: []
@@ -2518,17 +2519,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DiagnosticsBundle' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
   /system/jobs:
     get:
       tags: [system]
-      summary: >-
-        Every scheduled background job currently registered with the
-        scheduler (quality, sync, digest, backup, backup-verify, retention,
-        docexport, …) — operator. Combines the job's live next-run time with
-        its persisted health: `lastStatus` flips to `failing` on the first
-        failed run and back to `ok` on the next success, surviving a server
-        restart (#384). A job that has never run yet still appears, with only
-        `name`/`cronExpr`/`nextRunAt` set.
+      summary: Scheduled background jobs and persisted health (operator)
       responses:
         '200':
           description: OK
@@ -2538,6 +2533,151 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/JobInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── scheduled reports (#280) ─────────────────────────
+  /reports/definitions:
+    get:
+      tags: [reports]
+      summary: List report definitions (operator)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReportDefinition' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [reports]
+      summary: >-
+        Create a report definition (operator). Registers a cron job named
+        `report:<slug>`. `slug` must be unique (code `slug_taken` otherwise);
+        `cronExpr` is validated the same way as other scheduled jobs;
+        `timezone` must be a valid IANA zone name (applied as a `CRON_TZ=`
+        prefix on the cron expression). Audited as `report.definition.create`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportDefinitionInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /reports/definitions/{reportDefinitionId}:
+    parameters: [{ $ref: '#/components/parameters/ReportDefinitionId' }]
+    put:
+      tags: [reports]
+      summary: >-
+        Update a report definition (operator). Re-registers the cron job if
+        `cronExpr`/`timezone`/`enabled` changed. `slug` is immutable; a
+        different value is rejected with `400` (code `slug_immutable`).
+        Audited as `report.definition.update`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportDefinitionInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [reports]
+      summary: >-
+        Delete a report definition (operator). Unregisters its cron job and
+        deletes its `job_health` row (`report:<slug>`); previously generated
+        reports are kept with `definitionId` set to null. Audited as
+        `report.definition.delete`.
+      responses:
+        '204': { description: No Content }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /reports/definitions/{reportDefinitionId}/run:
+    post:
+      tags: [reports]
+      summary: >-
+        Generate a report immediately (operator). Uses the same window as
+        the next scheduled run (previous scheduled report's `periodEnd` →
+        now, or the last 7 days on a definition's first run; capped at 31
+        days) but does NOT advance the definition's schedule watermark, so
+        the next scheduled tick still covers the period this manual run
+        also covered. Delivers to the definition's configured channels the
+        same as a scheduled run. Audited as `report.definition.run`.
+      parameters: [{ $ref: '#/components/parameters/ReportDefinitionId' }]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /reports:
+    get:
+      tags: [reports]
+      summary: List generated reports, newest first
+      parameters:
+        - name: definitionId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Filter to reports generated by one definition.
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportPage' }
+  /reports/{reportId}:
+    parameters: [{ $ref: '#/components/parameters/ReportId' }]
+    get:
+      tags: [reports]
+      summary: One generated report, including its typed data and rendered Markdown
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /reports/{reportId}/download:
+    get:
+      tags: [reports]
+      summary: Download a report as Markdown or self-contained HTML
+      parameters:
+        - { $ref: '#/components/parameters/ReportId' }
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [md, html] }
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: 'attachment; filename="report-<slug>-<periodEnd date>.md|html"'
+          content:
+            text/markdown:
+              schema: { type: string }
+            text/html:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /health:
     get:
       tags: [system]
@@ -2738,6 +2878,8 @@ components:
     AlertId: { name: alertId, in: path, required: true, schema: { type: string } }
     RunbookId: { name: runbookId, in: path, required: true, schema: { type: string } }
     FindingId: { name: findingId, in: path, required: true, schema: { type: string } }
+    ReportDefinitionId: { name: reportDefinitionId, in: path, required: true, schema: { type: string } }
+    ReportId: { name: reportId, in: path, required: true, schema: { type: string } }
     SessionId: { name: sessionId, in: path, required: true, schema: { type: string } }
     ChatConversationId: { name: id, in: path, required: true, schema: { type: string } }
     ServiceIdQuery: { name: serviceId, in: query, required: false, schema: { type: string } }
@@ -4345,18 +4487,6 @@ components:
         total: { type: integer }
         limit: { type: integer }
         offset: { type: integer }
-    JobInfo:
-      type: object
-      required: [name, cronExpr]
-      properties:
-        name: { type: string, description: 'Job name, e.g. "quality", "sync", "backup", "docexport"' }
-        cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression }
-        lastStatus: { type: string, enum: [ok, failing], description: Absent if the job has never run yet }
-        lastError: { type: string, description: Error from the most recent failing run; empty when lastStatus is ok }
-        lastRunAt: { type: string, format: date-time, description: Absent if the job has never run yet }
-        lastSuccessAt: { type: string, format: date-time, description: Absent if the job has never succeeded }
-        lastFailureAt: { type: string, format: date-time, description: Absent if the job has never failed }
-        nextRunAt: { type: string, format: date-time, description: Next scheduled run per the live cron entry }
 
     # ── diagnostics ──
     DiagnosticsBundle:
@@ -4439,3 +4569,275 @@ components:
                   nextAttemptAt: { type: string, format: date-time }
                   createdAt: { type: string, format: date-time }
                   updatedAt: { type: string, format: date-time }
+
+    # ── scheduled reports (#280) ──
+    ReportSection:
+      type: string
+      description: One report section, matching internal/report.Sections's fields.
+      enum: [docs, compliance, rotations, quality, drift, jobs]
+    ReportChannelType:
+      type: string
+      description: >-
+        Channel TYPES a report definition delivers to (plan Q13) — channels
+        have no IDs; delivery bypasses the normal routing rules and goes
+        straight to every enabled channel of these types.
+      enum: [slack, discord, webhook]
+    ReportTrigger:
+      type: string
+      enum: [scheduled, manual]
+    ReportStatus:
+      type: string
+      description: '`partial` means one or more sections failed (plan Q21); the report is still stored and delivered.'
+      enum: [ok, partial]
+    ReportDefinition:
+      type: object
+      required:
+        [id, slug, name, enabled, cronExpr, timezone, sections, connectorIds, channels, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        slug: { type: string, description: Immutable after creation; used in the cron job name `report:<slug>` and in download filenames. }
+        name: { type: string }
+        enabled: { type: boolean }
+        cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression, example: '0 6 * * 1' }
+        timezone: { type: string, description: 'IANA zone name, e.g. "America/New_York". Applied as a CRON_TZ= prefix on cronExpr.' }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSection' }
+        connectorIds:
+          type: array
+          items: { type: string }
+          description: >-
+            Optional connector filter (plan Q14) applied to every section
+            except job health, which always covers every job.
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/ReportChannelType' }
+        createdBy: { type: string, description: User ID of the operator who created this definition. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReportDefinitionInput:
+      type: object
+      required: [slug, name, enabled, cronExpr, timezone, sections]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        cronExpr: { type: string }
+        timezone: { type: string }
+        sections:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ReportSection' }
+        connectorIds:
+          type: array
+          items: { type: string }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/ReportChannelType' }
+
+    ReportDocChangeEntry:
+      type: object
+      required: [docId, title, connectorId, connectorName, version, changedAt]
+      properties:
+        docId: { type: string }
+        title: { type: string }
+        connectorId: { type: string }
+        connectorName: { type: string }
+        version: { type: integer }
+        changedAt: { type: string, format: date-time }
+    ReportDocsSection:
+      type: object
+      required: [total, items]
+      properties:
+        error: { type: string, description: Present when this section's underlying query failed; the report is still stored/delivered as `partial`. }
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportDocChangeEntry' }
+    ReportFindingSummary:
+      type: object
+      required: [id, connectorId, connectorName, checkType, severity, title, status, detectedAt]
+      properties:
+        id: { type: string }
+        connectorId: { type: string }
+        connectorName: { type: string }
+        checkType: { $ref: '#/components/schemas/QualityCheckType' }
+        severity: { $ref: '#/components/schemas/Severity' }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/QualityFindingStatus' }
+        detectedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    ReportComplianceSection:
+      type: object
+      required: [openCount, detectedCount, resolvedCount, items]
+      properties:
+        error: { type: string }
+        openCount: { type: integer, description: Findings with check_type=compliance still open as of report generation. }
+        detectedCount: { type: integer, description: check_type=compliance findings first detected during the window. }
+        resolvedCount: { type: integer, description: check_type=compliance findings resolved during the window. }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportFindingSummary' }
+    ReportQualitySection:
+      type: object
+      required: [openCount, detectedCount, resolvedCount, items]
+      description: Same shape as ReportComplianceSection, covering every check_type except compliance and credential_rotation.
+      properties:
+        error: { type: string }
+        openCount: { type: integer }
+        detectedCount: { type: integer }
+        resolvedCount: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportFindingSummary' }
+    ReportRotationEntry:
+      type: object
+      required: [connectorId, connectorName, overdue, dueSoon]
+      properties:
+        connectorId: { type: string }
+        connectorName: { type: string }
+        rotatedAt: { type: string, format: date-time, nullable: true }
+        overdue: { type: boolean }
+        dueSoon: { type: boolean }
+    ReportRotationsSection:
+      type: object
+      required: [rotated, overdue, dueSoon]
+      properties:
+        error: { type: string }
+        rotated:
+          type: array
+          items: { $ref: '#/components/schemas/ReportRotationEntry' }
+          description: Connectors whose secretRotatedAt fell inside the window.
+        overdue:
+          type: array
+          items: { $ref: '#/components/schemas/ReportRotationEntry' }
+          description: Connectors with an open, overdue credential_rotation finding as of now.
+        dueSoon:
+          type: array
+          items: { $ref: '#/components/schemas/ReportRotationEntry' }
+          description: Connectors with an open credential_rotation finding due soon (not yet overdue) as of now.
+    ReportSeverityCounts:
+      type: object
+      required: [info, warning, critical]
+      properties:
+        info: { type: integer }
+        warning: { type: integer }
+        critical: { type: integer }
+    ReportConnectorDrift:
+      type: object
+      required: [connectorId, connectorName, counts]
+      properties:
+        connectorId: { type: string }
+        connectorName: { type: string }
+        counts: { $ref: '#/components/schemas/ReportSeverityCounts' }
+    ReportChangeEntry:
+      type: object
+      required: [id, connectorId, connectorName, severity, summary, detectedAt]
+      properties:
+        id: { type: string }
+        connectorId: { type: string }
+        connectorName: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        summary: { type: string }
+        detectedAt: { type: string, format: date-time }
+    ReportDriftSection:
+      type: object
+      required: [total, byConnector, topChanges]
+      properties:
+        error: { type: string }
+        total: { type: integer, description: Total changes detected in the window (optionally filtered by connectorIds). }
+        byConnector:
+          type: array
+          items: { $ref: '#/components/schemas/ReportConnectorDrift' }
+        topChanges:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/ReportChangeEntry' }
+          description: The 10 most severe changes in the window (plan Q19).
+    ReportJobHealthEntry:
+      type: object
+      required: [name, status]
+      description: Mirrors one row of GET /system/jobs (PR1, #384).
+      properties:
+        name: { type: string }
+        status: { type: string, enum: [ok, failing] }
+        lastError: { type: string }
+        lastRunAt: { type: string, format: date-time, nullable: true }
+        lastSuccessAt: { type: string, format: date-time, nullable: true }
+        lastFailureAt: { type: string, format: date-time, nullable: true }
+    ReportJobsSection:
+      type: object
+      required: [failingCount, items]
+      description: Always covers every job, ignoring the definition's connectorIds filter (plan Q14).
+      properties:
+        error: { type: string }
+        failingCount: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportJobHealthEntry' }
+    ReportSections:
+      type: object
+      required: [docs, compliance, rotations, quality, drift, jobs]
+      properties:
+        docs: { $ref: '#/components/schemas/ReportDocsSection' }
+        compliance: { $ref: '#/components/schemas/ReportComplianceSection' }
+        rotations: { $ref: '#/components/schemas/ReportRotationsSection' }
+        quality: { $ref: '#/components/schemas/ReportQualitySection' }
+        drift: { $ref: '#/components/schemas/ReportDriftSection' }
+        jobs: { $ref: '#/components/schemas/ReportJobsSection' }
+    ReportDefinitionSummary:
+      type: object
+      required: [slug, name]
+      description: Snapshot of the definition that produced a report, captured at generation time so it survives the definition being edited or deleted.
+      properties:
+        slug: { type: string }
+        name: { type: string }
+    ReportData:
+      type: object
+      required: [definition, periodStart, periodEnd, truncated, sections]
+      description: The typed JSON payload stored on a report row; also what Markdown/HTML are rendered from.
+      properties:
+        definition: { $ref: '#/components/schemas/ReportDefinitionSummary' }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        truncated: { type: boolean, description: True when the window exceeded the 31-day cap and was clamped (plan Q22). }
+        sections: { $ref: '#/components/schemas/ReportSections' }
+    ReportSummary:
+      type: object
+      required: [id, definitionId, definitionName, trigger, periodStart, periodEnd, truncated, status, createdAt]
+      properties:
+        id: { type: string }
+        definitionId: { type: string, nullable: true, description: Null if the definition was since deleted. }
+        definitionName: { type: string, description: Copied at generation time; stable even if the definition is renamed or deleted. }
+        trigger: { $ref: '#/components/schemas/ReportTrigger' }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        truncated: { type: boolean }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        createdAt: { type: string, format: date-time }
+    Report:
+      type: object
+      description: ReportSummary plus the full typed data and rendered Markdown, returned by GET /reports/{reportId}.
+      required: [id, definitionId, definitionName, trigger, periodStart, periodEnd, truncated, status, createdAt, data, markdown]
+      properties:
+        id: { type: string }
+        definitionId: { type: string, nullable: true }
+        definitionName: { type: string }
+        trigger: { $ref: '#/components/schemas/ReportTrigger' }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        truncated: { type: boolean }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        createdAt: { type: string, format: date-time }
+        data: { $ref: '#/components/schemas/ReportData' }
+        markdown: { type: string, description: 'Pre-rendered Markdown, stored at generation time. HTML is rendered on demand from `data` instead (see GET /reports/{reportId}/download).' }
+    ReportPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSummary' }
+        nextCursor:
+          type: string
+          description: Cursor for the next keyset page (see the shared Cursor parameter); absent on the last page.

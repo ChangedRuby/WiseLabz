@@ -25,6 +25,20 @@ var (
 	specOnly = map[string]string{
 		"GET /healthz": "Root liveness probe; this spec operation overrides the API server URL.",
 		"GET /readyz":  "Root readiness probe; this spec operation overrides the API server URL.",
+
+		// #280 scheduled reports: docs/openapi.yaml documents the full
+		// contract so the frontend can generate against it, but the
+		// handlers (internal/api/reports/, wired in router.go) land in a
+		// later work package on top of this branch. Remove these once
+		// they're implemented.
+		"GET /reports/definitions":          "#280: handlers not yet wired into router.go",
+		"POST /reports/definitions":         "#280: handlers not yet wired into router.go",
+		"PUT /reports/definitions/{p}":      "#280: handlers not yet wired into router.go",
+		"DELETE /reports/definitions/{p}":   "#280: handlers not yet wired into router.go",
+		"POST /reports/definitions/{p}/run": "#280: handlers not yet wired into router.go",
+		"GET /reports":                      "#280: handlers not yet wired into router.go",
+		"GET /reports/{p}":                  "#280: handlers not yet wired into router.go",
+		"GET /reports/{p}/download":         "#280: handlers not yet wired into router.go",
 	}
 )
 
