@@ -60,8 +60,10 @@ func (s *Store) ListDocSectionEmbeddings(ctx context.Context, userID, docID stri
 		FROM doc_section_embeddings e
 		JOIN docs d ON d.id = e.doc_id
 		WHERE (d.service_id IS NULL OR d.service_id = ''
-			OR d.service_id IN (SELECT connector_id FROM user_connector_roles WHERE user_id = ?))`
-	args := []any{userID}
+			OR (d.service_id IN (SELECT connector_id FROM user_connector_roles WHERE user_id = ?)%s))`
+	keyFilter, keyArgs := apiKeyConnectorFilter(ctx, "d.service_id")
+	query = fmt.Sprintf(query, keyFilter)
+	args := append([]any{userID}, keyArgs...)
 	if docID != "" {
 		query += ` AND e.doc_id = ?`
 		args = append(args, docID)

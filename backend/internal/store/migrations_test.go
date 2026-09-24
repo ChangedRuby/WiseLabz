@@ -122,6 +122,20 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
+	for _, col := range []string{"scope", "connector_ids"} {
+		if !hasColumn(t, db, "sqlite", "api_keys", col) {
+			t.Fatalf("api_keys.%s missing after migrations", col)
+		}
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() api_key_scopes error: %v", err)
+	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if hasColumn(t, db, "sqlite", "api_keys", col) {
+			t.Errorf("api_keys.%s should not exist after rolling back api_key_scopes", col)
+		}
+	}
+
 	var jobHealthTable string
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); err != nil {
 		t.Fatalf("job_health table missing after migrations: %v", err)
@@ -255,6 +269,12 @@ func TestRunMigrationsDown(t *testing.T) {
 	}
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); err != nil {
 		t.Fatalf("job_health table missing after reapply: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, api_key_scopes error: %v", err)
+	}
+	if hasColumn(t, db, "sqlite", "api_keys", "scope") {
+		t.Error("api_keys.scope should not exist after rolling back api_key_scopes")
 	}
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, job_health error: %v", err)

@@ -100,6 +100,9 @@ func (s *Store) ListConnectorsForUser(ctx context.Context, userID, category stri
 		where += " AND c.category = ?"
 		args = append(args, category)
 	}
+	keyFilter, keyArgs := apiKeyConnectorFilter(ctx, "c.id")
+	where += keyFilter
+	args = append(args, keyArgs...)
 	return paginatedQuery(ctx, s.db, "connectors c JOIN user_connector_roles r ON r.connector_id = c.id",
 		connectorListColumns, where, args, "c.created_at DESC", limit, offset,
 		func(row rowScanner) (ConnectorWithRole, error) {

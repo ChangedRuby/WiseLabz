@@ -898,7 +898,7 @@ export const getPostAuthApiKeysQueryKey = (apiKeyCreate?: BodyType<ApiKeyCreate>
 
 export const getPostAuthApiKeysQueryOptions = <
   TData = Awaited<ReturnType<typeof postAuthApiKeys>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   apiKeyCreate: BodyType<ApiKeyCreate>,
   options?: {
@@ -921,11 +921,11 @@ export const getPostAuthApiKeysQueryOptions = <
 };
 
 export type PostAuthApiKeysQueryResult = NonNullable<Awaited<ReturnType<typeof postAuthApiKeys>>>;
-export type PostAuthApiKeysQueryError = ErrorType<BadRequestResponse>;
+export type PostAuthApiKeysQueryError = ErrorType<BadRequestResponse | ForbiddenResponse>;
 
 export function usePostAuthApiKeys<
   TData = Awaited<ReturnType<typeof postAuthApiKeys>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   apiKeyCreate: BodyType<ApiKeyCreate>,
   options: {
@@ -944,7 +944,7 @@ export function usePostAuthApiKeys<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthApiKeys<
   TData = Awaited<ReturnType<typeof postAuthApiKeys>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   apiKeyCreate: BodyType<ApiKeyCreate>,
   options?: {
@@ -963,7 +963,7 @@ export function usePostAuthApiKeys<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthApiKeys<
   TData = Awaited<ReturnType<typeof postAuthApiKeys>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   apiKeyCreate: BodyType<ApiKeyCreate>,
   options?: {
@@ -978,7 +978,7 @@ export function usePostAuthApiKeys<
 
 export function usePostAuthApiKeys<
   TData = Awaited<ReturnType<typeof postAuthApiKeys>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
 >(
   apiKeyCreate: BodyType<ApiKeyCreate>,
   options?: {

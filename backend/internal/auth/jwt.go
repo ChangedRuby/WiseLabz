@@ -36,6 +36,9 @@ type APIKeyClaims struct {
 	ExpiresAt     string
 	RevokedAt     string
 	LastUsedAt    string
+	// Restriction narrows what the key can do below its owner's own access
+	// (#278). The zero value is an unrestricted key.
+	Restriction APIKeyRestriction
 }
 
 // ElevationClaims represents a short-lived step-up token for destructive actions.

@@ -29,9 +29,15 @@ func NewHandler(s *store.Store) *Handler {
 // Create handles POST /api/auth/api-keys. The raw token is returned only in
 // this response and is never persisted or included in list responses.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	// A restricted key must not mint a broader one.
+	if auth.RejectRestrictedAPIKey(w, r) {
+		return
+	}
 	req, ok := httputil.DecodeJSON[struct {
-		Name      string `json:"name"`
-		ExpiresAt string `json:"expiresAt"`
+		Name         string   `json:"name"`
+		ExpiresAt    string   `json:"expiresAt"`
+		Scope        string   `json:"scope"`
+		ConnectorIDs []string `json:"connectorIds"`
 	}](w, r)
 	if !ok {
 		return
@@ -49,6 +55,18 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Scope == "" {
+		req.Scope = auth.APIKeyScopeFull
+	}
+	if req.Scope != auth.APIKeyScopeFull && req.Scope != auth.APIKeyScopeRead {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "scope must be full or read", []httputil.FieldError{{Field: "scope", Msg: "must be full or read"}})
+		return
+	}
+	connectorIDs, ok := h.validConnectorIDs(w, r, req.ConnectorIDs)
+	if !ok {
+		return
+	}
+
 	rawToken, err := newToken()
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -57,8 +75,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	// Role is a display-only snapshot of the creator's flat instance-admin
 	// role at creation time; auth actually derives a key's access from the
 	// owning user's current role at lookup time (store.LookupAPIKey), not
-	// from this column, so per-connector-scoped API keys are out of scope
-	// here (#240 PR1 keeps API keys flat admin/user). Stored as
+	// from this column; Scope and ConnectorIDs (#278) only narrow that
+	// access, never widen it. Stored as
 	// "operator"/"viewer" — the api_keys.role CHECK constraint predates this
 	// migration and wasn't touched, only users.role was renamed/reworked.
 	role := "viewer"
@@ -66,32 +84,67 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		role = "operator"
 	}
 	key := &store.APIKey{
-		UserID:    auth.UserIDFromContext(r.Context()),
-		Name:      req.Name,
-		TokenHash: store.HashToken(rawToken),
-		Role:      role,
-		ExpiresAt: req.ExpiresAt,
+		UserID:       auth.UserIDFromContext(r.Context()),
+		Name:         req.Name,
+		TokenHash:    store.HashToken(rawToken),
+		Role:         role,
+		ExpiresAt:    req.ExpiresAt,
+		Scope:        req.Scope,
+		ConnectorIDs: connectorIDs,
 	}
 	if err := h.Store.CreateAPIKey(r.Context(), key); err != nil {
 		httputil.Errorf(w, err)
 		return
 	}
 	if err := h.Store.RecordAuditFromContext(r.Context(), "auth.api_key.create", "api_key", key.ID, map[string]any{
-		"name": key.Name,
+		"name":         key.Name,
+		"scope":        key.Scope,
+		"connectorIds": key.ConnectorIDs,
 	}); err != nil {
 		slog.Error("failed to record audit", "action", "auth.api_key.create", "error", err)
 	}
 
-	httputil.JSON(w, http.StatusCreated, map[string]any{
-		"id":         key.ID,
-		"name":       key.Name,
-		"role":       key.Role,
-		"createdAt":  key.CreatedAt,
-		"expiresAt":  key.ExpiresAt,
-		"lastUsedAt": key.LastUsedAt,
-		"revokedAt":  key.RevokedAt,
-		"token":      rawToken,
-	})
+	out := sanitize(*key)
+	out["token"] = rawToken
+	httputil.JSON(w, http.StatusCreated, out)
+}
+
+// maxKeyConnectors bounds a key's connector allow-list.
+const maxKeyConnectors = 100
+
+// validConnectorIDs dedupes a requested connector allow-list and checks the
+// caller holds at least viewer on each connector, so a key can only be
+// restricted to connectors its owner can already reach. Unknown IDs and IDs
+// without a grant get the same error, so the response doesn't reveal which
+// connectors exist.
+func (h *Handler) validConnectorIDs(w http.ResponseWriter, r *http.Request, ids []string) ([]string, bool) {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) > maxKeyConnectors {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("at most %d connectors", maxKeyConnectors), []httputil.FieldError{{Field: "connectorIds", Msg: fmt.Sprintf("must list at most %d connectors", maxKeyConnectors)}})
+		return nil, false
+	}
+	userID := auth.UserIDFromContext(r.Context())
+	for _, id := range out {
+		ok, err := h.Store.UserHasConnectorRole(r.Context(), userID, id, "viewer")
+		if err != nil {
+			httputil.Errorf(w, err)
+			return nil, false
+		}
+		if !ok {
+			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "connectorIds contains a connector you have no access to", []httputil.FieldError{{Field: "connectorIds", Msg: "must only list connectors you have access to"}})
+			return nil, false
+		}
+	}
+	return out, true
 }
 
 // List handles GET /api/auth/api-keys. It returns only keys owned by the
@@ -149,12 +202,14 @@ func newToken() (string, error) {
 
 func sanitize(key store.APIKey) map[string]any {
 	return map[string]any{
-		"id":         key.ID,
-		"name":       key.Name,
-		"role":       key.Role,
-		"createdAt":  key.CreatedAt,
-		"expiresAt":  key.ExpiresAt,
-		"lastUsedAt": key.LastUsedAt,
-		"revokedAt":  key.RevokedAt,
+		"id":           key.ID,
+		"name":         key.Name,
+		"role":         key.Role,
+		"createdAt":    key.CreatedAt,
+		"expiresAt":    key.ExpiresAt,
+		"lastUsedAt":   key.LastUsedAt,
+		"revokedAt":    key.RevokedAt,
+		"scope":        key.Scope,
+		"connectorIds": key.ConnectorIDs,
 	}
 }

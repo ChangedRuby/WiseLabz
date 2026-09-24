@@ -6,10 +6,17 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ApiKeyScope } from './apiKeyScope';
 
 export interface ApiKeyCreate {
   /** @minLength 1 */
   name: string;
   /** Optional expiration; omitted or empty means never. */
   expiresAt?: string;
+  scope?: ApiKeyScope;
+  /**
+   * Optional allow-list of connectors the key can reach. Each must be a connector the caller holds a grant on. A connector-restricted key never acts as instance admin. Omitted or empty means no restriction.
+   * @maxItems 100
+   */
+  connectorIds?: string[];
 }

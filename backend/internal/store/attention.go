@@ -20,8 +20,8 @@ type AttentionItem struct {
 
 // attentionUnion is the pending-alert / open-finding union, already narrowed
 // to connectors the caller holds a grant on and joined to its runbook. The
-// two %s slots take the since filters; both selects bind: roles..., userID,
-// [since], roles..., userID, [since].
+// two %s slots take the since and API-key connector filters; both selects
+// bind: userID, roles..., [since], [keyIDs...].
 const attentionUnion = `
 	SELECT a.id AS id, 'alert' AS kind, a.severity AS severity, a.title AS title,
 	       a.service_id AS connector_id, a.created_at AS detected_at,
@@ -57,7 +57,9 @@ func (s *Store) MergedAttentionItems(ctx context.Context, userID, since string, 
 		alertSince = " AND a.created_at >= ?"
 		findingSince = " AND f.last_seen_at >= ?"
 	}
-	union := fmt.Sprintf(attentionUnion, rolePH, alertSince, rolePH, findingSince)
+	alertKeyFilter, keyArgs := apiKeyConnectorFilter(ctx, "a.service_id")
+	findingKeyFilter, _ := apiKeyConnectorFilter(ctx, "f.connector_id")
+	union := fmt.Sprintf(attentionUnion, rolePH, alertSince+alertKeyFilter, rolePH, findingSince+findingKeyFilter)
 
 	var args []any
 	args = append(args, userID)
@@ -65,11 +67,13 @@ func (s *Store) MergedAttentionItems(ctx context.Context, userID, since string, 
 	if since != "" {
 		args = append(args, since)
 	}
+	args = append(args, keyArgs...)
 	args = append(args, userID)
 	args = append(args, roles...)
 	if since != "" {
 		args = append(args, since)
 	}
+	args = append(args, keyArgs...)
 
 	var total int
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+union+") u", args...).Scan(&total); err != nil {

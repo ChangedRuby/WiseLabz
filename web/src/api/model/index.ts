@@ -24,6 +24,7 @@ export * from './alertStatus';
 export * from './apiKey';
 export * from './apiKeyCreate';
 export * from './apiKeyCreated';
+export * from './apiKeyScope';
 export * from './attentionItem';
 export * from './attentionItemKind';
 export * from './attentionPage';

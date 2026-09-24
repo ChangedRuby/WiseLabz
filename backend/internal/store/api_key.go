@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -23,9 +24,41 @@ type APIKey struct {
 	ExpiresAt  string `json:"expiresAt"`
 	LastUsedAt string `json:"lastUsedAt"`
 	RevokedAt  string `json:"revokedAt"`
+	// Scope is auth.APIKeyScopeFull or auth.APIKeyScopeRead (#278).
+	Scope string `json:"scope"`
+	// ConnectorIDs, when non-empty, restricts the key to these connectors.
+	ConnectorIDs []string `json:"connectorIds"`
 }
 
-// CreateAPIKey inserts a new API key.
+const apiKeyColumns = `id, user_id, name, token_hash, role, created_at, expires_at, last_used_at, revoked_at, scope, connector_ids`
+
+func scanAPIKey(row rowScanner, key *APIKey) error {
+	var connectorIDs string
+	if err := row.Scan(&key.ID, &key.UserID, &key.Name, &key.TokenHash, &key.Role,
+		&key.CreatedAt, &key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.Scope, &connectorIDs); err != nil {
+		return err
+	}
+	ids, err := decodeConnectorIDs(connectorIDs)
+	if err != nil {
+		return err
+	}
+	key.ConnectorIDs = ids
+	return nil
+}
+
+func decodeConnectorIDs(raw string) ([]string, error) {
+	ids := make([]string, 0)
+	if raw == "" {
+		return ids, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return nil, fmt.Errorf("decode api key connector ids: %w", err)
+	}
+	return ids, nil
+}
+
+// CreateAPIKey inserts a new API key. An empty Scope means full access and
+// nil ConnectorIDs means no connector restriction.
 func (s *Store) CreateAPIKey(ctx context.Context, key *APIKey) error {
 	if key.ID == "" {
 		key.ID = uuid.New().String()
@@ -33,11 +66,21 @@ func (s *Store) CreateAPIKey(ctx context.Context, key *APIKey) error {
 	if key.CreatedAt == "" {
 		key.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO api_keys (id, user_id, name, token_hash, role, created_at, expires_at, last_used_at, revoked_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if key.Scope == "" {
+		key.Scope = auth.APIKeyScopeFull
+	}
+	if key.ConnectorIDs == nil {
+		key.ConnectorIDs = []string{}
+	}
+	connectorIDs, err := json.Marshal(key.ConnectorIDs)
+	if err != nil {
+		return fmt.Errorf("encode api key connector ids: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO api_keys (`+apiKeyColumns+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, key.ID, key.UserID, key.Name, key.TokenHash, key.Role, key.CreatedAt,
-		key.ExpiresAt, key.LastUsedAt, key.RevokedAt)
+		key.ExpiresAt, key.LastUsedAt, key.RevokedAt, key.Scope, string(connectorIDs))
 	if err != nil {
 		return fmt.Errorf("create api key: %w", err)
 	}
@@ -47,11 +90,10 @@ func (s *Store) CreateAPIKey(ctx context.Context, key *APIKey) error {
 // GetAPIKeyByHash retrieves an API key by its stored token hash.
 func (s *Store) GetAPIKeyByHash(ctx context.Context, tokenHash string) (*APIKey, error) {
 	key := &APIKey{}
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, name, token_hash, role, created_at, expires_at, last_used_at, revoked_at
+	err := scanAPIKey(s.db.QueryRowContext(ctx, `
+		SELECT `+apiKeyColumns+`
 		FROM api_keys WHERE token_hash = ?
-	`, tokenHash).Scan(&key.ID, &key.UserID, &key.Name, &key.TokenHash, &key.Role,
-		&key.CreatedAt, &key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt)
+	`, tokenHash), key)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -64,11 +106,10 @@ func (s *Store) GetAPIKeyByHash(ctx context.Context, tokenHash string) (*APIKey,
 // GetAPIKeyByID retrieves an API key by ID.
 func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 	key := &APIKey{}
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, name, token_hash, role, created_at, expires_at, last_used_at, revoked_at
+	err := scanAPIKey(s.db.QueryRowContext(ctx, `
+		SELECT `+apiKeyColumns+`
 		FROM api_keys WHERE id = ?
-	`, id).Scan(&key.ID, &key.UserID, &key.Name, &key.TokenHash, &key.Role,
-		&key.CreatedAt, &key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt)
+	`, id), key)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -84,14 +125,16 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 // disabled user's keys are rejected even if the key itself is still active.
 func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKeyClaims, error) {
 	claims := &auth.APIKeyClaims{}
-	var role string
+	var role, scope, connectorIDs string
 	var disabled int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT api_keys.id, api_keys.user_id, users.instance_admin_role, api_keys.expires_at, api_keys.revoked_at, users.disabled, api_keys.last_used_at
+		SELECT api_keys.id, api_keys.user_id, users.instance_admin_role, api_keys.expires_at, api_keys.revoked_at, users.disabled, api_keys.last_used_at,
+			api_keys.scope, api_keys.connector_ids
 		FROM api_keys
 		JOIN users ON users.id = api_keys.user_id
 		WHERE api_keys.token_hash = ?
-	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &role, &claims.ExpiresAt, &claims.RevokedAt, &disabled, &claims.LastUsedAt)
+	`, tokenHash).Scan(&claims.KeyID, &claims.UserID, &role, &claims.ExpiresAt, &claims.RevokedAt, &disabled, &claims.LastUsedAt,
+		&scope, &connectorIDs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -102,13 +145,23 @@ func (s *Store) LookupAPIKey(ctx context.Context, tokenHash string) (*auth.APIKe
 		return nil, ErrNotFound
 	}
 	claims.InstanceAdmin = role == "admin"
+	ids, err := decodeConnectorIDs(connectorIDs)
+	if err != nil {
+		return nil, err
+	}
+	// Anything but an explicit "full" scope is treated as read-only, so an
+	// unexpected value fails closed.
+	claims.Restriction = auth.APIKeyRestriction{
+		ReadOnly:     scope != auth.APIKeyScopeFull,
+		ConnectorIDs: ids,
+	}
 	return claims, nil
 }
 
 // ListAPIKeysForUser returns all API keys owned by a user, newest first.
 func (s *Store) ListAPIKeysForUser(ctx context.Context, userID string) ([]APIKey, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, name, token_hash, role, created_at, expires_at, last_used_at, revoked_at
+		SELECT `+apiKeyColumns+`
 		FROM api_keys WHERE user_id = ? ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
@@ -119,8 +172,7 @@ func (s *Store) ListAPIKeysForUser(ctx context.Context, userID string) ([]APIKey
 	keys := make([]APIKey, 0)
 	for rows.Next() {
 		var key APIKey
-		if err := rows.Scan(&key.ID, &key.UserID, &key.Name, &key.TokenHash, &key.Role,
-			&key.CreatedAt, &key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt); err != nil {
+		if err := scanAPIKey(rows, &key); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
 		}
 		keys = append(keys, key)
