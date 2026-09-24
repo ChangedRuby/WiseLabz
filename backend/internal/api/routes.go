@@ -15,6 +15,7 @@ import (
 	dochandler "github.com/WiseLabz/wiselabz/internal/api/docs"
 	findinghandler "github.com/WiseLabz/wiselabz/internal/api/findings"
 	notifhandler "github.com/WiseLabz/wiselabz/internal/api/notifications"
+	reporthandler "github.com/WiseLabz/wiselabz/internal/api/reports"
 	runbookhandler "github.com/WiseLabz/wiselabz/internal/api/runbooks"
 	savedviewhandler "github.com/WiseLabz/wiselabz/internal/api/savedviews"
 	settinghandler "github.com/WiseLabz/wiselabz/internal/api/settings"
@@ -46,6 +47,7 @@ type routerDeps struct {
 	savedViewH  *savedviewhandler.Handler
 	chatH       *chathandler.Handler
 	complianceH *compliancehandler.Handler
+	reportH     *reporthandler.Handler
 }
 
 // mountAPIRoutes registers the whole API surface on r. It is mounted twice by
@@ -74,6 +76,7 @@ func mountAPIRoutes(r chi.Router, d routerDeps) {
 		mountTemplateRoutes(r, d)
 		mountWorkflowRoutes(r, d)
 		mountDashboardRoutes(r, d)
+		mountReportRoutes(r, d)
 
 		// --- Instance-admin-only routes ---
 		r.Group(func(r chi.Router) {

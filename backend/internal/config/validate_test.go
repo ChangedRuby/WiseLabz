@@ -92,6 +92,8 @@ func TestEveryKeyEnvOverridable(t *testing.T) {
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "true")
 			case strings.HasSuffix(name, "cron_expr") || name == "sync_schedule":
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "*/5 * * * *")
+			case name == "server_public_url":
+				t.Setenv("WISELABZ_"+strings.ToUpper(name), "https://example.test")
 			default:
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "v")
 			}

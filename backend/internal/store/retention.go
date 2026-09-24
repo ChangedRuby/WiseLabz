@@ -139,6 +139,15 @@ func (s *Store) DeleteOldChanges(ctx context.Context, cutoff string) (int64, err
 	return n, nil
 }
 
+// DeleteOldReports removes generated report snapshots after their configured retention window.
+func (s *Store) DeleteOldReports(ctx context.Context, cutoff string) (int64, error) {
+	n, err := s.batchDelete(ctx, "reports", `t.created_at < ?`, cutoff)
+	if err != nil {
+		return n, fmt.Errorf("delete old reports: %w", err)
+	}
+	return n, nil
+}
+
 // DeleteExpiredShareLinks removes share links that expired or were revoked
 // before cutoff. An empty expires_at/revoked_at means "never".
 func (s *Store) DeleteExpiredShareLinks(ctx context.Context, cutoff string) (int64, error) {

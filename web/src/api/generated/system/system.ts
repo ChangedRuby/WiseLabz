@@ -1567,7 +1567,7 @@ export function useGetSystemDiagnostics<
 }
 
 /**
- * @summary Every scheduled background job currently registered with the scheduler (quality, sync, digest, backup, backup-verify, retention, docexport, …) — operator. Combines the job's live next-run time with its persisted health: `lastStatus` flips to `failing` on the first failed run and back to `ok` on the next success, surviving a server restart (#384). A job that has never run yet still appears, with only `name`/`cronExpr`/`nextRunAt` set.
+ * @summary Scheduled background jobs and persisted health (operator)
  */
 export const getSystemJobs = (
   options?: SecondParameter<typeof customInstance>,
@@ -1651,7 +1651,7 @@ export function useGetSystemJobs<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * @summary Every scheduled background job currently registered with the scheduler (quality, sync, digest, backup, backup-verify, retention, docexport, …) — operator. Combines the job's live next-run time with its persisted health: `lastStatus` flips to `failing` on the first failed run and back to `ok` on the next success, surviving a server restart (#384). A job that has never run yet still appears, with only `name`/`cronExpr`/`nextRunAt` set.
+ * @summary Scheduled background jobs and persisted health (operator)
  */
 
 export function useGetSystemJobs<

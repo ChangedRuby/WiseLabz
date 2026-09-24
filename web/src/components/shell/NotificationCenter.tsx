@@ -47,6 +47,9 @@ export function NotificationCenter() {
     } else if (n.eventType?.startsWith('finding.')) {
       navigateTo('/findings');
       setOpen(false);
+    } else if (n.eventType === 'report.generated') {
+      navigateTo('/reports');
+      setOpen(false);
     }
   };
 
@@ -111,7 +114,7 @@ export function NotificationCenter() {
                   </p>
                 )}
                 {items.map((n) => {
-                  const willNavigate = n.alertId || n.eventType?.startsWith('finding.');
+                  const willNavigate = n.alertId || n.eventType?.startsWith('finding.') || n.eventType === 'report.generated';
                   return (
                   <button
                     key={n.id}

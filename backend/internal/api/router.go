@@ -23,6 +23,7 @@ import (
 	findinghandler "github.com/WiseLabz/wiselabz/internal/api/findings"
 	"github.com/WiseLabz/wiselabz/internal/api/middleware"
 	notifhandler "github.com/WiseLabz/wiselabz/internal/api/notifications"
+	reporthandler "github.com/WiseLabz/wiselabz/internal/api/reports"
 	runbookhandler "github.com/WiseLabz/wiselabz/internal/api/runbooks"
 	savedviewhandler "github.com/WiseLabz/wiselabz/internal/api/savedviews"
 	settinghandler "github.com/WiseLabz/wiselabz/internal/api/settings"
@@ -33,6 +34,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/quality"
+	"github.com/WiseLabz/wiselabz/internal/report"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
@@ -54,6 +56,7 @@ type Config struct {
 	EmbedRegistry  *ai.EmbedRegistry
 	Scheduler      *scheduler.Runner // for backup job scheduling
 	QualityChecker *quality.Checker
+	ReportManager  *report.Manager
 	BackupDir      string // directory where backups are written
 	// Ready is the shared readiness flag the lifecycle manager flips during
 	// ordered shutdown. Nil in tests that don't exercise /readyz.
@@ -140,6 +143,7 @@ func newRouterDeps(cfg Config) routerDeps {
 		savedViewH:  savedviewhandler.NewHandler(cfg.Store),
 		chatH:       chathandler.NewHandler(cfg.Store, settingH, cfg.AIRegistry, cfg.EmbedRegistry),
 		complianceH: compliancehandler.NewHandler(cfg.Store, ruleEvaluator),
+		reportH:     reporthandler.NewHandler(cfg.Store, cfg.ReportManager),
 	}
 }
 

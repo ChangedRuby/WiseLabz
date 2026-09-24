@@ -58,6 +58,7 @@ type Server struct {
 	Port                   int    `mapstructure:"port"`
 	Origin                 string `mapstructure:"origin"`                   // comma-separated allowed CORS origins
 	TrustedProxies         string `mapstructure:"trusted_proxies"`          // comma-separated CIDRs allowed to set X-Forwarded-For/X-Real-IP
+	PublicURL              string `mapstructure:"public_url"`               // optional externally reachable base URL for report links
 	Embed                  bool   `mapstructure:"embed"`                    // serve embedded SPA in production
 	ReadTimeoutSeconds     int    `mapstructure:"read_timeout_seconds"`     // HTTP read timeout
 	WriteTimeoutSeconds    int    `mapstructure:"write_timeout_seconds"`    // HTTP write timeout
@@ -192,6 +193,7 @@ type RetentionSettings struct {
 	SyncRunDays     int    `mapstructure:"sync_run_days"`
 	AuditDays       int    `mapstructure:"audit_days"`
 	HealthCheckDays int    `mapstructure:"health_check_days"`
+	ReportDays      int    `mapstructure:"report_days"`
 	CronExpr        string `mapstructure:"cron_expr"` // cron expression for cleanup schedule
 }
 
@@ -301,6 +303,7 @@ func Load() (*Config, error) {
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.embed", false)
+	v.SetDefault("server.public_url", "")
 	v.SetDefault("db.driver", "sqlite")
 	v.SetDefault("db.dsn", "file:/data/wiselabz.db?cache=shared")
 	v.SetDefault("db.max_open_conns", 20)
@@ -327,6 +330,7 @@ func Load() (*Config, error) {
 	v.SetDefault("retention.sync_run_days", 90)
 	v.SetDefault("retention.audit_days", 180)
 	v.SetDefault("retention.health_check_days", 90)
+	v.SetDefault("retention.report_days", 90)
 	v.SetDefault("retention.cron_expr", "0 0 * * *") // daily retention cleanup at midnight
 	v.SetDefault("backup.dir", "./data/backups")     // backups subdirectory in data folder
 	v.SetDefault("backup.cron_expr", "0 3 * * *")    // daily backups at 3 AM
@@ -351,7 +355,7 @@ func Load() (*Config, error) {
 	v.AutomaticEnv()
 	for _, key := range []string{
 		"db.driver", "db.dsn",
-		"server.host", "server.port", "server.origin", "server.trusted_proxies", "server.embed",
+		"server.host", "server.port", "server.origin", "server.trusted_proxies", "server.public_url", "server.embed",
 		"server.read_timeout_seconds", "server.write_timeout_seconds", "server.shutdown_timeout_seconds",
 		"encryption.key",
 		"auth.secret", "auth.access_token_ttl", "auth.refresh_token_ttl", "auth.step_up_for_destructive",
@@ -361,7 +365,7 @@ func Load() (*Config, error) {
 		"quality.cron_expr",
 		"rotation.max_age_days", "rotation.warn_days",
 		"log.level", "log.format",
-		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.health_check_days", "retention.cron_expr",
+		"retention.snapshot_days", "retention.doc_version_days", "retention.alert_days", "retention.sync_run_days", "retention.audit_days", "retention.health_check_days", "retention.report_days", "retention.cron_expr",
 		"backup.dir", "backup.cron_expr", "backup.max_backups", "backup.max_age_hours", "backup.enabled",
 		"doc_export.dir", "doc_export.cron_expr", "doc_export.enabled",
 		"doc_export.git.remote", "doc_export.git.branch", "doc_export.git.path",
@@ -390,6 +394,12 @@ func Load() (*Config, error) {
 	// Validate cron expressions
 	if err := cfg.validateCronExpressions(); err != nil {
 		return nil, err
+	}
+	if cfg.Server.PublicURL != "" {
+		u, err := url.Parse(cfg.Server.PublicURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, errors.New("server.public_url must be an absolute http(s) URL")
+		}
 	}
 
 	return &cfg, nil

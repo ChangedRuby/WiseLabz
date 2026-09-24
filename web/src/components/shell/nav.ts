@@ -9,6 +9,7 @@ import {
   SparklesIcon,
   ChatIcon,
   NetworkIcon,
+  HistoryIcon,
 } from '../icons';
 
 export interface NavItem {
@@ -30,4 +31,5 @@ export const NAV: NavItem[] = [
   { to: '/attention', label: 'Attention', Icon: SparklesIcon, badge: true, badgeSource: 'attention' },
   { to: '/alerts', label: 'Alerts', Icon: BellIcon, badge: true },
   { to: '/findings', label: 'Findings', Icon: AlertTriangleIcon, badge: true, badgeSource: 'findings' },
+  { to: '/reports', label: 'Reports', Icon: HistoryIcon },
 ];
