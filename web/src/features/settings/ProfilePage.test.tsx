@@ -48,6 +48,15 @@ vi.mock('../../api/generated/auth/auth', () => ({
   getGetAuthApiKeysQueryKey: () => ['getAuthApiKeys'],
 }));
 
+vi.mock('../../api/generated/connectors/connectors', () => ({
+  useGetConnectors: () => ({
+    data: [
+      { id: 'c1', name: 'pve' },
+      { id: 'c2', name: 'pfsense' },
+    ],
+  }),
+}));
+
 function renderProfilePage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -162,5 +171,44 @@ describe('ProfilePage (#237 Phase 4 - Digest Settings)', () => {
     expect(options).toContain('off');
     expect(options).toContain('daily');
     expect(options).toContain('weekly');
+  });
+});
+
+describe('ProfilePage API keys (#278 scopes)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createApiKeyMock.mockResolvedValue({ token: 'wlz_x' });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('sends the chosen scope and connector restriction', async () => {
+    renderProfilePage();
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'ci' } });
+    fireEvent.change(screen.getByLabelText(/^access/i), { target: { value: 'read' } });
+    fireEvent.click(screen.getByLabelText('pfsense'));
+    fireEvent.click(screen.getByRole('button', { name: /create key/i }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(createApiKeyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'ci', scope: 'read', connectorIds: ['c2'] })
+    );
+  });
+
+  it('omits connectorIds when no connector is checked', async () => {
+    renderProfilePage();
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'ci' } });
+    fireEvent.click(screen.getByRole('button', { name: /create key/i }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(createApiKeyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'ci', scope: 'full', connectorIds: undefined })
+    );
   });
 });

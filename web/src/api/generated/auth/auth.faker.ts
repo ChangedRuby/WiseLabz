@@ -8,7 +8,7 @@
  */
 import { faker } from '@faker-js/faker';
 
-import { Role } from '../../model';
+import { ApiKeyScope, Role } from '../../model';
 import type {
   ApiKey,
   ApiKeyCreated,
@@ -145,6 +145,10 @@ export const getGetAuthApiKeysResponseMock = (): ApiKey[] =>
       faker.date.past().toISOString().slice(0, 19) + 'Z',
       null,
     ]),
+    scope: faker.helpers.arrayElement(Object.values(ApiKeyScope)),
+    connectorIds: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => faker.string.uuid()
+    ),
   }));
 
 export const getPostAuthApiKeysResponseMock = (): ApiKeyCreated => ({
@@ -165,6 +169,10 @@ export const getPostAuthApiKeysResponseMock = (): ApiKeyCreated => ({
       faker.date.past().toISOString().slice(0, 19) + 'Z',
       null,
     ]),
+    scope: faker.helpers.arrayElement(Object.values(ApiKeyScope)),
+    connectorIds: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => faker.string.uuid()
+    ),
   },
   ...{ token: faker.string.alpha({ length: { min: 10, max: 20 } }) },
 });

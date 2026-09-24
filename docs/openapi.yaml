@@ -158,6 +158,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiKeyCreated' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /auth/api-keys/{id}:
     delete:
       tags: [auth]
@@ -2848,6 +2849,7 @@ paths:
       tags: [system]
       summary: Mint a one-time WebSocket ticket for the authenticated caller
       description: Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md).
+        Not available to a read-only or connector-restricted API key.
       responses:
         '200':
           description: OK
@@ -2859,6 +2861,7 @@ paths:
                 properties:
                   ticket: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
 components:
   securitySchemes:
@@ -3022,9 +3025,25 @@ components:
           type: string
           format: date-time
           description: Optional expiration; omitted or empty means never.
+        scope: { $ref: '#/components/schemas/ApiKeyScope' }
+        connectorIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+          description: >-
+            Optional allow-list of connectors the key can reach. Each must be a
+            connector the caller holds a grant on. A connector-restricted key
+            never acts as instance admin. Omitted or empty means no restriction.
+    ApiKeyScope:
+      type: string
+      enum: [full, read]
+      default: full
+      description: >-
+        full acts with the owner's access. read allows only GET/HEAD/OPTIONS
+        requests and caps the key's role on every connector at viewer.
     ApiKey:
       type: object
-      required: [id, name, role, createdAt, expiresAt, lastUsedAt, revokedAt]
+      required: [id, name, role, createdAt, expiresAt, lastUsedAt, revokedAt, scope, connectorIds]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3033,6 +3052,11 @@ components:
         expiresAt: { type: string, format: date-time, nullable: true }
         lastUsedAt: { type: string, format: date-time, nullable: true }
         revokedAt: { type: string, format: date-time, nullable: true }
+        scope: { $ref: '#/components/schemas/ApiKeyScope' }
+        connectorIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: Connectors the key is restricted to; empty means unrestricted.
     ApiKeyCreated:
       allOf:
         - $ref: '#/components/schemas/ApiKey'

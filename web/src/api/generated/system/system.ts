@@ -1997,7 +1997,7 @@ export function useGetReadyz<
 }
 
 /**
- * Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md).
+ * Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md). Not available to a read-only or connector-restricted API key.
  * @summary Mint a one-time WebSocket ticket for the authenticated caller
  */
 export const postWsTicket = (
@@ -2013,7 +2013,7 @@ export const getPostWsTicketQueryKey = () => {
 
 export const getPostWsTicketQueryOptions = <
   TData = Awaited<ReturnType<typeof postWsTicket>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;
   request?: SecondParameter<typeof customInstance>;
@@ -2033,11 +2033,11 @@ export const getPostWsTicketQueryOptions = <
 };
 
 export type PostWsTicketQueryResult = NonNullable<Awaited<ReturnType<typeof postWsTicket>>>;
-export type PostWsTicketQueryError = ErrorType<UnauthorizedResponse>;
+export type PostWsTicketQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>;
 
 export function usePostWsTicket<
   TData = Awaited<ReturnType<typeof postWsTicket>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
 >(
   options: {
     query: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>> &
@@ -2055,7 +2055,7 @@ export function usePostWsTicket<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostWsTicket<
   TData = Awaited<ReturnType<typeof postWsTicket>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>> &
@@ -2073,7 +2073,7 @@ export function usePostWsTicket<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostWsTicket<
   TData = Awaited<ReturnType<typeof postWsTicket>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;
@@ -2087,7 +2087,7 @@ export function usePostWsTicket<
 
 export function usePostWsTicket<
   TData = Awaited<ReturnType<typeof postWsTicket>>,
-  TError = ErrorType<UnauthorizedResponse>,
+  TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof postWsTicket>>, TError, TData>>;

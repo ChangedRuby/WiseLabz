@@ -126,11 +126,25 @@ func TestRunMigrationsDown(t *testing.T) {
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='reports'").Scan(&reportsTable); err != nil {
 		t.Fatalf("reports table missing after migrations: %v", err)
 	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if !hasColumn(t, db, "sqlite", "api_keys", col) {
+			t.Fatalf("api_keys.%s missing after migrations", col)
+		}
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() api_key_scopes error: %v", err)
+	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if hasColumn(t, db, "sqlite", "api_keys", col) {
+			t.Errorf("api_keys.%s should not exist after rolling back api_key_scopes", col)
+		}
+	}
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() reports error: %v", err)
 	}
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='reports'").Scan(&reportsTable); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("reports table should not exist after rolling back its migration (err=%v)", err)
+
 	}
 
 	var jobHealthTable string
@@ -268,6 +282,13 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("job_health table missing after reapply: %v", err)
 	}
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, api_key_scopes error: %v", err)
+	}
+	if hasColumn(t, db, "sqlite", "api_keys", "scope") {
+		t.Error("api_keys.scope should not exist after rolling back api_key_scopes")
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, reports error: %v", err)
 	}
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='reports'").Scan(&reportsTable); !errors.Is(err, sql.ErrNoRows) {
@@ -276,6 +297,7 @@ func TestRunMigrationsDown(t *testing.T) {
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='job_health'").Scan(&jobHealthTable); err != nil {
 		t.Fatalf("job_health table missing after rolling back reports: %v", err)
 	}
+
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, job_health error: %v", err)
 	}

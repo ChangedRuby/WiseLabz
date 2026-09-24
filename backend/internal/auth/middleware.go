@@ -105,9 +105,18 @@ func AuthMiddleware(jwtSvc *Service, checkers ...APIKeyChecker) func(http.Handle
 							slog.Error("failed to update API key last-used timestamp", "key_id", keyClaims.KeyID, "error", touchErr)
 						}
 					}
+					restriction := keyClaims.Restriction
+					if restriction.ReadOnly && !isSafeMethod(r.Method) {
+						httputil.Error(w, http.StatusForbidden, "forbidden", "API key is read-only")
+						return
+					}
 					ctx := context.WithValue(r.Context(), ctxUserID, keyClaims.UserID)
-					ctx = context.WithValue(ctx, ctxInstanceAdmin, keyClaims.InstanceAdmin)
+					// A connector-restricted key never carries instance admin:
+					// admin endpoints aren't connector-scoped, so the
+					// restriction couldn't be honored there.
+					ctx = context.WithValue(ctx, ctxInstanceAdmin, keyClaims.InstanceAdmin && len(restriction.ConnectorIDs) == 0)
 					ctx = context.WithValue(ctx, ctxClaims, keyClaims)
+					ctx = ContextWithAPIKeyRestriction(ctx, restriction)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}

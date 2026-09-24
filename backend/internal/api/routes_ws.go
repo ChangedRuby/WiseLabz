@@ -23,6 +23,11 @@ func mountWSRoutes(r chi.Router, d routerDeps) {
 	}
 
 	r.With(cfg.AuthMiddleware()).Post("/ws/ticket", func(w http.ResponseWriter, r *http.Request) {
+		// The WebSocket stream isn't filtered per API key, so a restricted
+		// key could read events for connectors outside its restriction.
+		if auth.RejectRestrictedAPIKey(w, r) {
+			return
+		}
 		userID := auth.UserIDFromContext(r.Context())
 		// Bind the ticket to the caller's refresh session when the cookie is
 		// present so logout / password change closes the socket.

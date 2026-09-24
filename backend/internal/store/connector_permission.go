@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -40,7 +41,8 @@ func (s *Store) GetUserConnectorRole(ctx context.Context, userID, connectorID st
 	if err != nil {
 		return "", fmt.Errorf("get user connector role: %w", err)
 	}
-	return role, nil
+	// An API key can narrow its owner's grant (#278), never widen it.
+	return auth.ClampConnectorRole(ctx, connectorID, role), nil
 }
 
 // UserHasConnectorRole reports whether userID has at least minRole on
@@ -98,6 +100,23 @@ func scanConnectorGrants(rows *sql.Rows) ([]ConnectorGrant, error) {
 	return grants, nil
 }
 
+// apiKeyConnectorFilter returns an " AND <column> IN (...)" SQL fragment and
+// its args narrowing a query to the connectors the request's API key is
+// restricted to, or "" when the key has no connector restriction. Queries
+// that join user_connector_roles directly (rather than going through
+// GetUserConnectorRole) append it so key restrictions hold there too.
+func apiKeyConnectorFilter(ctx context.Context, column string) (string, []any) {
+	ids := auth.APIKeyRestrictionFromContext(ctx).ConnectorIDs
+	if len(ids) == 0 {
+		return "", nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return " AND " + column + " IN (" + placeholders(len(ids)) + ")", args
+}
+
 // FilterConnectorIDsByGrant narrows ids down to the ones userID has at
 // least minRole on. Used by list endpoints to enforce default-deny instead
 // of returning every connector's data to any authenticated user.
@@ -111,7 +130,8 @@ func (s *Store) FilterConnectorIDsByGrant(ctx context.Context, userID string, id
 	}
 	allowed := make(map[string]bool, len(grants))
 	for _, g := range grants {
-		if connectorRoleRank[g.Role] >= connectorRoleRank[minRole] {
+		role := auth.ClampConnectorRole(ctx, g.ConnectorID, g.Role)
+		if role != "" && connectorRoleRank[role] >= connectorRoleRank[minRole] {
 			allowed[g.ConnectorID] = true
 		}
 	}

@@ -6,21 +6,13 @@
  *
  * OpenAPI spec version: 0.1.0
  */
-import type { ApiKeyScope } from './apiKeyScope';
-import type { Role } from './role';
 
-export interface ApiKey {
-  id: string;
-  name: string;
-  role: Role;
-  createdAt: string;
-  /** @nullable */
-  expiresAt: string | null;
-  /** @nullable */
-  lastUsedAt: string | null;
-  /** @nullable */
-  revokedAt: string | null;
-  scope: ApiKeyScope;
-  /** Connectors the key is restricted to; empty means unrestricted. */
-  connectorIds: string[];
-}
+/**
+ * full acts with the owner's access. read allows only GET/HEAD/OPTIONS requests and caps the key's role on every connector at viewer.
+ */
+export type ApiKeyScope = (typeof ApiKeyScope)[keyof typeof ApiKeyScope];
+
+export const ApiKeyScope = {
+  full: 'full',
+  read: 'read',
+} as const;
