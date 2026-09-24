@@ -490,6 +490,20 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if !hasColumn(t, db, "postgres", "api_keys", col) {
+			t.Fatalf("api_keys.%s missing after migrations", col)
+		}
+	}
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() api_key_scopes error: %v", err)
+	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if hasColumn(t, db, "postgres", "api_keys", col) {
+			t.Errorf("api_keys.%s should not exist after rolling back api_key_scopes", col)
+		}
+	}
+
 	var reportsTable string
 	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'reports'`).Scan(&reportsTable); err != nil {
 		t.Fatalf("reports table missing after migrations: %v", err)
@@ -586,6 +600,11 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	}
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() after share link rollback: %v", err)
+	}
+	for _, col := range []string{"scope", "connector_ids"} {
+		if !hasColumn(t, db, "postgres", "api_keys", col) {
+			t.Errorf("api_keys.%s missing after reapplying migrations", col)
+		}
 	}
 	assertShareLinkRetentionIndexes(t, db, "postgres", true)
 	assertSessionLastSeenIndex(t, db, "postgres", true)
