@@ -1,4 +1,4 @@
-# Graph Report - wiselabz-pr387-fix  (2026-09-24)
+# Graph Report - wiselabz-pr387  (2026-09-24)
 
 ## Corpus Check
 - 799 files · ~480,452 words
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0580ce9b`
+- Built from commit: `0e5caa2b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

@@ -108,7 +108,7 @@ func TestNewHTTPClientRetriesAndBlocksRedirects(t *testing.T) {
 }
 
 func TestNewHTTPClientBlocksLoopbackByDefault(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	defer srv.Close()
 	if _, err := NewHTTPClient(HTTPClientOptions{}).Get(srv.URL); err == nil {
 		t.Error("GET loopback succeeded, want the guarded dialer to refuse it")
