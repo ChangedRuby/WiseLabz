@@ -4,9 +4,7 @@ package custom
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -78,10 +76,7 @@ func (c *Connector) Validate(ctx context.Context, config map[string]any) error {
 	// newGuardedClient, which blocks loopback/link-local targets and redirects.
 	resp, err := c.client.Do(req) // codeql[go/request-forgery]
 	if err != nil {
-		if isTimeout(err) {
-			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
-		}
-		return fmt.Errorf("request failed: %w", err)
+		return connector.MapTransportError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
@@ -121,10 +116,7 @@ func (c *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	// See Validate above: SSRF is mitigated at dial time by newGuardedClient.
 	resp, err := c.client.Do(req) // codeql[go/request-forgery]
 	if err != nil {
-		if isTimeout(err) {
-			return nil, connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
-		}
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, connector.MapTransportError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
@@ -180,14 +172,7 @@ func setHeaders(req *http.Request, config map[string]any) {
 // connector.GuardedDialer). Redirects are blocked so a 3xx cannot bounce the
 // request to an internal target.
 func newGuardedClient() *http.Client {
-	dialer := connector.GuardedDialer(30 * time.Second)
-	return &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{DialContext: dialer.DialContext},
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	return connector.NewHTTPClient(connector.HTTPClientOptions{})
 }
 
 // validateCustomURL parses rawURL and enforces the http/https scheme and a
@@ -273,15 +258,4 @@ func tryParseEntities(body []byte) ([]connector.SnapshotEntity, bool) {
 	}
 
 	return result, true
-}
-
-// isTimeout reports whether err represents a request deadline being
-// exceeded, covering both a canceled context and a net.Error timeout
-// (e.g. a dial or read timing out on the underlying transport).
-func isTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
 }

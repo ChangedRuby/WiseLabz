@@ -22,11 +22,9 @@ package unifi
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -181,18 +179,7 @@ func newConnector(config map[string]any) (connector.Connector, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create cookie jar: %w", err)
 	}
-	dialer := connector.GuardedDialer(30 * time.Second)
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Jar:     jar,
-		Transport: &http.Transport{
-			DialContext:     dialer.DialContext,
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
-		},
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := connector.NewHTTPClient(connector.HTTPClientOptions{SkipTLSVerify: !verifyTLS, Jar: jar})
 	return &Connector{
 		url:            strings.TrimSuffix(rawURL, "/"),
 		authMode:       authMode,
@@ -343,10 +330,7 @@ func (c *Connector) send(req *http.Request) ([]byte, error) {
 func (c *Connector) do(req *http.Request) (data []byte, status int, err error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
-		if isTimeout(err) {
-			return nil, 0, connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
-		}
-		return nil, 0, fmt.Errorf("request failed: %w", err)
+		return nil, 0, connector.MapTransportError(err)
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil && err == nil {
@@ -527,14 +511,4 @@ func networkDependencies(entities []connector.SnapshotEntity) []connector.Servic
 // unavailable renders the standard "section could not be fetched" placeholder.
 func unavailable(title string, err error) connector.SnapshotSection {
 	return connector.SnapshotSection{Title: title, Content: "_" + title + " unavailable: " + err.Error() + "_"}
-}
-
-// isTimeout reports whether err represents a request deadline being
-// exceeded, covering both a canceled context and a net.Error timeout.
-func isTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
 }

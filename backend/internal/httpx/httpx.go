@@ -1,7 +1,8 @@
 // Package httpx builds hardened outbound HTTP clients shared by every
 // non-inbound caller (AI providers, notification webhooks, doc export Git
-// remotes, and eventually connectors — see #265): TLS 1.2+, bounded
-// timeouts, and no redirect following.
+// remotes, and connectors via connector.NewHTTPClient — see #265): TLS 1.2+,
+// bounded timeouts, and no redirect following. RetryTransport adds bounded
+// retries for idempotent requests.
 package httpx
 
 import (
