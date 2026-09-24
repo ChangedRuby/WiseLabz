@@ -41,10 +41,7 @@ func (d *Connector) doPostBody(ctx context.Context, path string, body []byte) er
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		if isTimeout(err) {
-			return connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
-		}
-		return fmt.Errorf("request failed: %w", err)
+		return connector.MapTransportError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	data, err := connector.ReadBody(resp.Body)
@@ -74,10 +71,7 @@ func (d *Connector) doRequest(ctx context.Context, path string) ([]byte, error) 
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		if isTimeout(err) {
-			return nil, connector.NewTimeoutError(fmt.Errorf("request failed: %w", err))
-		}
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, connector.MapTransportError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
@@ -94,14 +88,6 @@ func (d *Connector) doRequest(ctx context.Context, path string) ([]byte, error) 
 	}
 
 	return data, nil
-}
-
-func isTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // newDockerClient builds an HTTP client and base URL for the given Docker

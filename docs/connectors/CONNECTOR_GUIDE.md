@@ -169,12 +169,10 @@ func New(config map[string]any) (*Connector, error) {
     return &Connector{
         url:    strings.TrimSuffix(url, "/"),
         apiKey: apiKey,
-        client: &http.Client{
-            Timeout: 30 * time.Second,
-            Transport: &http.Transport{
-                TLSClientConfig: &tls.Config{InsecureSkipVerify: !verifyTLS},
-            },
-        },
+        // Always use the shared client: it blocks loopback/link-local
+        // targets, refuses redirects, enforces TLS 1.2+ and a 30s timeout,
+        // and retries idempotent requests on 429/502/503/504.
+        client: connector.NewHTTPClient(connector.HTTPClientOptions{SkipTLSVerify: !verifyTLS}),
     }, nil
 }
 
@@ -200,17 +198,26 @@ func (c *Connector) Fetch(ctx context.Context, _ map[string]any) (*connector.Ser
     }
     req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-    // 2. Execute
+    // 2. Execute. MapTransportError turns a timeout into a TimeoutError and
+    // CheckStatus maps 401/403 to AuthError and 502/503/504 to
+    // ServiceUnavailableError, so the UI can tell the failures apart.
     resp, err := c.client.Do(req)
     if err != nil {
-        return nil, fmt.Errorf("mynewservice: fetch failed: %w", err)
+        return nil, connector.MapTransportError(err)
     }
     defer resp.Body.Close()
+    data, err := connector.ReadBody(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("mynewservice: read response: %w", err)
+    }
+    if err := connector.CheckStatus(resp.StatusCode, data); err != nil {
+        return nil, err
+    }
 
     // 3. Parse into your domain types
     var status MyServiceStatus
-    if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-        return nil, fmt.Errorf("mynewservice: decode: %w", err)
+    if err := json.Unmarshal(data, &status); err != nil {
+        return nil, connector.NewMalformedResponseError(fmt.Errorf("mynewservice: decode: %w", err))
     }
 
     // 4. Shape into a ServiceSnapshot
@@ -412,7 +419,7 @@ Some vendors ship the same API behind two different front doors, and
 authenticate with a cookie rather than a header. The UniFi connector
 (`backend/internal/connector/unifi/`) is the reference for that shape:
 
-- **Give the client a cookie jar.** `http.Client.Jar` is what replays the
+- **Give the client a cookie jar** (`HTTPClientOptions.Jar`). `http.Client.Jar` is what replays the
   session cookie the login endpoint hands out; nothing else in the connector
   has to know the cookie's name.
 - **Model the flavour as a path prefix.** A UniFi OS console serves the same

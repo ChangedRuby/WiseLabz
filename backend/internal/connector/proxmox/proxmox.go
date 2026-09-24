@@ -3,10 +3,8 @@ package proxmox
 
 import (
 	"context"
-	"crypto/tls"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
@@ -34,17 +32,7 @@ func init() {
 				verifyTLS = b
 			}
 		}
-		dialer := connector.GuardedDialer(30 * time.Second)
-		client := &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				DialContext:     dialer.DialContext,
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verifyTLS},
-			},
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
+		client := connector.NewHTTPClient(connector.HTTPClientOptions{SkipTLSVerify: !verifyTLS})
 		return &Connector{
 			url:         strings.TrimSuffix(url, "/"),
 			tokenID:     tokenID,

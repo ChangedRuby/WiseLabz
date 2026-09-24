@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,26 +154,6 @@ func TestFetchMalformedResponse(t *testing.T) {
 		t.Errorf("Fetch(malformed) content = %q, want malformed JSON in output", snap.Sections[0].Content)
 	}
 }
-
-func TestIsTimeoutDetectsContextDeadlineExceeded(t *testing.T) {
-	if !isTimeout(context.DeadlineExceeded) {
-		t.Error("isTimeout(context.DeadlineExceeded) = false, want true")
-	}
-}
-
-func TestIsTimeoutDetectsNetTimeout(t *testing.T) {
-	// Create a net.Error that reports Timeout() == true
-	err := &net.OpError{Op: "read", Net: "tcp", Err: timeoutError{}}
-	if !isTimeout(err) {
-		t.Errorf("isTimeout(net.OpError with Timeout=true) = false, want true")
-	}
-}
-
-type timeoutError struct{}
-
-func (timeoutError) Error() string   { return "timeout" }
-func (timeoutError) Timeout() bool   { return true }
-func (timeoutError) Temporary() bool { return false }
 
 func TestFetchStructuredEntitiesWithAttributes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
