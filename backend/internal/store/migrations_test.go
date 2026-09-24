@@ -282,7 +282,6 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("job_health table missing after reapply: %v", err)
 	}
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
-	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, api_key_scopes error: %v", err)
 	}
 	if hasColumn(t, db, "sqlite", "api_keys", "scope") {
