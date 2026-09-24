@@ -22,6 +22,7 @@ type ReportRecord struct {
 	Truncated                                                                                            bool
 }
 
+// ListReportDefinitions returns configured schedules ordered by display name.
 func (s *Store) ListReportDefinitions(ctx context.Context) ([]ReportDefinitionRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, slug, name, enabled, cron_expr, timezone, sections, connector_ids, channels, created_by, created_at, updated_at FROM report_definitions ORDER BY name`)
 	if err != nil {
@@ -44,6 +45,7 @@ func (s *Store) ListReportDefinitions(ctx context.Context) ([]ReportDefinitionRe
 	return out, nil
 }
 
+// GetReportDefinition retrieves one schedule by ID.
 func (s *Store) GetReportDefinition(ctx context.Context, id string) (ReportDefinitionRecord, error) {
 	var r ReportDefinitionRecord
 	var enabled int
@@ -58,6 +60,7 @@ func (s *Store) GetReportDefinition(ctx context.Context, id string) (ReportDefin
 	return r, nil
 }
 
+// CreateReportDefinition persists a schedule and fills its ID and timestamps.
 func (s *Store) CreateReportDefinition(ctx context.Context, r *ReportDefinitionRecord) error {
 	if r.ID == "" {
 		r.ID = uuid.NewString()
@@ -79,6 +82,7 @@ func (s *Store) CreateReportDefinition(ctx context.Context, r *ReportDefinitionR
 	return nil
 }
 
+// UpdateReportDefinition updates a schedule's mutable fields.
 func (s *Store) UpdateReportDefinition(ctx context.Context, r ReportDefinitionRecord) error {
 	r.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `UPDATE report_definitions SET name=?,enabled=?,cron_expr=?,timezone=?,sections=?,connector_ids=?,channels=?,updated_at=? WHERE id=?`, r.Name, boolToInt(r.Enabled), r.CronExpr, r.Timezone, r.Sections, r.ConnectorIDs, r.Channels, r.UpdatedAt, r.ID)
@@ -92,6 +96,7 @@ func (s *Store) UpdateReportDefinition(ctx context.Context, r ReportDefinitionRe
 	return nil
 }
 
+// DeleteReportDefinition removes a schedule by ID.
 func (s *Store) DeleteReportDefinition(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM report_definitions WHERE id=?`, id)
 	if err != nil {
@@ -104,6 +109,7 @@ func (s *Store) DeleteReportDefinition(ctx context.Context, id string) error {
 	return nil
 }
 
+// CreateReport stores an immutable generated report snapshot.
 func (s *Store) CreateReport(ctx context.Context, r *ReportRecord) error {
 	if r.ID == "" {
 		r.ID = uuid.NewString()
@@ -118,9 +124,12 @@ func (s *Store) CreateReport(ctx context.Context, r *ReportRecord) error {
 	return nil
 }
 
+// LatestScheduledReport finds the newest scheduled snapshot for a definition.
 func (s *Store) LatestScheduledReport(ctx context.Context, definitionID string) (ReportRecord, error) {
 	return s.getReport(ctx, `SELECT id,definition_id,definition_name,trigger,period_start,period_end,truncated,data,markdown,status,created_at FROM reports WHERE definition_id=? AND trigger='scheduled' ORDER BY period_end DESC LIMIT 1`, definitionID)
 }
+
+// GetReport retrieves a report snapshot by ID.
 func (s *Store) GetReport(ctx context.Context, id string) (ReportRecord, error) {
 	return s.getReport(ctx, `SELECT id,definition_id,definition_name,trigger,period_start,period_end,truncated,data,markdown,status,created_at FROM reports WHERE id=?`, id)
 }

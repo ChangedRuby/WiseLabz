@@ -15,11 +15,13 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
+// Handler serves scheduled report definitions and generated reports.
 type Handler struct {
 	Store   *store.Store
 	Manager *report.Manager
 }
 
+// NewHandler constructs a report handler.
 func NewHandler(s *store.Store, m *report.Manager) *Handler { return &Handler{Store: s, Manager: m} }
 
 type input struct {
@@ -86,6 +88,8 @@ func reportJSON(r store.ReportRecord, full bool) map[string]any {
 	}
 	return x
 }
+
+// ListDefinitions returns configured report schedules.
 func (h *Handler) ListDefinitions(w http.ResponseWriter, r *http.Request) {
 	xs, e := h.Store.ListReportDefinitions(r.Context())
 	if e != nil {
@@ -98,6 +102,8 @@ func (h *Handler) ListDefinitions(w http.ResponseWriter, r *http.Request) {
 	}
 	httputil.JSON(w, http.StatusOK, out)
 }
+
+// Create validates and stores a report schedule.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	in, ok := httputil.DecodeJSON[input](w, r)
 	if !ok {
@@ -124,6 +130,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = h.Store.RecordAuditFromContext(r.Context(), "report.definition.create", "report_definition", x.ID, nil)
 	httputil.JSON(w, 201, definition(x))
 }
+
+// Update changes a report schedule without changing its slug.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	old, e := h.Store.GetReportDefinition(r.Context(), r.PathValue("id"))
 	if errors.Is(e, store.ErrNotFound) {
@@ -159,6 +167,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	_ = h.Store.RecordAuditFromContext(r.Context(), "report.definition.update", "report_definition", x.ID, nil)
 	httputil.JSON(w, 200, definition(x))
 }
+
+// Delete removes a report schedule.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	x, e := h.Store.GetReportDefinition(r.Context(), r.PathValue("id"))
 	if errors.Is(e, store.ErrNotFound) {
@@ -178,6 +188,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	_ = h.Store.RecordAuditFromContext(r.Context(), "report.definition.delete", "report_definition", x.ID, nil)
 	httputil.NoContent(w)
 }
+
+// Run generates a report immediately from a configured schedule.
 func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
 	x, e := h.Store.GetReportDefinition(r.Context(), r.PathValue("id"))
 	if errors.Is(e, store.ErrNotFound) {
@@ -193,9 +205,11 @@ func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
 	_ = h.Store.RecordAuditFromContext(r.Context(), "report.definition.run", "report_definition", x.ID, nil)
 	httputil.JSON(w, 201, reportJSON(out, true))
 }
+
+// List returns reports with the shared pagination envelope.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	_, n, o := httputil.Paginate(r)
-	xs, _, e := h.Store.ListReports(r.Context(), r.URL.Query().Get("definitionId"), n, o)
+	page, pageSize, offset := httputil.Paginate(r)
+	xs, total, e := h.Store.ListReports(r.Context(), r.URL.Query().Get("definitionId"), pageSize, offset)
 	if e != nil {
 		httputil.Errorf(w, e)
 		return
@@ -204,8 +218,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for i, x := range xs {
 		out[i] = reportJSON(x, false)
 	}
-	httputil.JSON(w, 200, map[string]any{"items": out})
+	httputil.WritePaginated(w, out, page, pageSize, total)
 }
+
+// Get returns a report snapshot including its rendered Markdown.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	x, e := h.Store.GetReport(r.Context(), r.PathValue("id"))
 	if errors.Is(e, store.ErrNotFound) {
@@ -218,6 +234,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	httputil.JSON(w, 200, reportJSON(x, true))
 }
+
+// Download renders a report as Markdown or HTML for download.
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	x, e := h.Store.GetReport(r.Context(), r.PathValue("id"))
 	if errors.Is(e, store.ErrNotFound) {

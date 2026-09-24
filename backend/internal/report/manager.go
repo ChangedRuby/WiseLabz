@@ -24,9 +24,12 @@ type Manager struct {
 	entries   map[string]cron.EntryID
 }
 
+// NewManager creates the owner for report schedules and their generated snapshots.
 func NewManager(s *store.Store, g *Generator, scheduler Scheduler, notify func(context.Context, store.ReportRecord, store.ReportDefinitionRecord)) *Manager {
 	return &Manager{Store: s, Generator: g, Scheduler: scheduler, Notify: notify, entries: map[string]cron.EntryID{}}
 }
+
+// Init registers persisted schedules and generates an initial report when needed.
 func (m *Manager) Init(ctx context.Context) error {
 	defs, err := m.Store.ListReportDefinitions(ctx)
 	if err != nil {
@@ -48,6 +51,8 @@ func (m *Manager) Init(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Register replaces the scheduled job for a report definition.
 func (m *Manager) Register(d store.ReportDefinitionRecord) error {
 	m.Unregister(d.Slug)
 	if !d.Enabled {
@@ -65,12 +70,16 @@ func (m *Manager) Register(d store.ReportDefinitionRecord) error {
 	}
 	return err
 }
+
+// Unregister removes a report schedule by slug.
 func (m *Manager) Unregister(slug string) {
 	if id, ok := m.entries[slug]; ok {
 		m.Scheduler.RemoveJob(id)
 		delete(m.entries, slug)
 	}
 }
+
+// Run generates and notifies for a report on demand.
 func (m *Manager) Run(ctx context.Context, d store.ReportDefinitionRecord) (store.ReportRecord, error) {
 	r, e := m.Generator.Generate(ctx, d, "manual")
 	if m.Notify != nil {
@@ -78,7 +87,11 @@ func (m *Manager) Run(ctx context.Context, d store.ReportDefinitionRecord) (stor
 	}
 	return r, e
 }
+
+// JobName returns the scheduler's stable name for a report slug.
 func JobName(slug string) string { return "report:" + strings.TrimSpace(slug) }
+
+// LogPartial records section-level generation errors without discarding the report.
 func LogPartial(err error) {
 	if err != nil {
 		slog.Error("report generated partially", "error", err)

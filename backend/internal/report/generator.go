@@ -15,8 +15,10 @@ import (
 // partial instead of losing the entire scheduled delivery.
 type Generator struct{ Store *store.Store }
 
+// NewGenerator creates a report generator backed by the application store.
 func NewGenerator(s *store.Store) *Generator { return &Generator{Store: s} }
 
+// Generate gathers the selected report sections and persists an immutable snapshot.
 func (g *Generator) Generate(ctx context.Context, def store.ReportDefinitionRecord, trigger string) (store.ReportRecord, error) {
 	var watermark *time.Time
 	if last, err := g.Store.LatestScheduledReport(ctx, def.ID); err == nil {
@@ -113,7 +115,7 @@ func (g *Generator) docs(ctx context.Context, d *ReportData, ids string) error {
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x DocChangeEntry
 		var ts string
@@ -137,7 +139,7 @@ func (g *Generator) findings(ctx context.Context, d *ReportData, ids string, com
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var items []FindingSummary
 	for rows.Next() {
 		var x FindingSummary
@@ -182,7 +184,7 @@ func (g *Generator) rotations(ctx context.Context, d *ReportData, ids string) er
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x RotationEntry
 		var ts string
@@ -200,7 +202,7 @@ func (g *Generator) rotations(ctx context.Context, d *ReportData, ids string) er
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x RotationEntry
 		var severity string
@@ -226,7 +228,7 @@ func (g *Generator) drift(ctx context.Context, d *ReportData, ids string) error 
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x ChangeEntry
 		var ts string
@@ -243,7 +245,7 @@ func (g *Generator) drift(ctx context.Context, d *ReportData, ids string) error 
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x ConnectorDrift
 		if e = rows.Scan(&x.ConnectorID, &x.ConnectorName, &x.Counts.Info, &x.Counts.Warning, &x.Counts.Critical); e != nil {
@@ -258,7 +260,7 @@ func (g *Generator) jobs(ctx context.Context, d *ReportData) error {
 	if e != nil {
 		return e
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var x JobHealthEntry
 		var a, b, c sql.NullString

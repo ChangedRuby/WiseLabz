@@ -469,6 +469,16 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
+	var reportsTable string
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'reports'`).Scan(&reportsTable); err != nil {
+		t.Fatalf("reports table missing after migrations: %v", err)
+	}
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() reports error: %v", err)
+	}
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'reports'`).Scan(&reportsTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("reports table should not exist after rolling back its migration (err=%v)", err)
+	}
 
 	var jobHealthTable string
 	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'job_health'`).Scan(&jobHealthTable); err != nil {
