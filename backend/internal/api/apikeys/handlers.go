@@ -133,16 +133,14 @@ func (h *Handler) validConnectorIDs(w http.ResponseWriter, r *http.Request, ids 
 		return nil, false
 	}
 	userID := auth.UserIDFromContext(r.Context())
-	for _, id := range out {
-		ok, err := h.Store.UserHasConnectorRole(r.Context(), userID, id, "viewer")
-		if err != nil {
-			httputil.Errorf(w, err)
-			return nil, false
-		}
-		if !ok {
-			httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "connectorIds contains a connector you have no access to", []httputil.FieldError{{Field: "connectorIds", Msg: "must only list connectors you have access to"}})
-			return nil, false
-		}
+	allowed, err := h.Store.FilterConnectorIDsByGrant(r.Context(), userID, out, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return nil, false
+	}
+	if len(allowed) != len(out) {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_request", "connectorIds contains a connector you have no access to", []httputil.FieldError{{Field: "connectorIds", Msg: "must only list connectors you have access to"}})
+		return nil, false
 	}
 	return out, true
 }
