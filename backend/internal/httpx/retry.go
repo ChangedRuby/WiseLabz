@@ -56,6 +56,16 @@ type retryTransport struct {
 	policy RetryPolicy
 }
 
+// Unwrap returns the RoundTripper wrapped by RetryTransport, or rt itself
+// when it isn't one. It exists so tests can inspect the underlying
+// transport (e.g. its TLS config) without reaching into unexported state.
+func Unwrap(rt http.RoundTripper) http.RoundTripper {
+	if r, ok := rt.(*retryTransport); ok {
+		return r.next
+	}
+	return rt
+}
+
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.policy.MaxRetries < 0 || !idempotent(req.Method) || (req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) {
 		return t.next.RoundTrip(req)
@@ -96,11 +106,7 @@ func (t *retryTransport) backoff(attempt int, resp *http.Response) time.Duration
 }
 
 func idempotent(method string) bool {
-	switch method {
-	case "", http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	return false
+	return method == "" || IsSafeMethod(method)
 }
 
 func retryable(ctx context.Context, resp *http.Response, err error) bool {

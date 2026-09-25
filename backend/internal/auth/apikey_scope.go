@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/WiseLabz/wiselabz/internal/httputil"
+	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
 
 // API-key scopes (#278). ScopeFull keys act with their owner's access;
@@ -79,9 +80,5 @@ func RejectRestrictedAPIKey(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func isSafeMethod(method string) bool {
-	switch method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	return false
+	return httpx.IsSafeMethod(method)
 }
