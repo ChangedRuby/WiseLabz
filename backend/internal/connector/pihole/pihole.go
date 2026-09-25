@@ -453,10 +453,7 @@ func (c *Connector) authenticate(ctx context.Context) (sid string, err error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		if connector.IsTimeout(err) {
-			return "", connector.NewTimeoutError(fmt.Errorf("auth request failed: %w", err))
-		}
-		return "", fmt.Errorf("auth request failed: %w", err)
+		return "", connector.MapTransportError(err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
