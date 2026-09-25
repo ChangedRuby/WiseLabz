@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
+	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
 
 // doPost issues a POST with no body, tolerating a 204 No Content response.
@@ -110,7 +111,7 @@ func newDockerClient(host string, config map[string]any) (*http.Client, string, 
 				return d.DialContext(ctx, "unix", socketPath)
 			},
 		}
-		return &http.Client{Timeout: 30 * time.Second, Transport: transport}, "http://unix", nil
+		return &http.Client{Timeout: 30 * time.Second, Transport: httpx.RetryTransport(transport, httpx.RetryPolicy{})}, "http://unix", nil
 
 	case strings.HasPrefix(host, "tcp://"):
 		return newTCPDockerClient(strings.TrimPrefix(host, "tcp://"), config)
@@ -148,10 +149,10 @@ func newTCPDockerClient(addr string, config map[string]any) (*http.Client, strin
 	}
 	if tlsConfig == nil {
 		transport := &http.Transport{DialContext: dialer.DialContext}
-		return &http.Client{Timeout: 30 * time.Second, Transport: transport}, "http://" + addr, nil
+		return &http.Client{Timeout: 30 * time.Second, Transport: httpx.RetryTransport(transport, httpx.RetryPolicy{})}, "http://" + addr, nil
 	}
 	transport := &http.Transport{DialContext: dialer.DialContext, TLSClientConfig: tlsConfig}
-	return &http.Client{Timeout: 30 * time.Second, Transport: transport}, "https://" + addr, nil
+	return &http.Client{Timeout: 30 * time.Second, Transport: httpx.RetryTransport(transport, httpx.RetryPolicy{})}, "https://" + addr, nil
 }
 
 // buildDockerTLSConfig builds the mutual-TLS config for a tcp:// Docker host

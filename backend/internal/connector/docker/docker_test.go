@@ -25,6 +25,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
+	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
 
 func TestValidateHitsVersion(t *testing.T) {
@@ -271,7 +272,7 @@ func TestNewTCPDockerClientNoTLSWhenNoCert(t *testing.T) {
 	if baseURL != "http://example:2375" {
 		t.Fatalf("baseURL = %q, want http://example:2375", baseURL)
 	}
-	if client.Transport.(*http.Transport).TLSClientConfig != nil {
+	if httpx.Unwrap(client.Transport).(*http.Transport).TLSClientConfig != nil {
 		t.Fatal("TLSClientConfig set with no tls_cert/tls_key configured")
 	}
 }
