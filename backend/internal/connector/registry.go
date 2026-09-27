@@ -29,6 +29,10 @@ type TypeSchema struct {
 	// registration: true if this type's Connector implementation satisfies
 	// CredentialRefresher (see IsCredentialRefresherType).
 	IsCredentialRefresher bool `json:"isCredentialRefresher,omitempty"`
+	// LifecycleVerbs is computed by ListSchemas, not set at registration:
+	// the lifecycle verbs (restart/start/stop) this type's Connector
+	// implementation supports (see SupportsLifecycleVerb).
+	LifecycleVerbs []string `json:"lifecycleVerbs"`
 }
 
 // DegradedLatencyThreshold returns this type's configured health-check
@@ -201,8 +205,20 @@ func IsCredentialRefresherType(typ string) bool {
 	return ok
 }
 
+// SupportsLifecycleVerb reports whether typ's connector implementation
+// supports the lifecycle verb (restart/start/stop). Same cheap,
+// side-effect-free factory probe as IsCredentialRefresherType.
+func SupportsLifecycleVerb(typ, verb string) bool {
+	inst, err := Get(typ, map[string]any{})
+	if err != nil {
+		return false
+	}
+	_, ok := LifecycleOp(inst, verb)
+	return ok
+}
+
 // ListSchemas returns all registered connector type schemas, with
-// IsCredentialRefresher computed for each.
+// IsCredentialRefresher and LifecycleVerbs computed for each.
 func ListSchemas() []TypeSchema {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -211,7 +227,11 @@ func ListSchemas() []TypeSchema {
 		if factory, ok := registry[s.Type]; ok {
 			if inst, err := factory(map[string]any{}); err == nil {
 				_, s.IsCredentialRefresher = inst.(CredentialRefresher)
+				s.LifecycleVerbs = supportedLifecycleVerbs(inst)
 			}
+		}
+		if s.LifecycleVerbs == nil {
+			s.LifecycleVerbs = []string{}
 		}
 		out = append(out, s)
 	}

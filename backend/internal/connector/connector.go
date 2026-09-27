@@ -51,6 +51,42 @@ type Stopper interface {
 	Stop(ctx context.Context, config map[string]any, entityRef string) error
 }
 
+// LifecycleVerbs lists the lab-mutating lifecycle verbs (ADR 0001/0002), in
+// display order.
+var LifecycleVerbs = []string{"restart", "start", "stop"}
+
+// LifecycleOp returns conn's method for a lifecycle verb ("restart",
+// "start", "stop"), or ok=false if conn doesn't implement that verb's
+// interface or the verb is unknown.
+func LifecycleOp(conn Connector, verb string) (fn func(ctx context.Context, config map[string]any, entityRef string) error, ok bool) {
+	switch verb {
+	case "restart":
+		if c, ok := conn.(Restarter); ok {
+			return c.Restart, true
+		}
+	case "start":
+		if c, ok := conn.(Starter); ok {
+			return c.Start, true
+		}
+	case "stop":
+		if c, ok := conn.(Stopper); ok {
+			return c.Stop, true
+		}
+	}
+	return nil, false
+}
+
+// supportedLifecycleVerbs returns the LifecycleVerbs conn implements.
+func supportedLifecycleVerbs(conn Connector) []string {
+	verbs := []string{}
+	for _, v := range LifecycleVerbs {
+		if _, ok := LifecycleOp(conn, v); ok {
+			verbs = append(verbs, v)
+		}
+	}
+	return verbs
+}
+
 // ConfigField describes one field a connector exposes for config-push: a
 // curated subset of what the connector's config schema could theoretically
 // write, deliberately narrower than the full Fetch/Validate config shape.

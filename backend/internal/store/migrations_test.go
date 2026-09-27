@@ -122,7 +122,17 @@ func TestRunMigrationsDown(t *testing.T) {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
 
-	// 000044_sync_runs_snapshot_id is the latest migration.
+	// 000045_runbook_steps is the latest migration.
+	var runbookStepsTable string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='runbook_steps'").Scan(&runbookStepsTable); err != nil {
+		t.Fatalf("runbook_steps table missing after migrations: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() runbook_steps error: %v", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='runbook_steps'").Scan(&runbookStepsTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("runbook_steps should not exist after rollback (err=%v)", err)
+	}
 	if !hasColumn(t, db, "sqlite", "sync_runs", "snapshot_id") {
 		t.Fatal("sync_runs.snapshot_id missing after migrations")
 	}
@@ -331,6 +341,18 @@ func TestRunMigrationsDown(t *testing.T) {
 	}
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='user_mfa_factors'").Scan(&mfaFactorsTable); err != nil {
 		t.Fatalf("user_mfa_factors table missing after reapply: %v", err)
+	}
+	// 000045_runbook_steps is the latest migration again after the reapply
+	// above, so it must be rolled back before sync_runs.snapshot_id — same
+	// as the very first rollback earlier in this test.
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='runbook_steps'").Scan(&name); err != nil {
+		t.Fatalf("runbook_steps table missing after reapply: %v", err)
+	}
+	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() after reapply, runbook_steps error: %v", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='runbook_steps'").Scan(&name); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("runbook_steps should not exist after rolling back its migration again (err=%v)", err)
 	}
 	if err := RunMigrationsDown(db, "sqlite", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() after reapply, snapshot_id error: %v", err)
@@ -568,6 +590,16 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
+	}
+	var runbookStepsTable string
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'runbook_steps'`).Scan(&runbookStepsTable); err != nil {
+		t.Fatalf("runbook_steps table missing after migrations: %v", err)
+	}
+	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
+		t.Fatalf("RunMigrationsDown() runbook_steps error: %v", err)
+	}
+	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'runbook_steps'`).Scan(&runbookStepsTable); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("runbook_steps should not exist after rollback (err=%v)", err)
 	}
 	if !hasColumn(t, db, "postgres", "sync_runs", "snapshot_id") {
 		t.Fatal("sync_runs.snapshot_id missing after migrations")
