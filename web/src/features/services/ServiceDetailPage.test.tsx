@@ -38,6 +38,9 @@ vi.mock('../../api/generated/connectors/connectors', () => ({
   }),
   useGetConnectorsConnectorIdSyncs: syncRows,
   useGetConnectorsConnectorIdSnapshots: snapshotRows,
+  useGetConnectorsConnectorIdSnapshotsSnapshotId: () => ({
+    data: { entities: [{ name: 'vm-100', externalId: '100' }] },
+  }),
   useGetConnectorsConnectorIdConfigFields: configFields,
   useGetConnectorsSchema: () => ({ data: [] }),
   postConnectorsConnectorIdRestart: restart,
@@ -147,13 +150,47 @@ describe('ServiceDetailPage restart preview', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
 
     await waitFor(() =>
-      expect(restart).toHaveBeenCalledWith('svc-pve1', undefined, { dryRun: true })
+      expect(restart).toHaveBeenCalledWith('svc-pve1', { entityRef: undefined }, { dryRun: true })
     );
     expect(await screen.findByRole('dialog', { name: 'Restart impact' })).toHaveTextContent(
       'Review the impact below, then confirm to restart.'
     );
     expect(screen.getByText('30 seconds')).toBeInTheDocument();
     expect(screen.getByText('home-assistant')).toBeInTheDocument();
+  });
+
+  it('sends the picked entityRef for both the dry-run and the real restart', async () => {
+    restart.mockResolvedValue({
+      targetService: 'vm-100',
+      estimatedDowntimeSeconds: 10,
+      dependentServices: [],
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
+    await waitFor(() =>
+      expect(restart).toHaveBeenCalledWith('svc-pve1', { entityRef: undefined }, { dryRun: true })
+    );
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Entity' }), {
+      target: { value: '100' },
+    });
+
+    await waitFor(() =>
+      expect(restart).toHaveBeenLastCalledWith('svc-pve1', { entityRef: '100' }, { dryRun: true })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restart now' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'confirm-elevation' }));
+
+    await waitFor(() =>
+      expect(restart).toHaveBeenLastCalledWith(
+        'svc-pve1',
+        { entityRef: '100' },
+        { dryRun: false },
+        undefined
+      )
+    );
   });
 });
 
@@ -203,7 +240,9 @@ describe('ServiceDetailPage start/stop preview', () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Start' }));
 
-    await waitFor(() => expect(start).toHaveBeenCalledWith('svc-pve1', undefined, { dryRun: true }));
+    await waitFor(() =>
+      expect(start).toHaveBeenCalledWith('svc-pve1', { entityRef: undefined }, { dryRun: true })
+    );
     expect(await screen.findByRole('dialog', { name: 'Start impact' })).toHaveTextContent('15 seconds');
   });
 
@@ -217,7 +256,9 @@ describe('ServiceDetailPage start/stop preview', () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
 
-    await waitFor(() => expect(stop).toHaveBeenCalledWith('svc-pve1', undefined, { dryRun: true }));
+    await waitFor(() =>
+      expect(stop).toHaveBeenCalledWith('svc-pve1', { entityRef: undefined }, { dryRun: true })
+    );
     expect(await screen.findByRole('dialog', { name: 'Stop impact' })).toHaveTextContent(
       'Indefinite (until started again)'
     );

@@ -11,6 +11,10 @@ export const en = {
   a11y: {
     skipToContent: 'Skip to content',
   },
+  entityPicker: {
+    label: 'Entity',
+    wholeService: 'Whole service',
+  },
   common: {
     save: 'Save',
     cancel: 'Cancel',
@@ -511,6 +515,19 @@ export const en = {
   runbooks: {
     heading: 'Runbook',
     snapshotRef: 'Linked to known-good snapshot {{snapshotId}}',
+    steps: {
+      heading: 'Steps',
+      entityRef: 'Entity: {{entityRef}}',
+      execute: 'Execute',
+      blockedNoOperatorGrant: 'You need operator access to {{connector}}.',
+      previewTitle: 'Execute impact',
+      previewNotice: 'Review the impact below, then confirm to execute this step.',
+      previewError: "Couldn't load execution impact. Try again.",
+      confirmTitle: 'Execute "{{title}}"',
+      confirmDescription: 'This will run {{verb}} on {{connector}} now. It cannot be undone.',
+      failed: 'Execution failed. Check the alerts panel for details.',
+      toastSuccess: 'Step executed.',
+    },
   },
   findings: {
     title: 'Quality findings',
@@ -976,10 +993,12 @@ export const en = {
       targetType: {
         change_type: 'Change type',
         alert_severity: 'Alert severity',
+        finding_check_type: 'Quality finding check',
       },
       targetValueLabel: 'Target',
       targetValuePlaceholder: 'Select a severity',
       changeTypePlaceholder: 'e.g. vm.created',
+      checkTypePlaceholder: 'e.g. stale_documentation',
       bodyLabel: 'Body',
       docIdLabel: 'Linked doc ID',
       docIdHint: 'Optional — links to a doc page.',
@@ -997,6 +1016,22 @@ export const en = {
       toastDeleteError: 'Could not delete the runbook.',
       deleteTitle: 'Delete runbook?',
       deleteDesc: 'This permanently deletes "{{title}}". This cannot be undone.',
+      steps: {
+        heading: 'Steps',
+        hint: 'Link a connector restart/start/stop to this runbook. Linking grants no mutation permission by itself — operators still need a grant on the connector, plus step-up, to execute it.',
+        add: 'Add step',
+        empty: 'No steps yet.',
+        titleLabel: 'Title',
+        titlePlaceholder: 'e.g. Restart the sync worker',
+        connectorLabel: 'Connector',
+        connectorPlaceholder: 'Select a connector',
+        verbLabel: 'Action',
+        moveUp: 'Move step up',
+        moveDown: 'Move step down',
+        remove: 'Remove step',
+        max: 'A runbook can have at most 20 steps.',
+        invalid: 'One or more steps has an error — see below.',
+      },
     },
     retention: {
       saved: 'Retention settings saved.',
