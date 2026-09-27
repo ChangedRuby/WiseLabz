@@ -115,7 +115,7 @@ func (r *Runner) AddJob(name, cronExpr string, fn func(ctx context.Context) erro
 			jobErr = fn(r.jobContext())
 		}()
 		if jobErr != nil {
-			r.logger.Error("job failed", "job", logName, "error", logsafe.Sanitize(jobErr.Error()))
+			r.logger.Error("job failed", "job", logName, "error", logsafe.Err(jobErr))
 		}
 		r.trackHealth(name, cronExpr, jobErr)
 		r.logger.Debug("job completed", "job", logName)
@@ -144,6 +144,8 @@ func (r *Runner) trackHealth(name, cronExpr string, jobErr error) {
 		return
 	}
 	ctx := r.jobContext()
+	// name can embed user input (report slugs), and store errors wrap it.
+	logName := logsafe.Sanitize(name)
 
 	prevStatus := "ok" // no prior row (first run ever) behaves like a healthy baseline
 	var prev store.JobHealthRecord
@@ -158,7 +160,7 @@ func (r *Runner) trackHealth(name, cronExpr string, jobErr error) {
 		// Any other error is unexpected but must not block the job; just
 		// log and fall back to prevStatus == "ok" so we never suppress a
 		// legitimate first "failing" notification.
-		r.logger.Error("job health: read previous status", "job", logsafe.Sanitize(name), "error", err)
+		r.logger.Error("job health: read previous status", "job", logName, "error", logsafe.Err(err))
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -181,7 +183,7 @@ func (r *Runner) trackHealth(name, cronExpr string, jobErr error) {
 	}
 
 	if err := r.healthStore.UpsertJobHealth(ctx, rec); err != nil {
-		r.logger.Error("job health: persist status", "job", logsafe.Sanitize(name), "error", err)
+		r.logger.Error("job health: persist status", "job", logName, "error", logsafe.Err(err))
 	}
 
 	if r.notifier == nil || prevStatus == rec.LastStatus {

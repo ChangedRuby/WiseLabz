@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -107,7 +106,7 @@ func Errorf(w http.ResponseWriter, err error) {
 	if rw, ok := w.(contextResponseWriter); ok {
 		logger = Logger(rw.Context())
 	}
-	logger.Error("internal server error", "error", logsafe.Sanitize(fmt.Sprint(err)))
+	logger.Error("internal server error", "error", logsafe.Err(err))
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
 }
 

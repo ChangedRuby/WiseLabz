@@ -59,7 +59,7 @@ func (h *Handler) ConfigPush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := pusher.ConfigPush(r.Context(), cfg, req.EntityRef, req.FieldKey, req.Value); err != nil {
-		slog.Error("connector config-push failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(req.FieldKey), "error", logsafe.Sanitize(err.Error()))
+		slog.Error("connector config-push failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(req.FieldKey), "error", logsafe.Err(err))
 		httputil.Error(w, http.StatusBadGateway, "config_push_failed", err.Error())
 		return
 	}
@@ -176,7 +176,7 @@ func (h *Handler) revertConfigPush(w http.ResponseWriter, r *http.Request, pushe
 	desc := fmt.Sprintf("Pushed field %q did not verify after write; auto-revert to the pre-push value was attempted.", fieldKey)
 	if revertErr != nil {
 		desc = fmt.Sprintf("Pushed field %q did not verify after write; auto-revert FAILED (%v) — manual intervention required.", fieldKey, revertErr)
-		slog.Error("config-push auto-revert failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(fieldKey), "error", logsafe.Sanitize(revertErr.Error()))
+		slog.Error("config-push auto-revert failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(fieldKey), "error", logsafe.Err(revertErr))
 	} else {
 		slog.Warn("config-push mismatch, auto-reverted", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(fieldKey))
 	}

@@ -7,3 +7,13 @@ import "strings"
 func Sanitize(s string) string {
 	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
 }
+
+// Err returns err's message sanitized for logging. Error messages often wrap
+// user input (IDs, names, upstream responses), so log them through this. A
+// nil error yields "".
+func Err(err error) string {
+	if err == nil {
+		return ""
+	}
+	return Sanitize(err.Error())
+}
