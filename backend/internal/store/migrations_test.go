@@ -91,6 +91,9 @@ func TestRunMigrationsPostgres(t *testing.T) {
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() error: %v", err)
 	}
+	if inUse := db.Stats().InUse; inUse != 0 {
+		t.Fatalf("connections still checked out after migration: %d", inUse)
+	}
 
 	for _, table := range tablesCreatedByMigrations {
 		var count int
@@ -103,6 +106,12 @@ func TestRunMigrationsPostgres(t *testing.T) {
 	// Verify idempotent — running again should be no-op
 	if err := RunMigrations(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrations() second run error: %v", err)
+	}
+	if _, err := GetMigrationStatus(db, "postgres"); err != nil {
+		t.Fatalf("GetMigrationStatus() error: %v", err)
+	}
+	if inUse := db.Stats().InUse; inUse != 0 {
+		t.Fatalf("connections still checked out after repeat migration and status: %d", inUse)
 	}
 }
 
@@ -598,6 +607,9 @@ func TestRunMigrationsDownPostgres(t *testing.T) {
 	if err := RunMigrationsDown(db, "postgres", logger); err != nil {
 		t.Fatalf("RunMigrationsDown() runbook_steps error: %v", err)
 	}
+	if inUse := db.Stats().InUse; inUse != 0 {
+		t.Fatalf("connections still checked out after rollback: %d", inUse)
+	}
 	if err := db.QueryRow(`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'runbook_steps'`).Scan(&runbookStepsTable); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("runbook_steps should not exist after rollback (err=%v)", err)
 	}
@@ -872,10 +884,11 @@ func TestRunMigrationsPreservesRowsWithForeignKeys(t *testing.T) {
 	}
 	defer db.Close() //nolint:errcheck
 
-	m, err := newMigrator(db, "sqlite")
+	m, cleanup, err := newMigrator(db, "sqlite")
 	if err != nil {
 		t.Fatalf("newMigrator: %v", err)
 	}
+	defer cleanup()
 	// Last version before the first rebuild migration (000022).
 	if err := m.Migrate(21); err != nil {
 		t.Fatalf("migrate to 21: %v", err)
