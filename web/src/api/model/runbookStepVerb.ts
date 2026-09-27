@@ -7,7 +7,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PostConnectorsConnectorIdStopBody = {
-  /** Target entity's SnapshotEntity.externalId, or omitted for connectors that manage a single implicit service. Also honored for dry-run previews: when set and it matches an entity in the latest snapshot, the preview's targetService is that entity's name. */
-  entityRef?: string;
-};
+export type RunbookStepVerb = (typeof RunbookStepVerb)[keyof typeof RunbookStepVerb];
+
+export const RunbookStepVerb = {
+  restart: 'restart',
+  start: 'start',
+  stop: 'stop',
+} as const;

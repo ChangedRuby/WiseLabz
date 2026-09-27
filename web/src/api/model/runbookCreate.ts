@@ -6,6 +6,7 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { RunbookStepInput } from './runbookStepInput';
 import type { RunbookTargetType } from './runbookTargetType';
 
 export interface RunbookCreate {
@@ -17,4 +18,6 @@ export interface RunbookCreate {
   snapshotId?: string | null;
   /** @nullable */
   docId?: string | null;
+  /** @maxItems 20 */
+  steps?: RunbookStepInput[];
 }

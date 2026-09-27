@@ -926,8 +926,10 @@ paths:
                   description: >
                     Target entity's SnapshotEntity.externalId (e.g. a VM ID,
                     container ID, or service name), or omitted for connectors
-                    that manage a single implicit service. Ignored for
-                    dry-run previews.
+                    that manage a single implicit service. Also honored for
+                    dry-run previews: when set and it matches an entity in
+                    the latest snapshot, the preview's targetService is that
+                    entity's name.
       responses:
         '200':
           description: Restart preview, or restart performed
@@ -987,8 +989,10 @@ paths:
                   type: string
                   description: >
                     Target entity's SnapshotEntity.externalId, or omitted for
-                    connectors that manage a single implicit service.
-                    Ignored for dry-run previews.
+                    connectors that manage a single implicit service. Also
+                    honored for dry-run previews: when set and it matches an
+                    entity in the latest snapshot, the preview's
+                    targetService is that entity's name.
       responses:
         '200':
           description: Start preview, or start performed
@@ -1050,8 +1054,10 @@ paths:
                   type: string
                   description: >
                     Target entity's SnapshotEntity.externalId, or omitted for
-                    connectors that manage a single implicit service.
-                    Ignored for dry-run previews.
+                    connectors that manage a single implicit service. Also
+                    honored for dry-run previews: when set and it matches an
+                    entity in the latest snapshot, the preview's
+                    targetService is that entity's name.
       responses:
         '200':
           description: Stop preview, or stop performed
@@ -2223,22 +2229,29 @@ paths:
       tags: [runbooks]
       summary: List runbooks, optionally filtered by change type or alert severity
       description: >
-        `changeType` and `alertSeverity` are mutually exclusive filters — pass
-        at most one. `changeType` matches target_type=change_type /
-        target_value=<changeType>; `alertSeverity` matches
-        target_type=alert_severity / target_value=<alertSeverity>. With
-        neither given, returns all runbooks.
+        `changeType`, `alertSeverity`, and `findingCheckType` are mutually
+        exclusive filters — pass at most one. `changeType` matches
+        target_type=change_type / target_value=<changeType>;
+        `alertSeverity` matches target_type=alert_severity /
+        target_value=<alertSeverity>; `findingCheckType` matches
+        target_type=finding_check_type / target_value=<findingCheckType>.
+        With none given, returns all runbooks.
       parameters:
         - name: changeType
           in: query
           required: false
           schema: { type: string }
-          description: 'Filter to runbooks targeting this change type, e.g. vm.created. Mutually exclusive with alertSeverity.'
+          description: 'Filter to runbooks targeting this change type, e.g. vm.created. Mutually exclusive with alertSeverity and findingCheckType.'
         - name: alertSeverity
           in: query
           required: false
           schema: { $ref: '#/components/schemas/Severity' }
-          description: Filter to runbooks targeting this alert severity. Mutually exclusive with changeType.
+          description: Filter to runbooks targeting this alert severity. Mutually exclusive with changeType and findingCheckType.
+        - name: findingCheckType
+          in: query
+          required: false
+          schema: { type: string }
+          description: Filter to runbooks targeting this quality finding check type, e.g. stale. Mutually exclusive with changeType and alertSeverity.
         - { $ref: '#/components/parameters/Page' }
         - { $ref: '#/components/parameters/PageSize' }
       responses:
@@ -2305,6 +2318,61 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /runbooks/{runbookId}/steps/{stepId}/execute:
+    parameters:
+      - { $ref: '#/components/parameters/RunbookId' }
+      - { $ref: '#/components/parameters/RunbookStepId' }
+    post:
+      tags: [runbooks]
+      operationId: executeRunbookStep
+      summary: Execute (or preview) one runbook step's lifecycle operation
+      description: >
+        Resolves the target connector, verb, and entityRef from the stored
+        step — the request body is ignored — and runs the exact same
+        dry-run-preview / elevation-gated-mutate path as the connector-level
+        restart/start/stop endpoints (see ADR 0001/0002). Linking a step
+        grants nothing on its own: the caller must additionally hold at
+        least an operator grant on the step's connector, and a real (non
+        dry-run) execution still requires a valid X-Elevation-Token for
+        action `connector.<verb>`. On success, records a `connector.<verb>`
+        audit row whose detail includes this runbookId/stepId in addition
+        to entityRef.
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: >
+            true previews the operation without performing it; absent/false
+            performs the real, elevation-gated operation.
+        - name: X-Elevation-Token
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Elevation token from POST /auth/elevate, scoped to action
+            connector.<verb>. Required only when dryRun is absent/false.
+      responses:
+        '200':
+          description: Step preview, or step performed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestartPreview' }
+        '400':
+          description: >
+            Missing elevation token, or the connector type doesn't support
+            the step's verb (`unsupported_operation`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/ElevationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: The operation failed upstream; an AlertRecord was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── quality findings ─────────────────────────
   /findings:
@@ -3301,6 +3369,7 @@ components:
     ChangeId: { name: changeId, in: path, required: true, schema: { type: string } }
     AlertId: { name: alertId, in: path, required: true, schema: { type: string } }
     RunbookId: { name: runbookId, in: path, required: true, schema: { type: string } }
+    RunbookStepId: { name: stepId, in: path, required: true, schema: { type: string } }
     FindingId: { name: findingId, in: path, required: true, schema: { type: string } }
     ReportDefinitionId: { name: reportDefinitionId, in: path, required: true, schema: { type: string } }
     ReportId: { name: reportId, in: path, required: true, schema: { type: string } }
@@ -3798,6 +3867,13 @@ components:
             True if this type's credentials refresh automatically (e.g. OAuth2).
             The credential_rotation quality check always skips it, and the UI
             should hide the rotation reminder fields on its connector form.
+        lifecycleVerbs:
+          type: array
+          items: { type: string, enum: [restart, start, stop] }
+          description: >-
+            The lifecycle verbs (restart/start/stop) this type's connector
+            implementation supports, e.g. for filtering the runbook step
+            editor's verb picker to what a chosen connector can actually do.
     SchemaField:
       type: object
       required: [name, label, kind, required]
@@ -4631,9 +4707,49 @@ components:
     RunbookTargetType:
       type: string
       enum: [change_type, alert_severity, finding_check_type]
+    RunbookStepVerb:
+      type: string
+      enum: [restart, start, stop]
+    RunbookStep:
+      type: object
+      required: [id, position, title, connectorId, connectorName, verb, entityRef, canExecute, executeBlockedReason]
+      properties:
+        id: { type: string }
+        position: { type: integer, description: 'Order within the runbook, 0-based; matches the steps array index.' }
+        title: { type: string }
+        connectorId: { type: string }
+        connectorName: { type: string, description: "The referenced connector's display name, for rendering without a second lookup." }
+        verb: { $ref: '#/components/schemas/RunbookStepVerb' }
+        entityRef:
+          type: string
+          description: >
+            Target entity's SnapshotEntity.externalId, or empty for
+            connectors that manage a single implicit service.
+        canExecute:
+          type: boolean
+          description: Whether the calling user currently holds at least an operator grant on connectorId.
+        executeBlockedReason:
+          type: string
+          enum: ['', no_operator_grant]
+          description: Empty when canExecute is true; "no_operator_grant" otherwise.
+    RunbookStepInput:
+      type: object
+      required: [title, connectorId, verb]
+      properties:
+        id:
+          type: string
+          description: >
+            An existing step's ID, to keep it (and its identity in audit
+            history) across a replace-all update. Omit for a new step, or
+            when creating a runbook; any ID that didn't already belong to
+            this runbook is ignored and a fresh one is generated.
+        title: { type: string }
+        connectorId: { type: string }
+        verb: { $ref: '#/components/schemas/RunbookStepVerb' }
+        entityRef: { type: string, default: '' }
     Runbook:
       type: object
-      required: [id, title, body, targetType, targetValue, createdAt, updatedAt]
+      required: [id, title, body, targetType, targetValue, steps, createdAt, updatedAt]
       properties:
         id: { type: string }
         title: { type: string }
@@ -4643,9 +4759,17 @@ components:
           type: string
           description: >
             A changeType value (e.g. vm.created) when targetType=change_type,
-            or a Severity value when targetType=alert_severity.
+            a Severity value when targetType=alert_severity, or a quality
+            finding check type when targetType=finding_check_type.
         snapshotId: { type: string, nullable: true, description: "Known-good ServiceSnapshot to point at, if any" }
         docId: { type: string, nullable: true }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/RunbookStep' }
+          description: >
+            Connector lifecycle operations this runbook points at, in
+            position order. Linking a step grants no mutation permission by
+            itself — see canExecute.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     RunbookPage:
@@ -4668,6 +4792,10 @@ components:
         targetValue: { type: string }
         snapshotId: { type: string, nullable: true }
         docId: { type: string, nullable: true }
+        steps:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/RunbookStepInput' }
     RunbookUpdate:
       type: object
       properties:
@@ -4677,6 +4805,13 @@ components:
         targetValue: { type: string }
         snapshotId: { type: string, nullable: true }
         docId: { type: string, nullable: true }
+        steps:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/RunbookStepInput' }
+          description: >
+            Omit this key entirely to leave the runbook's steps unchanged;
+            include it (even as []) to replace all steps.
 
     # ── documentation quality findings ──
     QualityFinding:

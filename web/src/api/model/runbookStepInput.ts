@@ -6,8 +6,13 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { RunbookStepVerb } from './runbookStepVerb';
 
-export type PostConnectorsConnectorIdStopBody = {
-  /** Target entity's SnapshotEntity.externalId, or omitted for connectors that manage a single implicit service. Also honored for dry-run previews: when set and it matches an entity in the latest snapshot, the preview's targetService is that entity's name. */
+export interface RunbookStepInput {
+  /** An existing step's ID, to keep it (and its identity in audit history) across a replace-all update. Omit for a new step, or when creating a runbook; any ID that didn't already belong to this runbook is ignored and a fresh one is generated. */
+  id?: string;
+  title: string;
+  connectorId: string;
+  verb: RunbookStepVerb;
   entityRef?: string;
-};
+}
