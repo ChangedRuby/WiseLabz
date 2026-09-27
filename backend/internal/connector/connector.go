@@ -106,6 +106,26 @@ type ConfigPusher interface {
 	ConfigPush(ctx context.Context, config map[string]any, entityRef, fieldKey string, value any) error
 }
 
+// CapabilityDescriptor describes optional operations implemented by a connector.
+// It is derived from the optional interfaces so advertised support cannot drift.
+type CapabilityDescriptor struct {
+	Restart           bool `json:"restart"`
+	Start             bool `json:"start"`
+	Stop              bool `json:"stop"`
+	ConfigPush        bool `json:"configPush"`
+	CredentialRefresh bool `json:"credentialRefresh"`
+}
+
+// Capabilities reports the optional operations supported by conn.
+func Capabilities(conn Connector) CapabilityDescriptor {
+	_, restart := conn.(Restarter)
+	_, start := conn.(Starter)
+	_, stop := conn.(Stopper)
+	_, configPush := conn.(ConfigPusher)
+	_, credentialRefresh := conn.(CredentialRefresher)
+	return CapabilityDescriptor{restart, start, stop, configPush, credentialRefresh}
+}
+
 // AuthError indicates a connector rejected credentials (expired, revoked, or
 // invalid). Retrying with the same credentials will not help.
 type AuthError struct{ Err error }

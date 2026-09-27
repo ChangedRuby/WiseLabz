@@ -81,11 +81,8 @@ func (d *Connector) doRequest(ctx context.Context, path string) ([]byte, error) 
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	switch {
-	case resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout:
-		return nil, connector.NewServiceUnavailableError(fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data)))
-	case resp.StatusCode >= 400:
-		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(data))
+	if err := connector.CheckStatus(resp.StatusCode, data); err != nil {
+		return nil, err
 	}
 
 	return data, nil
