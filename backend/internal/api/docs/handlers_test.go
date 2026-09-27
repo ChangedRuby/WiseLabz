@@ -303,6 +303,7 @@ func TestRestore(t *testing.T) {
 		req.SetPathValue("id", docRecord.ID)
 		req.SetPathValue("rev", "1")
 		req = withGrant(t, s, req, docRecord.ServiceID, "operator")
+		restoreAuthor := auth.UserIDFromContext(req.Context())
 		rr := httptest.NewRecorder()
 		h.Restore(rr, req)
 
@@ -314,6 +315,13 @@ func TestRestore(t *testing.T) {
 		restored, _ := s.GetDoc(ctx, docRecord.ID)
 		if restored.Content != "v1 content" {
 			t.Errorf("content after restore = %q, want %q", restored.Content, "v1 content")
+		}
+		versions, err := s.GetDocVersions(ctx, docRecord.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(versions) != 3 || versions[0].Rev != restored.CurrentVersion || versions[0].Trigger != "restore" || versions[0].Content != "v1 content" || versions[0].Author != restoreAuthor {
+			t.Fatalf("restore version = %+v", versions)
 		}
 	})
 

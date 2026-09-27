@@ -30,6 +30,9 @@ doc_export:
     path: docs              # repo subdirectory the docs go to; default docs
     author_name: WiseLabz   # default WiseLabz
     author_email: wiselabz@localhost  # default wiselabz@localhost
+    commit_mode: snapshot   # snapshot (default) or per_revision
+    author_from_user: false # opt in to expose user names and emails in Git
+    max_revisions_per_run: 500
     token: ""               # HTTPS access token (prefer the env var)
     ssh_key_path: ""        # SSH private key file (ssh remotes only)
     ssh_known_hosts: ""     # known_hosts file (required for ssh remotes)
@@ -46,6 +49,9 @@ doc_export:
 | `doc_export.git.path` | `WISELABZ_DOC_EXPORT_GIT_PATH` | `docs` | Relative, inside the repo |
 | `doc_export.git.author_name` | `WISELABZ_DOC_EXPORT_GIT_AUTHOR_NAME` | `WiseLabz` | Author and committer |
 | `doc_export.git.author_email` | `WISELABZ_DOC_EXPORT_GIT_AUTHOR_EMAIL` | `wiselabz@localhost` | |
+| `doc_export.git.commit_mode` | `WISELABZ_DOC_EXPORT_GIT_COMMIT_MODE` | `snapshot` | `snapshot` or `per_revision` |
+| `doc_export.git.author_from_user` | `WISELABZ_DOC_EXPORT_GIT_AUTHOR_FROM_USER` | `false` | Opt in to user identities in Git history |
+| `doc_export.git.max_revisions_per_run` | `WISELABZ_DOC_EXPORT_GIT_MAX_REVISIONS_PER_RUN` | `500` | Maximum replay commits per run |
 | `doc_export.git.token` | `WISELABZ_DOC_EXPORT_GIT_TOKEN` | empty | HTTPS only; secret, never logged |
 | `doc_export.git.ssh_key_path` | `WISELABZ_DOC_EXPORT_GIT_SSH_KEY_PATH` | empty | Required for SSH remotes; unencrypted key |
 | `doc_export.git.ssh_known_hosts` | `WISELABZ_DOC_EXPORT_GIT_SSH_KNOWN_HOSTS` | empty | Required for SSH remotes unless insecure |
@@ -102,6 +108,28 @@ failed and simply retried on the next schedule, which fetches the new head
 and rebuilds the export on top of it. Local unpushed commits are never kept
 between runs; the export is always regenerated from the store.
 
+**Per-revision history.** Set `commit_mode: per_revision` to replay retained
+`doc_versions` rows as individual commits. The first run makes one bot-authored
+snapshot and writes `<path>/.wiselabz-export.json` with each doc's revision and
+filename. Later runs read that state after fetching and resetting to the
+remote, commit revisions in creation order with message
+`docs(<slug>): rev N (<trigger>)`, then push once. The revision creation time
+becomes the Git author date; the configured bot is the committer. The state
+file is committed with every revision and is safe from Markdown pruning.
+
+By default, the bot is also the author. `author_from_user: true` exposes the
+revision user's display name (or username) and email in the Git log. A user
+without an email gets `<username>@users.noreply.wiselabz`; deleted or disabled
+users and revisions without an author use the bot. Enable this only if that
+identity exposure is acceptable for the remote repository.
+
+At most `max_revisions_per_run` revisions are replayed per run. A capped run
+leaves the remaining revisions for the next run and does not catch up the
+snapshot. Once the cap is clear, a bot-authored snapshot commit covers deleted
+docs, restores, and any drift. Retention may have pruned intermediate versions;
+those cannot be replayed, and the catch-up commit restores the current head.
+Rejected pushes are retried from the remote state on the next run.
+
 **Authentication.**
 
 - HTTPS: set `token` (e.g. a GitHub fine-grained PAT with *Contents:
@@ -119,15 +147,15 @@ between runs; the export is always regenerated from the store.
 
 ## Failure notifications
 
-The exporter emits the `system.job_failed` notification event through the
-normal notification dispatcher:
+The scheduler records export run health in `job_health` (#384) and emits the
+`system.job_failed` notification event on state transitions:
 
 - severity `warning` when the job goes from OK to failing (e.g. a revoked
   token, an unreachable remote, a rejected push);
 - severity `info` when it recovers.
 
 Only these transitions notify, so a job that keeps failing sends one
-notification, not one per run. The state lives in memory: after a server
-restart, the first failure notifies again. Route the event per channel under
+notification, not one per run. Health is persisted in `job_health` across
+server restarts. Route the event per channel under
 **Settings → Notifications** (the `system job failed` row); it's also
 included in digests.

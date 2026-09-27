@@ -89,6 +89,21 @@ ha:
   leader_election: false
   lock_poll_interval: 5s
 
+# Scheduled Markdown export (Git settings are ignored in local-directory mode)
+doc_export:
+  enabled: false
+  dir: ./data/docexport
+  cron_expr: "0 2 * * *"
+  git:
+    remote: ""
+    branch: main
+    path: docs
+    author_name: WiseLabz
+    author_email: wiselabz@localhost
+    commit_mode: snapshot # snapshot or per_revision
+    author_from_user: false # exposes user names and emails in Git history
+    max_revisions_per_run: 500
+
 # Data retention
 # Background job that bounds growth of historical data by deleting rows past
 # each category's age. A value of 0 disables cleanup for that category
