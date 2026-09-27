@@ -5,14 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
-
-// dueConnectorsLimit bounds how many due connectors are synced per tick.
-// ponytail: fine for a self-hosted ops tool's connector count; paginate if that changes.
-const dueConnectorsLimit = 50
 
 // RunDueSyncs syncs every connector whose next_run_at has passed. Only the
 // sweep-level error (listing due connectors) is returned for job health
@@ -20,17 +17,31 @@ const dueConnectorsLimit = 50
 // (surfaced via its connector status/quality findings), not the sync job's.
 func (e *Engine) RunDueSyncs(ctx context.Context, logger *slog.Logger) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	due, err := e.store.ListDueConnectors(ctx, now, dueConnectorsLimit)
+	due, err := e.store.ListDueConnectors(ctx, now, e.dueBatchSize)
 	if err != nil {
 		return fmt.Errorf("list due connectors: %w", err)
 	}
+	sem := make(chan struct{}, e.maxConcurrency)
+	var wg sync.WaitGroup
+loop:
 	for _, c := range due {
 		if ctx.Err() != nil {
-			return nil
+			break
 		}
-		if _, err := e.runSyncFields(ctx, c.ID, uuid.New().String(), nil, true); err != nil && !errors.Is(err, ErrAlreadyRunning) {
-			logger.Error("scheduled sync failed", "connector", c.ID, "error", err)
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break loop
 		}
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if _, err := e.runSyncFields(ctx, id, uuid.New().String(), nil, true); err != nil && !errors.Is(err, ErrAlreadyRunning) {
+				logger.Error("scheduled sync failed", "connector", id, "error", err)
+			}
+		}(c.ID)
 	}
+	wg.Wait()
 	return nil
 }

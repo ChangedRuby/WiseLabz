@@ -23,6 +23,7 @@ type Config struct {
 	Auth       AuthSettings       `mapstructure:"auth"`
 	AI         AISettings         `mapstructure:"ai"`
 	Sync       SyncSettings       `mapstructure:"sync"`
+	HA         HASettings         `mapstructure:"ha"`
 	Quality    QualitySettings    `mapstructure:"quality"`
 	Rotation   RotationSettings   `mapstructure:"rotation"`
 	Log        LogSettings        `mapstructure:"log"`
@@ -174,8 +175,17 @@ type AISettings struct {
 
 // SyncSettings holds sync engine settings.
 type SyncSettings struct {
-	Schedule     string `mapstructure:"schedule"`       // cron expression (legacy, for API trigger scheduling)
-	PollCronExpr string `mapstructure:"poll_cron_expr"` // cron expression for periodic connector polling
+	Schedule       string        `mapstructure:"schedule"`       // cron expression (legacy, for API trigger scheduling)
+	PollCronExpr   string        `mapstructure:"poll_cron_expr"` // cron expression for periodic connector polling
+	MaxConcurrency int           `mapstructure:"max_concurrency"`
+	DueBatchSize   int           `mapstructure:"due_batch_size"`
+	Timeout        time.Duration `mapstructure:"timeout"`
+}
+
+// HASettings controls the optional PostgreSQL leader election.
+type HASettings struct {
+	LeaderElection   bool          `mapstructure:"leader_election"`
+	LockPollInterval time.Duration `mapstructure:"lock_poll_interval"`
 }
 
 // QualitySettings holds documentation quality check settings.
@@ -342,9 +352,14 @@ func Load() (*Config, error) {
 	v.SetDefault("ai.embed_model", "nomic-embed-text")
 	v.SetDefault("sync.schedule", "0 */6 * * *")          // every 6 hours
 	v.SetDefault("sync.poll_cron_expr", "*/30 * * * * *") // every 30 seconds
-	v.SetDefault("quality.cron_expr", "0 0 * * *")        // daily quality checks at midnight
-	v.SetDefault("rotation.max_age_days", 90)             // secrets older than this are due for rotation
-	v.SetDefault("rotation.warn_days", 14)                // warn this many days before the due date
+	v.SetDefault("sync.max_concurrency", 4)
+	v.SetDefault("sync.due_batch_size", 50)
+	v.SetDefault("sync.timeout", "5m")
+	v.SetDefault("ha.leader_election", false)
+	v.SetDefault("ha.lock_poll_interval", "5s")
+	v.SetDefault("quality.cron_expr", "0 0 * * *") // daily quality checks at midnight
+	v.SetDefault("rotation.max_age_days", 90)      // secrets older than this are due for rotation
+	v.SetDefault("rotation.warn_days", 14)         // warn this many days before the due date
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
 	v.SetDefault("retention.snapshot_days", 90)
@@ -388,7 +403,8 @@ func Load() (*Config, error) {
 		"auth.webauthn.rp_id", "auth.webauthn.rp_display_name",
 		"ai.enabled", "ai.provider", "ai.model", "ai.api_key", "ai.base_url", "ai.mode",
 		"ai.embed_provider", "ai.embed_model", "ai.embed_api_key", "ai.embed_base_url",
-		"sync.schedule", "sync.poll_cron_expr",
+		"sync.schedule", "sync.poll_cron_expr", "sync.max_concurrency", "sync.due_batch_size", "sync.timeout",
+		"ha.leader_election", "ha.lock_poll_interval",
 		"quality.cron_expr",
 		"rotation.max_age_days", "rotation.warn_days",
 		"log.level", "log.format",

@@ -135,6 +135,9 @@ func (s *Store) DB() DBTX {
 	return s.db
 }
 
+// RawDB exposes the connection pool for session-scoped PostgreSQL operations.
+func (s *Store) RawDB() *sql.DB { return s.rawDB }
+
 // Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()

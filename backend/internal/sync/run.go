@@ -23,9 +23,6 @@ import (
 // ponytail: fixed 1h window, make configurable if a real deployment needs it.
 const repeatDriftWindow = time.Hour
 
-// syncTimeout bounds upstream work for scheduled and manual syncs alike.
-const syncTimeout = 5 * time.Minute
-
 // RunSync runs a full sync for a single connector (all fields).
 // Flow: Fetch -> Save Snapshot -> Diff -> Create Changes -> Create Alerts
 func (e *Engine) RunSync(ctx context.Context, connectorID string, jobID string) (*RunResult, error) {
@@ -50,11 +47,11 @@ func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, f
 		return nil, ErrAlreadyRunning
 	}
 	defer e.inFlight.Delete(connectorID)
-	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
+	ctx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	if scheduled {
 		now := time.Now().UTC()
-		claimed, err := e.store.ClaimDueConnector(ctx, connectorID, now.Format(time.RFC3339), now.Add(syncTimeout+time.Minute).Format(time.RFC3339))
+		claimed, err := e.store.ClaimDueConnector(ctx, connectorID, now.Format(time.RFC3339), now.Add(e.timeout+time.Minute).Format(time.RFC3339))
 		if err != nil {
 			return nil, err
 		}

@@ -1,10 +1,37 @@
 # WiseLabz — Deployment Guide
 
-Supported deployment modes: Docker (primary), docker-compose, and bare Go
-binary + systemd (secondary). Kubernetes is not supported — the SQLite
-single-writer pool and in-process WebSocket hub assume single-instance
-affinity, which contradicts horizontal scaling, and the target scale
-(<50 concurrent users, homelab) gives no justification for it.
+Supported deployment modes: Docker, docker-compose, a bare Go binary with
+systemd, and PostgreSQL active/passive replicas behind a readiness-aware load
+balancer.
+
+## Scaling & high availability
+
+The default is one application instance. SQLite supports only this model.
+With PostgreSQL, set `ha.leader_election: true` on every replica and direct
+the load balancer to instances whose `/readyz` returns 200. Standbys keep
+`/healthz` available but return 503 on `/readyz` until they acquire the
+advisory lock. Only the leader runs background jobs. On lock loss it exits;
+the process manager should restart it as a standby. Takeover starts at the
+next `ha.lock_poll_interval` poll (5 seconds by default), plus any process
+restart time.
+
+| Component | Multiple replicas |
+|---|---|
+| Scheduler jobs (sync, digest, quality, reports, doc export, backups, retention) | Leader only |
+| Notification delivery retrier | Leader only |
+| Document lock sweep | Leader only |
+| WebSocket hub and tickets | Process-local; route clients only to the ready leader |
+| Rate limiter and TTL caches | Process-local; reset on failover |
+| Backups on local disk | Leader only, but store backup files on shared or durable storage |
+| Migrations | Safe to start concurrently; golang-migrate locks PostgreSQL migrations |
+| Scheduled sync claims | Protected by a database lease even across replicas |
+
+Tune connector fan-out with `sync.max_concurrency` (default 4),
+`sync.due_batch_size` (default 50 per tick), and `sync.timeout` (default 5m
+per connector). The claim lease lasts one minute beyond the timeout.
+
+Active/passive routing keeps WebSocket events on one process. Active/active
+WebSocket pub/sub is deferred; see [ADR 0004](adr/0004-leader-election.md).
 
 ## PostgreSQL support
 

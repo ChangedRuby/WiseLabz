@@ -22,6 +22,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/doc"
 	"github.com/WiseLabz/wiselabz/internal/docexport"
+	"github.com/WiseLabz/wiselabz/internal/leader"
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/quality"
@@ -120,6 +121,7 @@ func main() {
 	qualityChecker := quality.NewChecker(s, wsHub, notifDispatcher,
 		quality.RotationConfig{MaxAgeDays: cfg.Rotation.MaxAgeDays, WarnDays: cfg.Rotation.WarnDays})
 	syncEngine := sync.NewEngine(s, wsHub, notifDispatcher, qualityChecker, cfg.Encryption.Key)
+	syncEngine.SetLimits(cfg.Sync.MaxConcurrency, cfg.Sync.DueBatchSize, cfg.Sync.Timeout)
 	docEngine := doc.NewEngine(s)
 	syncEngine.SetDocRegenerator(docEngine)
 
@@ -235,6 +237,10 @@ func main() {
 
 	// Build HTTP router
 	readyState := &syshandler.ReadyState{}
+	var elector leader.Election = leader.Noop{}
+	if cfg.HA.LeaderElection {
+		elector = leader.New(s.RawDB(), cfg.HA.LockPollInterval)
+	}
 	routerCfg := api.Config{
 		Store:          s,
 		JWT:            jwtSvc,
@@ -282,12 +288,20 @@ func main() {
 		Dispatcher:      notifDispatcher,
 		Store:           s,
 		Ready:           readyState,
+		Elector:         elector,
+		LeaderElection:  cfg.HA.LeaderElection,
 		ShutdownTimeout: cfg.Server.ShutdownTimeoutDuration(),
 	})
 	lifecycle.Start()
 
 	// Wait for shutdown signal
-	<-ctx.Done()
+	exitCode := 0
+	select {
+	case <-ctx.Done():
+	case err := <-lifecycle.Errors():
+		logger.Error("lifecycle failed", "error", err)
+		exitCode = 1
+	}
 	logger.Info("Shutting down gracefully")
 
 	if err := lifecycle.Shutdown(); err != nil {
@@ -295,6 +309,9 @@ func main() {
 	}
 
 	logger.Info("Shutdown complete")
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
 
 // runHealthcheck queries this server's own /readyz endpoint and exits 0 for a

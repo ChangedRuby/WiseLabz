@@ -514,6 +514,8 @@ This file records the _outcome_ of each decision; the ADRs record the _reasoning
 - [`0001-lab-mutating-operation-boundaries.md`](adr/0001-lab-mutating-operation-boundaries.md) —
   permission, step-up, audit, dry-run, and rollback model for the first lab-mutating
   operation (`service.restart`), ahead of implementation.
+- [`0004-leader-election.md`](adr/0004-leader-election.md) — PostgreSQL advisory-lock
+  active/passive operation and readiness-based failover.
 
 ---
 
