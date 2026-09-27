@@ -1,0 +1,52 @@
+name: Setup Go with per-kind cache
+description: >
+  Installs Go and restores the module + build cache for one kind of job
+  (race, cover, lint, ...). Build caches differ per kind (-race and -cover
+  instrument every package), so a single shared cache would only ever hold
+  whichever kind saved first. Pair with go-cache-save, which saves on main only.
+
+inputs:
+  kind:
+    description: Cache kind, e.g. race-core, cover, lint.
+    required: true
+
+outputs:
+  prefix:
+    description: Cache key prefix; pass to go-cache-save.
+    value: ${{ steps.key.outputs.prefix }}
+  paths:
+    description: Cached paths; pass to go-cache-save.
+    value: ${{ steps.key.outputs.paths }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+      with:
+        go-version: "1.27"
+        cache: false
+
+    - name: Compute cache key
+      id: key
+      shell: bash
+      run: |
+        {
+          echo "prefix=go-${{ inputs.kind }}-${RUNNER_OS}-$(go env GOVERSION)-${{ hashFiles('backend/go.sum') }}-"
+          echo "base=go-${{ inputs.kind }}-${RUNNER_OS}-$(go env GOVERSION)-"
+          echo "paths<<EOF"
+          go env GOMODCACHE GOCACHE
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    # Keys end in the run id: main saves a fresh cache each run and PRs restore
+    # the newest one by prefix. Falls back to other go.sum hashes, since most of
+    # the build cache survives a dependency bump.
+    - name: Restore Go cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.key.outputs.paths }}
+        key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}
+        restore-keys: |
+          ${{ steps.key.outputs.prefix }}
+          ${{ steps.key.outputs.base }}
