@@ -26,9 +26,14 @@ type ReadyState struct {
 	leaderHeld     atomic.Bool
 }
 
-func (r *ReadyState) RequireLeader()          { r.leaderRequired.Store(true) }
+// RequireLeader makes readiness depend on ownership of the leader lock.
+func (r *ReadyState) RequireLeader() { r.leaderRequired.Store(true) }
+
+// SetLeaderHeld records whether this instance currently owns the leader lock.
 func (r *ReadyState) SetLeaderHeld(held bool) { r.leaderHeld.Store(held) }
-func (r *ReadyState) WaitingForLeader() bool  { return r.leaderRequired.Load() && !r.leaderHeld.Load() }
+
+// WaitingForLeader reports standby readiness independently of shutdown.
+func (r *ReadyState) WaitingForLeader() bool { return r.leaderRequired.Load() && !r.leaderHeld.Load() }
 
 // SetNotReady marks the server as not ready. One-way: once shutdown starts,
 // the server never becomes ready again.

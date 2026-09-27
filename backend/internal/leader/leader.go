@@ -28,6 +28,7 @@ type Elector struct {
 	conn     *sql.Conn
 }
 
+// New creates a PostgreSQL elector using a pinned session from db.
 func New(db *sql.DB, interval time.Duration) *Elector {
 	return &Elector{db: db, interval: interval}
 }
@@ -109,8 +110,14 @@ func (e *Elector) Close() error {
 	return err
 }
 
+// Noop grants immediate leadership when election is disabled.
 type Noop struct{}
 
-func (Noop) Campaign(context.Context) error     { return nil }
+// Campaign succeeds immediately without acquiring a lock.
+func (Noop) Campaign(context.Context) error { return nil }
+
+// Watch never reports a loss because there is no lock to lose.
 func (Noop) Watch(context.Context) <-chan error { return nil }
-func (Noop) Close() error                       { return nil }
+
+// Close has no session to release.
+func (Noop) Close() error { return nil }
