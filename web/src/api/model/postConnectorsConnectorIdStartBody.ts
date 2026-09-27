@@ -8,6 +8,6 @@
  */
 
 export type PostConnectorsConnectorIdStartBody = {
-  /** Target entity's SnapshotEntity.externalId, or omitted for connectors that manage a single implicit service. Ignored for dry-run previews. */
+  /** Target entity's SnapshotEntity.externalId, or omitted for connectors that manage a single implicit service. Also honored for dry-run previews: when set and it matches an entity in the latest snapshot, the preview's targetService is that entity's name. */
   entityRef?: string;
 };

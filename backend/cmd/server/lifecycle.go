@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	syshandler "github.com/WiseLabz/wiselabz/internal/api/system"
+	"github.com/WiseLabz/wiselabz/internal/leader"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
@@ -26,6 +28,8 @@ type lifecycleDeps struct {
 	Dispatcher      *notifications.Dispatcher
 	Store           *store.Store
 	Ready           *syshandler.ReadyState
+	Elector         leader.Election
+	LeaderElection  bool
 	ShutdownTimeout time.Duration
 }
 
@@ -51,6 +55,9 @@ type lifecycleManager struct {
 	workCtx    context.Context
 	workCancel context.CancelFunc
 	group      *errgroup.Group
+	errors     chan error
+	mu         sync.Mutex
+	stopping   bool
 }
 
 // newLifecycleManager builds a manager. Call Start to launch the goroutines,
@@ -63,8 +70,12 @@ func newLifecycleManager(deps lifecycleDeps) *lifecycleManager {
 		workCtx:    workCtx,
 		workCancel: workCancel,
 		group:      group,
+		errors:     make(chan error, 1),
 	}
 }
+
+// Errors reports a fatal leadership loss so main can shut down and exit.
+func (m *lifecycleManager) Errors() <-chan error { return m.errors }
 
 // Start launches every long-running goroutine under the errgroup. It returns
 // immediately; the goroutines run until Shutdown is called.
@@ -76,26 +87,67 @@ func (m *lifecycleManager) Start() {
 		return nil
 	})
 
-	m.group.Go(func() error {
-		notifications.RunDeliveryRetries(m.workCtx, m.deps.Dispatcher, logger)
-		return nil
-	})
-
-	m.group.Go(func() error {
-		store.RunDocLockSweep(m.workCtx, m.deps.Store, m.deps.WSHub, store.DocLockHeartbeat, logger)
-		return nil
-	})
-
-	m.group.Go(func() error {
-		m.deps.Scheduler.Start(m.workCtx)
-		return nil
-	})
+	if m.deps.LeaderElection {
+		m.deps.Ready.RequireLeader()
+		m.group.Go(func() error {
+			if err := m.deps.Elector.Campaign(m.workCtx); err != nil {
+				if m.workCtx.Err() == nil {
+					m.fail(err)
+					return err
+				}
+				return nil
+			}
+			m.mu.Lock()
+			if m.stopping {
+				m.mu.Unlock()
+				return nil
+			}
+			m.startLeaderWorkers()
+			m.deps.Ready.SetLeaderHeld(true)
+			m.mu.Unlock()
+			logger.Info("leader acquired; background workers started")
+			select {
+			case <-m.workCtx.Done():
+				return nil
+			case err := <-m.deps.Elector.Watch(m.workCtx):
+				if err != nil {
+					m.deps.Ready.SetLeaderHeld(false)
+					logger.Error("leader lock lost", "error", err)
+					m.fail(err)
+					return err
+				}
+				return nil
+			}
+		})
+	} else {
+		m.startLeaderWorkers()
+	}
 
 	m.group.Go(func() error {
 		logger.Info("HTTP server listening", "addr", m.deps.HTTPServer.Addr)
 		if err := m.deps.HTTPServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("HTTP server error", "error", err)
 		}
+		return nil
+	})
+}
+
+func (m *lifecycleManager) fail(err error) {
+	select {
+	case m.errors <- err:
+	default:
+	}
+}
+
+func (m *lifecycleManager) startLeaderWorkers() {
+	logger := m.deps.Logger
+	m.deps.Scheduler.Start(m.workCtx)
+	m.group.Go(func() error {
+		notifications.RunDeliveryRetries(m.workCtx, m.deps.Dispatcher, logger)
+		return nil
+	})
+	m.group.Go(func() error {
+		store.RunDocLockSweep(m.workCtx, m.deps.Store, m.deps.WSHub, store.DocLockHeartbeat, logger)
 		return nil
 	})
 }
@@ -110,6 +162,9 @@ func (m *lifecycleManager) Shutdown() error {
 	if m.deps.Ready != nil {
 		m.deps.Ready.SetNotReady()
 	}
+	m.mu.Lock()
+	m.stopping = true
+	m.mu.Unlock()
 
 	// 2. Stop accepting new HTTP/WebSocket upgrade requests and drain
 	// in-flight ones.
@@ -134,6 +189,12 @@ func (m *lifecycleManager) Shutdown() error {
 	// 5. Wait for in-flight notification dispatch goroutines (e.g. an alert
 	// created just before shutdown) so they don't touch a closed DB.
 	m.deps.Dispatcher.Wait()
+	// Release the session lock before closing the pool.
+	if m.deps.Elector != nil {
+		if err := m.deps.Elector.Close(); err != nil {
+			logger.Error("leader session close error", "error", err)
+		}
+	}
 
 	// 6. Close the DB last, now that nothing above can still be using it.
 	return m.deps.Store.Close()

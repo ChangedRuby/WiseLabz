@@ -473,15 +473,37 @@ surfaces (user management, auth/system config) are gated on `operator`; a distin
 `admin` role can be reintroduced if multi-tenant separation is needed later.
 
 **Runbook bindings.** A `runbooks` row attaches actionable guidance to a change
-type or an alert severity (`target_type` / `target_value`), not to a specific
-change or alert instance. Each runbook carries free-text `title`/`body` plus
-optional `snapshot_id` and `doc_id` pointers, letting operators jump from "this
-kind of change" or "this severity" to a known-good historical snapshot or a
-relevant doc. Like the diff and retention models above, the binding is purely
-a read-only reference: `snapshot_id`/`doc_id` are inert lookups with no
+type, an alert severity, or a quality finding check type (`target_type` /
+`target_value`), not to a specific change/alert/finding instance. Each
+runbook carries free-text `title`/`body` plus optional `snapshot_id` and
+`doc_id` pointers, letting operators jump from "this kind of change" or
+"this severity" to a known-good historical snapshot or a relevant doc. Like
+the diff and retention models above, that part of the binding is purely a
+read-only reference: `snapshot_id`/`doc_id` are inert lookups with no
 restore or apply path, and the CRUD surface (`GET`/`POST`/`PUT`/`DELETE
 /api/runbooks`, viewer-read/operator-write) only ever manages the guidance
 record itself, never the target it points at.
+
+**Runbook steps (#282).** A runbook may additionally carry `steps` — rows in
+`runbook_steps`, each naming a connector lifecycle verb (`restart`/`start`/
+`stop`), the connector it targets, and an optional `entityRef`. Authoring a
+step (embedded in `RunbookCreate`/`RunbookUpdate`, replace-all in one
+transaction alongside the parent runbook write) is instance-admin-only and
+checks only that the connector exists and that its type supports the verb
+(`connector.SupportsLifecycleVerb`) — it does **not** check or grant any
+connector permission. Linking still grants nothing (#42): every response
+that includes a step computes `canExecute`/`executeBlockedReason` for the
+calling user via `store.UserHasConnectorRole(..., "operator")`, and
+`POST /api/runbooks/{id}/steps/{stepId}/execute[?dryRun=true]` re-checks
+that grant server-side before delegating to the connectors handler's
+`ServeLifecycleOp` — the exact same dry-run-preview / elevation-gated-mutate
+/ failure-alert / audit path used by `POST /api/connectors/{id}/restart|
+start|stop` (ADR 0001/0002), with the resolved connector/verb/entityRef
+always taken from the stored step, never the request body. "Approval" here
+is the same same-user confirm + step-up the direct connector endpoints
+already require; there is no separate approval mechanism, and no execution
+history table — the audit log (`connector.<verb>` with `runbookId`/`stepId`
+in `detail`) is the only record.
 
 ## ADR index
 
@@ -492,6 +514,8 @@ This file records the _outcome_ of each decision; the ADRs record the _reasoning
 - [`0001-lab-mutating-operation-boundaries.md`](adr/0001-lab-mutating-operation-boundaries.md) —
   permission, step-up, audit, dry-run, and rollback model for the first lab-mutating
   operation (`service.restart`), ahead of implementation.
+- [`0004-leader-election.md`](adr/0004-leader-election.md) — PostgreSQL advisory-lock
+  active/passive operation and readiness-based failover.
 
 ---
 

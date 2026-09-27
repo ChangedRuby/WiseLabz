@@ -6,14 +6,15 @@
  * are inline and role-gated; the destructive remove runs the full blast-radius +
  * step-up + type-to-confirm flow via <ConfirmDestructive/>.
  */
-import { useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useMemo, useRef, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useGetConnectorsConnectorId,
   useGetConnectorsConnectorIdData,
   useGetConnectorsConnectorIdSyncs,
+  useGetConnectorsConnectorIdSnapshots,
   useGetConnectorsConnectorIdConfigFields,
   useGetConnectorsSchema,
   postConnectorsConnectorIdRestart,
@@ -48,6 +49,9 @@ import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states
 import { Markdown } from '../../components/docs/Markdown';
 import { ConfirmDestructive } from '../../components/manager/ConfirmDestructive';
 import { ElevationConfirm } from '../../components/manager/ElevationConfirm';
+import { useMutatingOp } from '../../components/manager/useMutatingOp';
+import { MutatingOpDialogs, type MutatingOpMessages } from '../../components/manager/LifecycleOp';
+import { EntityPicker } from '../../components/manager/EntityPicker';
 import {
   ArrowRightIcon,
   SyncIcon,
@@ -107,9 +111,9 @@ export function ServiceDetailPage() {
     queryClient.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
     void connector.refetch();
   };
-  const restartOp = useMutatingOp(id, postConnectorsConnectorIdRestart, onOpSuccess);
-  const startOp = useMutatingOp(id, postConnectorsConnectorIdStart, onOpSuccess);
-  const stopOp = useMutatingOp(id, postConnectorsConnectorIdStop, onOpSuccess);
+  const restartOp = useLifecycleOp(id, postConnectorsConnectorIdRestart, onOpSuccess);
+  const startOp = useLifecycleOp(id, postConnectorsConnectorIdStart, onOpSuccess);
+  const stopOp = useLifecycleOp(id, postConnectorsConnectorIdStop, onOpSuccess);
 
   const healthCheck = useMutation({
     mutationFn: () => postConnectorsConnectorIdHealth(id),
@@ -312,138 +316,101 @@ export function ServiceDetailPage() {
         }}
       />
 
-      <MutatingOpDialogs op={restartOp} verb="restart" connectorName={c.name} />
-      <MutatingOpDialogs op={startOp} verb="start" connectorName={c.name} />
-      <MutatingOpDialogs op={stopOp} verb="stop" connectorName={c.name} />
+      <ServiceMutatingOpDialogs op={restartOp} verb="restart" connectorId={c.id} connectorName={c.name} />
+      <ServiceMutatingOpDialogs op={startOp} verb="start" connectorId={c.id} connectorName={c.name} />
+      <ServiceMutatingOpDialogs op={stopOp} verb="stop" connectorId={c.id} connectorName={c.name} />
     </div>
   );
 }
 
-/** Shared dry-run-preview + elevation-confirm state for one mutating verb
- * (restart/start/stop) — same shape ADR 0001/0002 give all three. */
-function useMutatingOp(
+type LifecyclePostFn = (
   id: string,
-  postFn: (
-    id: string,
-    body?: { entityRef?: string },
-    params?: { dryRun?: boolean },
-    options?: { headers?: Record<string, string> },
-  ) => Promise<RestartPreview | { status: string }>,
-  onSuccess: () => void,
-) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  body?: { entityRef?: string },
+  params?: { dryRun?: boolean },
+  options?: { headers?: Record<string, string> },
+) => Promise<RestartPreview | { status: string }>;
 
-  const preview = useMutation({
-    mutationFn: () => postFn(id, undefined, { dryRun: true }) as Promise<RestartPreview>,
-  });
+/** Wires the shared {@link useMutatingOp} state machine to one connector +
+ * verb, adding the entity selection (fixes #282's `{}`-body bug — Docker and
+ * Proxmox ops need to know *which* container/VM to target). A ref mirrors the
+ * entityRef state so the in-flight preview/execute closures always read the
+ * latest selection, even when a re-run is triggered synchronously after
+ * `setEntityRef`. */
+function useLifecycleOp(id: string, postFn: LifecyclePostFn, onSuccess: () => void) {
+  const [entityRef, setEntityRefState] = useState('');
+  const entityRefRef = useRef('');
 
-  const mutate = useMutation({
-    mutationFn: (token: string | null) =>
-      postFn(id, {}, { dryRun: false }, token ? { headers: { 'X-Elevation-Token': token } } : undefined),
-    onSuccess: () => {
-      setConfirmOpen(false);
-      setPreviewOpen(false);
-      onSuccess();
-    },
+  const op = useMutatingOp({
+    previewFn: () =>
+      postFn(id, { entityRef: entityRefRef.current || undefined }, { dryRun: true }) as Promise<RestartPreview>,
+    executeFn: (token) =>
+      postFn(
+        id,
+        { entityRef: entityRefRef.current || undefined },
+        { dryRun: false },
+        token ? { headers: { 'X-Elevation-Token': token } } : undefined,
+      ),
+    onSuccess,
   });
 
   const open = () => {
-    preview.reset();
-    setPreviewOpen(true);
-    preview.mutate();
+    entityRefRef.current = '';
+    setEntityRefState('');
+    op.open();
   };
 
-  return { previewOpen, setPreviewOpen, confirmOpen, setConfirmOpen, preview, mutate, open };
+  const selectEntity = (ref: string) => {
+    entityRefRef.current = ref;
+    setEntityRefState(ref);
+    op.rerunPreview();
+  };
+
+  return { ...op, open, entityRef, selectEntity };
 }
 
-type MutatingOp = ReturnType<typeof useMutatingOp>;
+type LifecycleOp = ReturnType<typeof useLifecycleOp>;
 
-function MutatingOpDialogs({
+function ServiceMutatingOpDialogs({
   op,
   verb,
+  connectorId,
   connectorName,
 }: {
-  op: MutatingOp;
+  op: LifecycleOp;
   verb: 'restart' | 'start' | 'stop';
+  connectorId: string;
   connectorName: string;
 }) {
   const { t } = useTranslation();
   const k = (suffix: string) => `services.detail.${verb}${suffix}`;
 
-  return (
-    <>
-      <Dialog
-        open={op.previewOpen}
-        onClose={() => op.setPreviewOpen(false)}
-        title={t(k('PreviewTitle'))}
-        size="sm"
-      >
-        {op.preview.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : op.preview.isError || !op.preview.data ? (
-          <div className="space-y-3">
-            <p className="text-sm text-err">{t(k('PreviewError'))}</p>
-            <Button size="sm" variant="secondary" onClick={() => op.preview.mutate()}>
-              {t('common.retry')}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-ink-muted">{t(k('PreviewNotice'))}</p>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-line-soft bg-canvas-sunken p-3 text-sm">
-              <div>
-                <dt className="text-2xs text-ink-faint">{t('services.detail.opTarget')}</dt>
-                <dd className="mt-0.5 font-medium text-ink">{op.preview.data.targetService}</dd>
-              </div>
-              <div>
-                <dt className="text-2xs text-ink-faint">{t('services.detail.opDowntime')}</dt>
-                <dd className="mt-0.5 font-medium text-ink">
-                  {op.preview.data.estimatedDowntimeSeconds > 0
-                    ? t('services.detail.opSeconds', {
-                        count: op.preview.data.estimatedDowntimeSeconds,
-                      })
-                    : t('services.detail.opIndefinite')}
-                </dd>
-              </div>
-            </dl>
-            <div>
-              <h3 className="text-sm font-semibold text-ink">{t('services.detail.opDependencies')}</h3>
-              {op.preview.data.dependentServices.length === 0 ? (
-                <p className="mt-1 text-sm text-ink-muted">{t('services.detail.opNoDependencies')}</p>
-              ) : (
-                <ul className="mt-2 divide-y divide-line-soft rounded-md border border-line-soft">
-                  {op.preview.data.dependentServices.map((service) => (
-                    <li key={`${service.kind}-${service.name}`} className="px-3 py-2 text-sm text-ink">
-                      <span>{service.name}</span>
-                      <span className="ml-2 font-mono text-2xs text-ink-faint">{service.kind}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {op.mutate.isError && <p className="text-2xs text-err">{t(k('Failed'))}</p>}
-            <div className="flex justify-end">
-              <Button size="sm" variant="danger" onClick={() => op.setConfirmOpen(true)}>
-                {t(k('Now'))}
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+  const messages: MutatingOpMessages = {
+    previewTitle: t(k('PreviewTitle')),
+    previewNotice: t(k('PreviewNotice')),
+    previewError: t(k('PreviewError')),
+    targetLabel: t('services.detail.opTarget'),
+    downtimeLabel: t('services.detail.opDowntime'),
+    downtimeSeconds: (count) => t('services.detail.opSeconds', { count }),
+    downtimeIndefinite: t('services.detail.opIndefinite'),
+    dependenciesLabel: t('services.detail.opDependencies'),
+    noDependencies: t('services.detail.opNoDependencies'),
+    failed: t(k('Failed')),
+    retry: t('common.retry'),
+    confirmTitle: t(k('ConfirmTitle'), { name: connectorName }),
+    confirmDescription: t(k('ConfirmDescription')),
+    confirmLabel: t(k('Now')),
+  };
 
-      <ElevationConfirm
-        open={op.confirmOpen}
-        resourceName={connectorName}
-        action={`connector.${verb}`}
-        title={t(k('ConfirmTitle'), { name: connectorName })}
-        description={t(k('ConfirmDescription'))}
-        confirmLabel={t(k('Now'))}
-        isPending={op.mutate.isPending}
-        onClose={() => op.setConfirmOpen(false)}
-        onConfirm={(token) => op.mutate.mutate(token)}
-      />
-    </>
+  return (
+    <MutatingOpDialogs
+      op={op}
+      action={`connector.${verb}`}
+      resourceName={connectorName}
+      messages={messages}
+      entityPicker={
+        <EntityPicker connectorId={connectorId} value={op.entityRef} onChange={op.selectEntity} />
+      }
+    />
   );
 }
 
@@ -585,6 +552,7 @@ function SnapshotPanel({ id }: { id: string }) {
     <Panel className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ink">{t('services.detail.snapshot')}</h2>
+        <Link to={`/services/${id}/snapshots`} className="font-mono text-xs text-accent-secondary hover:underline">{t('services.snapshots.history')}</Link>
         {data.data && (
           <span className="font-mono text-2xs text-ink-faint">
             {t('services.detail.fetchedAt', { time: relativeTime(data.data.fetchedAt) })}
@@ -844,6 +812,7 @@ function SyncStatusTag({ status }: { status: SyncRunStatus }) {
 function SyncHistoryPanel({ id }: { id: string }) {
   const { t } = useTranslation();
   const syncs = useGetConnectorsConnectorIdSyncs(id, { limit: 10 });
+  const snapshots = useGetConnectorsConnectorIdSnapshots(id, { limit: 100 });
 
   return (
     <Panel className="p-5">
@@ -879,6 +848,13 @@ function SyncHistoryPanel({ id }: { id: string }) {
               </p>
               {run.status === 'error' && run.error && (
                 <p className="mt-1 pl-5 text-2xs text-err">{run.error}</p>
+              )}
+              {run.snapshotId && (
+                <Link className="ml-5 font-mono text-2xs text-accent-secondary hover:underline" to={`/services/${id}/snapshots?${(() => {
+                  const index = snapshots.data?.findIndex((snapshot) => snapshot.id === run.snapshotId) ?? -1;
+                  const previous = index >= 0 ? snapshots.data?.[index + 1] : undefined;
+                  return previous ? `a=${encodeURIComponent(previous.id)}&b=${encodeURIComponent(run.snapshotId)}` : `b=${encodeURIComponent(run.snapshotId)}`;
+                })()}`}>{t('services.snapshots.viewChanges')}</Link>
               )}
             </li>
           ))}

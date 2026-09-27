@@ -65,6 +65,31 @@ func TestDeleteOldSnapshotsProtectsLatest(t *testing.T) {
 	}
 }
 
+func TestDeleteOldSnapshotsProtectsGolden(t *testing.T) {
+	ctx := context.Background()
+	s := newDocTestStore(t)
+	connectorID := createTestConnector(ctx, t, s)
+	old := &SnapshotRecord{ConnectorID: connectorID, Data: "{}", FetchedAt: "2024-01-01T00:00:00Z"}
+	recent := &SnapshotRecord{ConnectorID: connectorID, Data: "{}", FetchedAt: "2026-01-01T00:00:00Z"}
+	for _, sn := range []*SnapshotRecord{old, recent} {
+		if err := s.CreateSnapshot(ctx, sn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.PinGoldenSnapshot(ctx, &GoldenSnapshotRecord{ConnectorID: connectorID, SnapshotID: old.ID, PinnedBy: "tester"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.DeleteOldSnapshots(ctx, "2025-01-01T00:00:00Z"); err != nil || n != 0 {
+		t.Fatalf("delete pinned snapshot = %d, %v", n, err)
+	}
+	if err := s.UnpinGoldenSnapshot(ctx, connectorID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.DeleteOldSnapshots(ctx, "2025-01-01T00:00:00Z"); err != nil || n != 1 {
+		t.Fatalf("delete unpinned snapshot = %d, %v", n, err)
+	}
+}
+
 func TestDeleteOldDocVersionsProtectsCurrent(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)

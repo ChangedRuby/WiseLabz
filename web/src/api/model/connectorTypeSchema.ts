@@ -7,6 +7,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ConnectorCategory } from './connectorCategory';
+import type { ConnectorTypeSchemaLifecycleVerbsItem } from './connectorTypeSchemaLifecycleVerbsItem';
 import type { SchemaField } from './schemaField';
 
 export interface ConnectorTypeSchema {
@@ -20,4 +21,6 @@ export interface ConnectorTypeSchema {
   degradedLatencyThresholdMs?: number;
   /** True if this type's credentials refresh automatically (e.g. OAuth2). The credential_rotation quality check always skips it, and the UI should hide the rotation reminder fields on its connector form. */
   isCredentialRefresher?: boolean;
+  /** The lifecycle verbs (restart/start/stop) this type's connector implementation supports, e.g. for filtering the runbook step editor's verb picker to what a chosen connector can actually do. */
+  lifecycleVerbs?: ConnectorTypeSchemaLifecycleVerbsItem[];
 }

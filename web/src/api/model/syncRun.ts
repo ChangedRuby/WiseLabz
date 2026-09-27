@@ -25,4 +25,9 @@ export interface SyncRun {
   attempt: number;
   changesCount?: number;
   alertsCount?: number;
+  /**
+   * Snapshot produced by this run, if one was saved
+   * @nullable
+   */
+  snapshotId?: string | null;
 }

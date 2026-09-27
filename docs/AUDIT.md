@@ -47,10 +47,11 @@ object, action-specific), and `createdAt`.
 | `connector.delete` | `DELETE /api/connectors/{id}` | connector / id |
 | `connector.toggle_enabled` | `PUT /api/connectors/{id}/enabled` | connector / id |
 | `connector.sync` | `POST /api/connectors/{id}/sync` | connector / id |
+| `snapshot.diff.export` | `GET /api/connectors/{id}/snapshots/diff?from=…&to=…&format=json\|csv\|md\|html` | connector / id |
 | `connector.sync_all` | `POST /api/sync` | connector / (none) |
-| `connector.restart` | `POST /api/connectors/{id}/restart` (dryRun omitted/false) | connector / id |
-| `connector.start` | `POST /api/connectors/{id}/start` (dryRun omitted/false) | connector / id |
-| `connector.stop` | `POST /api/connectors/{id}/stop` (dryRun omitted/false) | connector / id |
+| `connector.restart` | `POST /api/connectors/{id}/restart` (dryRun omitted/false), or `POST /api/runbooks/{id}/steps/{stepId}/execute` for a `restart` step | connector / id |
+| `connector.start` | `POST /api/connectors/{id}/start` (dryRun omitted/false), or `POST /api/runbooks/{id}/steps/{stepId}/execute` for a `start` step | connector / id |
+| `connector.stop` | `POST /api/connectors/{id}/stop` (dryRun omitted/false), or `POST /api/runbooks/{id}/steps/{stepId}/execute` for a `stop` step | connector / id |
 | `connector.configPush` | `POST /api/connectors/{id}/config-push` (successful, verified push only) | connector / id |
 | `connector.maintenanceWindow.open` | `POST /api/connectors/{id}/maintenance-window` | connector / id |
 | `connector.maintenanceWindow.close` | `DELETE /api/connectors/{id}/maintenance-window` (only when a window was actually active) | connector / id |
@@ -71,6 +72,9 @@ object, action-specific), and `createdAt`.
 | `alert.dismiss` | `POST /api/alerts/{id}/dismiss` | alert / id |
 | `alert.snooze` | `POST /api/alerts/{id}/snooze` | alert / id |
 | `finding.resolve` | `POST /api/findings/{id}/resolve` | finding / id |
+| `runbook.create` | `POST /api/runbooks` | runbook / new ID |
+| `runbook.update` | `PUT /api/runbooks/{id}` | runbook / id |
+| `runbook.delete` | `DELETE /api/runbooks/{id}` | runbook / id |
 | `compliance_rule.create` | `POST /api/compliance/rules` | compliance_rule / new ID |
 | `compliance_rule.update` | `PUT /api/compliance/rules/{id}` | compliance_rule / id |
 | `compliance_rule.delete` | `DELETE /api/compliance/rules/{id}` | compliance_rule / id |
@@ -84,6 +88,18 @@ audit log safe to expose to any instance admin without redaction logic.
 `connector.configPush` follows the same discipline: `detail` records the
 pushed `fieldKey` (name) and `entityRef`, never the pushed `value`.
 
+`connector.restart`/`connector.start`/`connector.stop` triggered by
+`POST /api/runbooks/{id}/steps/{stepId}/execute` carry `runbookId` and
+`stepId` in `detail` alongside `entityRef`, so an execution can be traced
+back to the runbook step that triggered it — linking a step still grants no
+mutation permission by itself (see `docs/adr/0001-lab-mutating-operation-boundaries.md`);
+the caller still needs an operator grant on the step's connector and a
+valid elevation token for `connector.<verb>`. `runbook.create`/
+`runbook.update` record the runbook's `title` and its `steps` (each step's
+`id`, `connectorId`, `verb`, `entityRef`); `runbook.update` additionally
+records `changedFields`, the list of top-level keys present in the request
+body. `runbook.delete` records the deleted runbook's `title`.
+
 ## What's not recorded
 
 - **Failed attempts, except elevation denials.** An audit entry is written
@@ -91,7 +107,9 @@ pushed `fieldKey` (name) and `entityRef`, never the pushed `value`.
   reaches the audit log — this is a deliberate scope cut: this endpoint
   answers "what happened," not "what was attempted." Elevation-token denials
   are the exception because they are security-relevant attempts.
-- **Reads.** Listing or viewing a resource is not an audited action.
+- **Reads.** Listing or viewing a resource is not an audited action. Downloading
+  a snapshot diff with `format` is the exception; viewing the same diff as JSON
+  without `format` is not audited.
 - A write to the audit log failing is logged (`slog.Error`) but never
   fails the request — the audited action has already gone through by
   that point, so refusing the response would be misleading.

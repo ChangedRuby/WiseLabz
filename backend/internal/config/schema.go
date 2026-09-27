@@ -51,8 +51,12 @@ func schemaFor(t reflect.Type, path string, env bool) (map[string]any, error) {
 			schema["type"], schema["additionalProperties"] = "object", child
 		}
 		schema["x-config-file-only"] = true
-	case reflect.String, reflect.Int, reflect.Bool:
-		schema["type"] = map[reflect.Kind]string{reflect.String: "string", reflect.Int: "integer", reflect.Bool: "boolean"}[t.Kind()]
+	case reflect.String, reflect.Int, reflect.Int64, reflect.Bool:
+		if t.String() == "time.Duration" {
+			schema["type"] = "string"
+		} else {
+			schema["type"] = map[reflect.Kind]string{reflect.String: "string", reflect.Int: "integer", reflect.Int64: "integer", reflect.Bool: "boolean"}[t.Kind()]
+		}
 		if env {
 			schema["x-env"] = "WISELABZ_" + strings.ToUpper(strings.ReplaceAll(path, ".", "_"))
 		}

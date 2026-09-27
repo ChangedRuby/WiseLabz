@@ -8,6 +8,6 @@
  */
 
 export type PostConnectorsConnectorIdRestartBody = {
-  /** Target entity's SnapshotEntity.externalId (e.g. a VM ID, container ID, or service name), or omitted for connectors that manage a single implicit service. Ignored for dry-run previews. */
+  /** Target entity's SnapshotEntity.externalId (e.g. a VM ID, container ID, or service name), or omitted for connectors that manage a single implicit service. Also honored for dry-run previews: when set and it matches an entity in the latest snapshot, the preview's targetService is that entity's name. */
   entityRef?: string;
 };

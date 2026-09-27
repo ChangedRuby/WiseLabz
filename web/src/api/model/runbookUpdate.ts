@@ -6,6 +6,7 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { RunbookStepInput } from './runbookStepInput';
 import type { RunbookTargetType } from './runbookTargetType';
 
 export interface RunbookUpdate {
@@ -17,4 +18,9 @@ export interface RunbookUpdate {
   snapshotId?: string | null;
   /** @nullable */
   docId?: string | null;
+  /**
+   * Omit this key entirely to leave the runbook's steps unchanged; include it (even as []) to replace all steps.
+   * @maxItems 20
+   */
+  steps?: RunbookStepInput[];
 }

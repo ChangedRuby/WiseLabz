@@ -17,6 +17,7 @@ require (
 	github.com/mark3labs/mcp-go v1.1.1
 	github.com/pquerna/otp v1.5.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/spf13/viper v1.21.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.57.0
@@ -65,7 +66,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
-	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect

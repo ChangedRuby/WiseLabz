@@ -21,8 +21,19 @@ import (
 // the lifecycle manager (which flips it as the first step of ordered
 // shutdown, before anything stops accepting work).
 type ReadyState struct {
-	notReady atomic.Bool
+	notReady       atomic.Bool
+	leaderRequired atomic.Bool
+	leaderHeld     atomic.Bool
 }
+
+// RequireLeader makes readiness depend on ownership of the leader lock.
+func (r *ReadyState) RequireLeader() { r.leaderRequired.Store(true) }
+
+// SetLeaderHeld records whether this instance currently owns the leader lock.
+func (r *ReadyState) SetLeaderHeld(held bool) { r.leaderHeld.Store(held) }
+
+// WaitingForLeader reports standby readiness independently of shutdown.
+func (r *ReadyState) WaitingForLeader() bool { return r.leaderRequired.Load() && !r.leaderHeld.Load() }
 
 // SetNotReady marks the server as not ready. One-way: once shutdown starts,
 // the server never becomes ready again.
@@ -83,6 +94,13 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 			"status":     "degraded",
 			"ready":      false,
 			"components": []diagnostics.Component{{Name: "shutdown", Status: "draining"}},
+		})
+		return
+	}
+	if h.Ready != nil && h.Ready.WaitingForLeader() {
+		httputil.JSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "degraded", "ready": false,
+			"components": []diagnostics.Component{{Name: "leadership", Status: "standby"}},
 		})
 		return
 	}

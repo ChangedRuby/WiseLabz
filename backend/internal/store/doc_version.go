@@ -105,3 +105,42 @@ func (s *Store) GetAllDocVersions(ctx context.Context, docIDs []string) ([]DocVe
 	}
 	return versions, nil
 }
+
+// ListDocVersionsAfter returns retained revisions beyond each doc's exported
+// revision, in creation order. A missing cursor starts at revision zero.
+func (s *Store) ListDocVersionsAfter(ctx context.Context, afterByDoc map[string]int, limit int) ([]DocVersionRecord, error) {
+	if limit <= 0 {
+		return []DocVersionRecord{}, nil
+	}
+	// ponytail: stream ordered rows until the cap; a DB-side cursor table is
+	// only needed if retained history makes this scan expensive.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT v.id, v.doc_id, v.rev, v.content, v.author, v.trigger, v.created_at
+		FROM doc_versions v JOIN docs d ON d.id = v.doc_id
+		ORDER BY v.created_at, v.doc_id, v.rev
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list doc versions after: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	versions := make([]DocVersionRecord, 0, min(limit, 100))
+	for rows.Next() {
+		var v DocVersionRecord
+		var author sql.NullString
+		if err := rows.Scan(&v.ID, &v.DocID, &v.Rev, &v.Content, &author, &v.Trigger, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan doc version: %w", err)
+		}
+		if v.Rev <= afterByDoc[v.DocID] {
+			continue
+		}
+		v.Author = author.String
+		versions = append(versions, v)
+		if len(versions) == limit {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate doc versions: %w", err)
+	}
+	return versions, nil
+}

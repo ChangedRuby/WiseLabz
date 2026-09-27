@@ -26,6 +26,9 @@ import type {
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
+  SnapshotDiff,
+  SnapshotFull,
+  SnapshotSummary,
   SyncJobRef,
   SyncRun,
   TestResult,
@@ -205,6 +208,10 @@ export const getGetConnectorsSchemaResponseMock = (): ConnectorTypeSchema[] =>
     stub: faker.datatype.boolean(),
     degradedLatencyThresholdMs: faker.helpers.arrayElement([faker.number.int(), undefined]),
     isCredentialRefresher: faker.datatype.boolean(),
+    lifecycleVerbs: faker.helpers.arrayElement([
+      faker.helpers.arrayElements(['restart', 'start', 'stop'] as const),
+      undefined,
+    ]),
   }));
 
 export const getGetConnectorsConnectorIdResponseMock = (
@@ -526,7 +533,155 @@ export const getGetConnectorsConnectorIdSyncsResponseMock = (): SyncRun[] =>
     attempt: faker.number.int(),
     changesCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
     alertsCount: faker.helpers.arrayElement([faker.number.int(), undefined]),
+    snapshotId: faker.helpers.arrayElement([
+      faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
+      undefined,
+    ]),
   }));
+
+export const getGetConnectorsConnectorIdSnapshotsResponseMock = (): SnapshotSummary[] =>
+  Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+    sizeBytes: faker.number.int(),
+    golden: faker.datatype.boolean(),
+  }));
+
+export const getGetConnectorsConnectorIdSnapshotsDiffResponseMock = (
+  overrideResponse: Partial<Extract<SnapshotDiff | string, object>> = {}
+): SnapshotDiff | string =>
+  faker.helpers.arrayElement([
+    {
+      provenance: {
+        connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        from: {
+          id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+          sha256: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        },
+        to: {
+          id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+          sha256: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        },
+        generatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+        generatedBy: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      },
+      summary: {
+        sectionsAdded: faker.number.int(),
+        sectionsRemoved: faker.number.int(),
+        sectionsModified: faker.number.int(),
+        entitiesAdded: faker.number.int(),
+        entitiesRemoved: faker.number.int(),
+        entitiesModified: faker.number.int(),
+        dependenciesAdded: faker.number.int(),
+        dependenciesRemoved: faker.number.int(),
+      },
+      sections: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+        () => ({
+          type: faker.helpers.arrayElement(['added', 'removed', 'modified'] as const),
+          severity: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          summary: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          detail: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          patches: Array.from(
+            { length: faker.number.int({ min: 1, max: 4 }) },
+            (_, i) => i + 1
+          ).map(() => ({
+            section: faker.string.alpha({ length: { min: 10, max: 20 } }),
+            old: faker.helpers.arrayElement([
+              faker.string.alpha({ length: { min: 10, max: 20 } }),
+              undefined,
+            ]),
+            new: faker.helpers.arrayElement([
+              faker.string.alpha({ length: { min: 10, max: 20 } }),
+              undefined,
+            ]),
+            line: faker.helpers.arrayElement([faker.number.int(), undefined]),
+          })),
+          relatedServiceIds: faker.helpers.arrayElement([
+            Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() =>
+              faker.string.alpha({ length: { min: 10, max: 20 } })
+            ),
+            undefined,
+          ]),
+        })
+      ),
+      entities: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+        () => ({
+          kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          key: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          field: faker.string.alpha({ length: { min: 10, max: 20 } }),
+          change: faker.helpers.arrayElement(['added', 'removed', 'modified'] as const),
+          old: faker.helpers.arrayElement([faker.helpers.arrayElement([{}, null]), null]),
+          new: faker.helpers.arrayElement([faker.helpers.arrayElement([{}, null]), null]),
+        })
+      ),
+      dependencies: Array.from(
+        { length: faker.number.int({ min: 1, max: 4 }) },
+        (_, i) => i + 1
+      ).map(() => ({
+        kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        ref: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        change: faker.helpers.arrayElement(['added', 'removed'] as const),
+      })),
+      ...overrideResponse,
+    },
+    faker.word.sample(),
+    faker.word.sample(),
+    faker.word.sample(),
+  ]);
+
+export const getGetConnectorsConnectorIdSnapshotsSnapshotIdResponseMock = (
+  overrideResponse: Partial<Extract<SnapshotFull, object>> = {}
+): SnapshotFull => ({
+  id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  serviceName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  type: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  sections: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      content: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    })
+  ),
+  entities: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      ip: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      hostname: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      externalId: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+      attributes: faker.helpers.arrayElement([{}, undefined]),
+    })
+  ),
+  dependencies: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+    () => ({
+      kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+      ref: faker.helpers.arrayElement([
+        faker.string.alpha({ length: { min: 10, max: 20 } }),
+        undefined,
+      ]),
+    })
+  ),
+  metadata: {
+    [faker.string.alphanumeric(5)]: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  },
+  fetchedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
 
 export const getPostConnectorsBulkSyncResponseMock = (
   overrideResponse: Partial<Extract<ConnectorBulkSyncResponse, object>> = {}

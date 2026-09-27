@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func validConfig() *Config {
@@ -14,6 +15,8 @@ func validConfig() *Config {
 		Server:     Server{Port: 8080, Origin: "http://localhost"},
 		Encryption: EncryptionSettings{Key: base64.StdEncoding.EncodeToString(make([]byte, 32))},
 		Auth:       AuthSettings{Secret: strings.Repeat("s", 32)},
+		Sync:       SyncSettings{MaxConcurrency: 4, DueBatchSize: 50, Timeout: 5 * time.Minute},
+		HA:         HASettings{LockPollInterval: 5 * time.Second},
 	}
 }
 
@@ -29,6 +32,32 @@ func TestValidate(t *testing.T) {
 	for _, want := range []string{"AUTH_SECRET", "ENCRYPTION_KEY", "SERVER_ORIGIN", "db.driver", "server.port"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestValidateLeaderElectionRequiresPostgres(t *testing.T) {
+	c := validConfig()
+	c.HA.LeaderElection = true
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "ha.leader_election") {
+		t.Fatalf("sqlite leader election error = %v", err)
+	}
+	c.DB.Driver = "postgres"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("postgres leader election rejected: %v", err)
+	}
+}
+
+func TestValidateSyncLimits(t *testing.T) {
+	c := validConfig()
+	c.Sync.MaxConcurrency = 0
+	c.Sync.DueBatchSize = -1
+	c.Sync.Timeout = 0
+	c.HA.LockPollInterval = 0
+	err := c.Validate()
+	for _, key := range []string{"sync.max_concurrency", "sync.due_batch_size", "sync.timeout", "ha.lock_poll_interval"} {
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("missing %s validation: %v", key, err)
 		}
 	}
 }
@@ -88,6 +117,8 @@ func TestEveryKeyEnvOverridable(t *testing.T) {
 			case f.Type.Kind() == reflect.Slice: // OIDC providers: file-only
 			case f.Type.Kind() == reflect.Int:
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "7")
+			case f.Type == reflect.TypeOf(time.Duration(0)):
+				t.Setenv("WISELABZ_"+strings.ToUpper(name), "7s")
 			case f.Type.Kind() == reflect.Bool:
 				t.Setenv("WISELABZ_"+strings.ToUpper(name), "true")
 			case strings.HasSuffix(name, "cron_expr") || name == "sync_schedule":

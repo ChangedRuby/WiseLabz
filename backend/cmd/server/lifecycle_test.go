@@ -4,7 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,16 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
+
+type standbyElector struct{ entered chan struct{} }
+
+func (e standbyElector) Campaign(ctx context.Context) error {
+	close(e.entered)
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (standbyElector) Watch(context.Context) <-chan error { return nil }
+func (standbyElector) Close() error                       { return nil }
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -114,5 +126,31 @@ func TestLifecycleManagerShutdownCancelsWorkContext(t *testing.T) {
 	case <-lc.workCtx.Done():
 	default:
 		t.Fatal("work context was not canceled by Shutdown")
+	}
+}
+
+func TestStandbyIsUnreadyAndRunsNoScheduler(t *testing.T) {
+	lc, ready := newTestLifecycle(t)
+	elector := standbyElector{entered: make(chan struct{})}
+	lc.deps.Elector = elector
+	lc.deps.LeaderElection = true
+	var runs atomic.Int32
+	if _, err := lc.deps.Scheduler.AddJob("standby", "* * * * * *", func(context.Context) error { runs.Add(1); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	lc.Start()
+	<-elector.entered
+	h := syshandler.NewHandler(nil, nil, nil, nil, "", ready)
+	r := httptest.NewRecorder()
+	h.Readiness(r, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if r.Code != http.StatusServiceUnavailable || !ready.WaitingForLeader() {
+		t.Fatalf("standby readiness = %d, waiting = %v", r.Code, ready.WaitingForLeader())
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if runs.Load() != 0 {
+		t.Fatal("standby ran a scheduler job")
+	}
+	if err := lc.Shutdown(); err != nil {
+		t.Fatal(err)
 	}
 }

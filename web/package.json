@@ -9,6 +9,7 @@
     "prebuild": "orval --config ./orval.config.ts",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "typecheck": "tsc -b",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",
     "gen:api": "orval --config ./orval.config.ts",

@@ -19,6 +19,15 @@ func TestSyncRunCreateAndList(t *testing.T) {
 	ctx := context.Background()
 	s := newDocTestStore(t)
 	connectorID := createTestConnector(ctx, t, s)
+	if s.driver == "sqlite" {
+		if _, err := s.db.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := &SnapshotRecord{ConnectorID: connectorID, Data: "{}"}
+	if err := s.CreateSnapshot(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
 
 	durationMs := 1234
 	if err := s.CreateSyncRun(ctx, &SyncRunRecord{
@@ -29,6 +38,7 @@ func TestSyncRunCreateAndList(t *testing.T) {
 		Attempt:      1,
 		ChangesCount: 3,
 		AlertsCount:  1,
+		SnapshotID:   &snapshot.ID,
 	}); err != nil {
 		t.Fatalf("CreateSyncRun() error: %v", err)
 	}
@@ -49,6 +59,17 @@ func TestSyncRunCreateAndList(t *testing.T) {
 	}
 	if r.Attempt != 1 {
 		t.Fatalf("runs[0].Attempt = %d, want 1", r.Attempt)
+	}
+	if r.SnapshotID == nil || *r.SnapshotID != snapshot.ID {
+		t.Fatalf("runs[0].SnapshotID = %v, want %s", r.SnapshotID, snapshot.ID)
+	}
+	// Deleting a snapshot clears the optional FK without removing the run.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM service_snapshots WHERE id = ?`, snapshot.ID); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = s.ListSyncRunsByConnector(ctx, connectorID, 20)
+	if err != nil || len(runs) != 1 || runs[0].SnapshotID != nil {
+		t.Fatalf("runs after snapshot deletion = %+v, err %v", runs, err)
 	}
 }
 

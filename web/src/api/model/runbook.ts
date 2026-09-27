@@ -6,6 +6,7 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { RunbookStep } from './runbookStep';
 import type { RunbookTargetType } from './runbookTargetType';
 
 export interface Runbook {
@@ -13,7 +14,7 @@ export interface Runbook {
   title: string;
   body: string;
   targetType: RunbookTargetType;
-  /** A changeType value (e.g. vm.created) when targetType=change_type, or a Severity value when targetType=alert_severity. */
+  /** A changeType value (e.g. vm.created) when targetType=change_type, a Severity value when targetType=alert_severity, or a quality finding check type when targetType=finding_check_type. */
   targetValue: string;
   /**
    * Known-good ServiceSnapshot to point at, if any
@@ -22,6 +23,8 @@ export interface Runbook {
   snapshotId?: string | null;
   /** @nullable */
   docId?: string | null;
+  /** Connector lifecycle operations this runbook points at, in position order. Linking a step grants no mutation permission by itself — see canExecute. */
+  steps: RunbookStep[];
   createdAt: string;
   updatedAt: string;
 }

@@ -1,0 +1,14 @@
+# connectorId: c1
+# connectorName: <Connector>
+# fromId: s1
+# fromFetchedAt: 2026-01-01T00:00:00Z
+# fromSha256: cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4
+# toId: s2
+# toFetchedAt: 2026-01-02T00:00:00Z
+# toSha256: 11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437
+# generatedAt: 2026-01-03T00:00:00Z
+# generatedBy: tester
+kind,key,field,change,old,new
+section,Config,content,modified,"old
+","new
+"

@@ -23,6 +23,7 @@ type Config struct {
 	Auth       AuthSettings       `mapstructure:"auth"`
 	AI         AISettings         `mapstructure:"ai"`
 	Sync       SyncSettings       `mapstructure:"sync"`
+	HA         HASettings         `mapstructure:"ha"`
 	Quality    QualitySettings    `mapstructure:"quality"`
 	Rotation   RotationSettings   `mapstructure:"rotation"`
 	Log        LogSettings        `mapstructure:"log"`
@@ -174,8 +175,17 @@ type AISettings struct {
 
 // SyncSettings holds sync engine settings.
 type SyncSettings struct {
-	Schedule     string `mapstructure:"schedule"`       // cron expression (legacy, for API trigger scheduling)
-	PollCronExpr string `mapstructure:"poll_cron_expr"` // cron expression for periodic connector polling
+	Schedule       string        `mapstructure:"schedule"`       // cron expression (legacy, for API trigger scheduling)
+	PollCronExpr   string        `mapstructure:"poll_cron_expr"` // cron expression for periodic connector polling
+	MaxConcurrency int           `mapstructure:"max_concurrency"`
+	DueBatchSize   int           `mapstructure:"due_batch_size"`
+	Timeout        time.Duration `mapstructure:"timeout"`
+}
+
+// HASettings controls the optional PostgreSQL leader election.
+type HASettings struct {
+	LeaderElection   bool          `mapstructure:"leader_election"`
+	LockPollInterval time.Duration `mapstructure:"lock_poll_interval"`
 }
 
 // QualitySettings holds documentation quality check settings.
@@ -234,6 +244,9 @@ type DocExportSettings struct {
 // Git mode is on when Remote is set. Token (HTTPS) and SSHKeyPath (SSH) are
 // mutually exclusive; Token is a secret and must never be logged.
 type DocExportGitSettings struct {
+	CommitMode          string `mapstructure:"commit_mode"`            // snapshot or per_revision
+	AuthorFromUser      bool   `mapstructure:"author_from_user"`       // expose user identity in Git history
+	MaxRevisionsPerRun  int    `mapstructure:"max_revisions_per_run"`  // replay cap
 	Remote              string `mapstructure:"remote"`                 // https://… or ssh://… (or scp-style user@host:path)
 	Branch              string `mapstructure:"branch"`                 // branch to fetch, reset to and push
 	Path                string `mapstructure:"path"`                   // subdirectory of the repo the docs are written to
@@ -266,6 +279,12 @@ func IsSSHRemote(remote string) bool {
 func (g DocExportGitSettings) Validate() error {
 	if !g.Enabled() {
 		return nil
+	}
+	if g.CommitMode != "" && g.CommitMode != "snapshot" && g.CommitMode != "per_revision" {
+		return errors.New("doc_export.git.commit_mode must be snapshot or per_revision")
+	}
+	if g.MaxRevisionsPerRun < 0 {
+		return errors.New("doc_export.git.max_revisions_per_run must be positive")
 	}
 	ssh := IsSSHRemote(g.Remote)
 	if !ssh && !strings.HasPrefix(g.Remote, "https://") {
@@ -333,9 +352,14 @@ func Load() (*Config, error) {
 	v.SetDefault("ai.embed_model", "nomic-embed-text")
 	v.SetDefault("sync.schedule", "0 */6 * * *")          // every 6 hours
 	v.SetDefault("sync.poll_cron_expr", "*/30 * * * * *") // every 30 seconds
-	v.SetDefault("quality.cron_expr", "0 0 * * *")        // daily quality checks at midnight
-	v.SetDefault("rotation.max_age_days", 90)             // secrets older than this are due for rotation
-	v.SetDefault("rotation.warn_days", 14)                // warn this many days before the due date
+	v.SetDefault("sync.max_concurrency", 4)
+	v.SetDefault("sync.due_batch_size", 50)
+	v.SetDefault("sync.timeout", "5m")
+	v.SetDefault("ha.leader_election", false)
+	v.SetDefault("ha.lock_poll_interval", "5s")
+	v.SetDefault("quality.cron_expr", "0 0 * * *") // daily quality checks at midnight
+	v.SetDefault("rotation.max_age_days", 90)      // secrets older than this are due for rotation
+	v.SetDefault("rotation.warn_days", 14)         // warn this many days before the due date
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
 	v.SetDefault("retention.snapshot_days", 90)
@@ -358,6 +382,9 @@ func Load() (*Config, error) {
 	v.SetDefault("doc_export.git.path", "docs")
 	v.SetDefault("doc_export.git.author_name", "WiseLabz")
 	v.SetDefault("doc_export.git.author_email", "wiselabz@localhost")
+	v.SetDefault("doc_export.git.commit_mode", "snapshot")
+	v.SetDefault("doc_export.git.author_from_user", false)
+	v.SetDefault("doc_export.git.max_revisions_per_run", 500)
 
 	// Bind every field to its WISELABZ_ env var. viper's AutomaticEnv alone
 	// does not reliably resolve nested keys through Unmarshal, so each key
@@ -376,7 +403,8 @@ func Load() (*Config, error) {
 		"auth.webauthn.rp_id", "auth.webauthn.rp_display_name",
 		"ai.enabled", "ai.provider", "ai.model", "ai.api_key", "ai.base_url", "ai.mode",
 		"ai.embed_provider", "ai.embed_model", "ai.embed_api_key", "ai.embed_base_url",
-		"sync.schedule", "sync.poll_cron_expr",
+		"sync.schedule", "sync.poll_cron_expr", "sync.max_concurrency", "sync.due_batch_size", "sync.timeout",
+		"ha.leader_election", "ha.lock_poll_interval",
 		"quality.cron_expr",
 		"rotation.max_age_days", "rotation.warn_days",
 		"log.level", "log.format",
@@ -386,6 +414,7 @@ func Load() (*Config, error) {
 		"doc_export.git.remote", "doc_export.git.branch", "doc_export.git.path",
 		"doc_export.git.author_name", "doc_export.git.author_email", "doc_export.git.token",
 		"doc_export.git.ssh_key_path", "doc_export.git.ssh_known_hosts", "doc_export.git.insecure_skip_host_key",
+		"doc_export.git.commit_mode", "doc_export.git.author_from_user", "doc_export.git.max_revisions_per_run",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind env %q: %w", key, err)

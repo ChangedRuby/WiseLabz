@@ -31,9 +31,10 @@ type SyncRunRecord struct {
 	Status      SyncRunStatus `json:"status"`
 	Error       string        `json:"error,omitempty"`
 	// Attempt is the retry attempt number for this run; 1 for the first try.
-	Attempt      int `json:"attempt"`
-	ChangesCount int `json:"changesCount"`
-	AlertsCount  int `json:"alertsCount"`
+	Attempt      int     `json:"attempt"`
+	ChangesCount int     `json:"changesCount"`
+	AlertsCount  int     `json:"alertsCount"`
+	SnapshotID   *string `json:"snapshotId"`
 }
 
 // CreateSyncRun inserts a new sync run row.
@@ -49,9 +50,9 @@ func (s *Store) CreateSyncRun(ctx context.Context, r *SyncRunRecord) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sync_runs (id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.ID, r.ConnectorID, r.StartedAt, nilToStr(r.FinishedAt), r.DurationMs, r.Status, r.Error, r.Attempt, r.ChangesCount, r.AlertsCount)
+		INSERT INTO sync_runs (id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count, snapshot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.ID, r.ConnectorID, r.StartedAt, nilToStr(r.FinishedAt), r.DurationMs, r.Status, r.Error, r.Attempt, r.ChangesCount, r.AlertsCount, r.SnapshotID)
 	if err != nil {
 		return fmt.Errorf("create sync run: %w", err)
 	}
@@ -59,7 +60,7 @@ func (s *Store) CreateSyncRun(ctx context.Context, r *SyncRunRecord) error {
 }
 
 // syncRunColumns is the shared column list for every sync_runs SELECT.
-const syncRunColumns = `id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count`
+const syncRunColumns = `id, connector_id, started_at, finished_at, duration_ms, status, error, attempt, changes_count, alerts_count, snapshot_id`
 
 // ListSyncRunsByConnector returns sync runs for a connector, newest first.
 // Never returns a nil slice.
@@ -127,7 +128,8 @@ func scanSyncRun(row rowScanner) (SyncRunRecord, error) {
 	var r SyncRunRecord
 	var finishedAt sql.NullString
 	var durationMs sql.NullInt64
-	err := row.Scan(&r.ID, &r.ConnectorID, &r.StartedAt, &finishedAt, &durationMs, &r.Status, &r.Error, &r.Attempt, &r.ChangesCount, &r.AlertsCount)
+	var snapshotID sql.NullString
+	err := row.Scan(&r.ID, &r.ConnectorID, &r.StartedAt, &finishedAt, &durationMs, &r.Status, &r.Error, &r.Attempt, &r.ChangesCount, &r.AlertsCount, &snapshotID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SyncRunRecord{}, ErrNotFound
 	}
@@ -136,5 +138,8 @@ func scanSyncRun(row rowScanner) (SyncRunRecord, error) {
 	}
 	r.FinishedAt = nullStrToStr(finishedAt)
 	r.DurationMs = nullInt64ToIntPtr(durationMs)
+	if snapshotID.Valid {
+		r.SnapshotID = &snapshotID.String
+	}
 	return r, nil
 }

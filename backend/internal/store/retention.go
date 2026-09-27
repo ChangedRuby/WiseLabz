@@ -41,6 +41,7 @@ func (s *Store) batchDelete(ctx context.Context, table, where string, args ...an
 func (s *Store) DeleteOldSnapshots(ctx context.Context, cutoff string) (int64, error) {
 	n, err := s.batchDelete(ctx, "service_snapshots", `
 		t.fetched_at < ?
+		AND NOT EXISTS (SELECT 1 FROM golden_snapshots g WHERE g.snapshot_id = t.id)
 		AND EXISTS (
 			SELECT 1 FROM service_snapshots n
 			WHERE n.connector_id = t.connector_id AND n.fetched_at > t.fetched_at

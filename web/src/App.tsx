@@ -43,6 +43,11 @@ const ServiceDetailPage = lazy(() =>
     default: ServiceDetailPage,
   }))
 );
+const SnapshotsPage = lazy(() =>
+  import('./features/services/snapshots/SnapshotsPage').then(({ SnapshotsPage }) => ({
+    default: SnapshotsPage,
+  }))
+);
 const AddConnectorPage = lazy(() =>
   import('./features/connectors/AddConnectorPage').then(({ AddConnectorPage }) => ({
     default: AddConnectorPage,
@@ -202,6 +207,7 @@ const router = createBrowserRouter([
       { path: 'services', element: <ServicesPage /> },
       { path: 'services/new', element: <AddConnectorPage /> },
       { path: 'services/:id', element: <ServiceDetailPage /> },
+      { path: 'services/:id/snapshots', element: <SnapshotsPage /> },
       { path: 'connectors/:id/edit', element: <ConnectorEditPage /> },
       { path: 'docs', element: <DocsPage /> },
       { path: 'docs/all', element: <AllDocsPage /> },

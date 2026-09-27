@@ -18,6 +18,60 @@ type SnapshotRecord struct {
 	FetchedAt   string `json:"fetchedAt"`
 }
 
+// SnapshotSummary is timeline metadata; listing it never loads snapshot data.
+type SnapshotSummary struct {
+	ID        string `json:"id"`
+	FetchedAt string `json:"fetchedAt"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Golden    bool   `json:"golden"`
+}
+
+// ListSnapshotsByConnectorKeyset lists newest snapshots by (fetched_at, id).
+// total ignores the cursor and includes all snapshots for the connector.
+func (s *Store) ListSnapshotsByConnectorKeyset(ctx context.Context, connectorID string, cur Keyset, limit int) ([]SnapshotSummary, int, error) {
+	total, err := countRows(ctx, s.db, "service_snapshots", "WHERE connector_id = ?", []any{connectorID})
+	if err != nil {
+		return nil, 0, err
+	}
+	sizeExpr := "LENGTH(CAST(sn.data AS BLOB))"
+	if s.driver == "postgres" {
+		sizeExpr = "OCTET_LENGTH(sn.data)"
+	}
+	query := `SELECT sn.id, sn.fetched_at, ` + sizeExpr + `,
+		EXISTS (SELECT 1 FROM golden_snapshots g WHERE g.snapshot_id = sn.id)
+		FROM service_snapshots sn WHERE sn.connector_id = ?`
+	args := []any{connectorID}
+	if !cur.Empty() {
+		query += ` AND (sn.fetched_at, sn.id) < (?, ?)`
+		args = append(args, cur.Sort, cur.ID)
+	}
+	query += ` ORDER BY sn.fetched_at DESC, sn.id DESC LIMIT ?`
+	args = append(args, limit)
+	items, err := scanAll(ctx, s.db, "snapshot summaries", query, args, func(row rowScanner) (SnapshotSummary, error) {
+		var summary SnapshotSummary
+		var golden bool
+		err := row.Scan(&summary.ID, &summary.FetchedAt, &summary.SizeBytes, &golden)
+		summary.Golden = golden
+		return summary, err
+	})
+	return items, total, err
+}
+
+// GetSnapshotForConnector only returns a snapshot owned by connectorID.
+func (s *Store) GetSnapshotForConnector(ctx context.Context, connectorID, snapshotID string) (*SnapshotRecord, error) {
+	sn := &SnapshotRecord{}
+	err := s.db.QueryRowContext(ctx, `SELECT id, connector_id, data, fetched_at
+		FROM service_snapshots WHERE connector_id = ? AND id = ?`, connectorID, snapshotID).
+		Scan(&sn.ID, &sn.ConnectorID, &sn.Data, &sn.FetchedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get snapshot for connector: %w", err)
+	}
+	return sn, nil
+}
+
 // ListDueConnectors returns enabled connectors with a schedule whose next run
 // is due (next_run_at <= now, or unset — e.g. right after schedule was first
 // configured). Ordered soonest-first. Never returns a nil slice.

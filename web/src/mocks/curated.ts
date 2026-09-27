@@ -28,6 +28,26 @@ import type { QualityCheckType, QualityFindingStatus } from '../api/model';
 
 // Small artificial latency so loading skeletons are actually exercised on first paint.
 const LATENCY = 280;
+const goldenSnapshots = new Map<string, string>();
+
+function snapshotHistory(connectorId: string) {
+  const current = serviceSnapshot(connectorId);
+  if (!current) return [];
+  return [0, 1, 2, 3].map((index) => ({
+    id: `${connectorId}-snapshot-${4 - index}`,
+    connectorId,
+    serviceName: current.serviceName,
+    type: current.type,
+    sections: current.sections.map(({ title, content }) => ({
+      title,
+      content: index === 0 ? content : `${content}\n\nRevision ${4 - index}`,
+    })),
+    entities: [{ kind: 'host', name: current.serviceName, ip: `192.168.1.${10 + index}`, attributes: { revision: 4 - index } }],
+    dependencies: [{ kind: 'service', name: 'gateway', ref: 'gateway-1' }],
+    metadata: { source: 'curated' },
+    fetchedAt: new Date(Date.now() - index * 3_600_000).toISOString(),
+  }));
+}
 
 // Session-mutable auth config so the Settings step-up toggle persists across reads.
 const authConfig = {
@@ -247,6 +267,69 @@ export const curatedHandlers = [
     return HttpResponse.json(snap);
   }),
 
+  http.get('*/connectors/:connectorId/snapshots/diff', async ({ params, request }) => {
+    await delay(LATENCY);
+    const history = snapshotHistory(params.connectorId as string);
+    const query = new URL(request.url).searchParams;
+    const from = history.find((snapshot) => snapshot.id === query.get('from'));
+    const to = history.find((snapshot) => snapshot.id === query.get('to'));
+    if (!from || !to) return new HttpResponse(null, { status: 404 });
+    const report = {
+      provenance: {
+        connectorId: params.connectorId,
+        connectorName: to.serviceName,
+        from: { id: from.id, fetchedAt: from.fetchedAt, sha256: 'mock-from-hash' },
+        to: { id: to.id, fetchedAt: to.fetchedAt, sha256: 'mock-to-hash' },
+        generatedAt: new Date().toISOString(),
+        generatedBy: user.id,
+      },
+      summary: { sectionsAdded: 0, sectionsRemoved: 0, sectionsModified: 1, entitiesAdded: 0, entitiesRemoved: 0, entitiesModified: 1, dependenciesAdded: 0, dependenciesRemoved: 0 },
+      sections: [{ type: 'modified', severity: 'info', summary: 'Revision changed', detail: '', patches: [{ section: from.sections[0]?.title ?? 'State', old: from.sections[0]?.content ?? '', new: to.sections[0]?.content ?? '' }] }],
+      entities: [{ kind: 'host', key: to.serviceName, name: to.serviceName, field: 'ip', change: 'modified', old: from.entities[0].ip, new: to.entities[0].ip }],
+      dependencies: [],
+    };
+    const format = query.get('format');
+    if (!format) return HttpResponse.json(report);
+    const body = format === 'json' ? JSON.stringify(report, null, 2) : format === 'csv' ? 'kind,key,field,change,old,new\n' : format === 'html' ? '<h1>Snapshot diff</h1>' : '# Snapshot diff\n';
+    return new HttpResponse(body, { headers: { 'Content-Disposition': `attachment; filename="wiselabz-snapshot-diff-${params.connectorId}.${format}"`, 'Content-Type': format === 'html' ? 'text/html' : 'text/plain' } });
+  }),
+
+  http.get('*/connectors/:connectorId/snapshots/:snapshotId', async ({ params }) => {
+    await delay(LATENCY);
+    const snapshot = snapshotHistory(params.connectorId as string).find((item) => item.id === params.snapshotId);
+    return snapshot ? HttpResponse.json(snapshot) : new HttpResponse(null, { status: 404 });
+  }),
+
+  http.get('*/connectors/:connectorId/snapshots', async ({ params, request }) => {
+    await delay(LATENCY);
+    const history = snapshotHistory(params.connectorId as string);
+    if (history.length === 0) return new HttpResponse(null, { status: 404 });
+    const query = new URL(request.url).searchParams;
+    const offset = Number(query.get('cursor') ?? 0);
+    const limit = Math.min(Number(query.get('limit') ?? 30), 100);
+    const page = history.slice(offset, offset + limit).map((snapshot) => ({ id: snapshot.id, fetchedAt: snapshot.fetchedAt, sizeBytes: JSON.stringify(snapshot).length, golden: goldenSnapshots.get(params.connectorId as string) === snapshot.id }));
+    const next = offset + limit < history.length ? String(offset + limit) : '';
+    return HttpResponse.json(page, { headers: next ? { 'X-Next-Cursor': next } : {} });
+  }),
+
+  http.post('*/connectors/:connectorId/golden-snapshot', async ({ params, request }) => {
+    const body = (await request.json()) as { snapshotId?: string };
+    const snapshotId = body.snapshotId ?? snapshotHistory(params.connectorId as string)[0]?.id;
+    if (!snapshotId) return new HttpResponse(null, { status: 404 });
+    goldenSnapshots.set(params.connectorId as string, snapshotId);
+    return HttpResponse.json({ connectorId: params.connectorId, snapshotId, pinnedBy: user.id, pinnedAt: new Date().toISOString() });
+  }),
+
+  http.get('*/connectors/:connectorId/golden-snapshot', ({ params }) => {
+    const snapshotId = goldenSnapshots.get(params.connectorId as string);
+    return snapshotId ? HttpResponse.json({ connectorId: params.connectorId, snapshotId, pinnedBy: user.id, pinnedAt: new Date().toISOString() }) : new HttpResponse(null, { status: 404 });
+  }),
+
+  http.delete('*/connectors/:connectorId/golden-snapshot', ({ params }) => {
+    goldenSnapshots.delete(params.connectorId as string);
+    return HttpResponse.json({});
+  }),
+
   http.put('*/connectors/:connectorId', async ({ params, request }) => {
     await delay(LATENCY);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -263,7 +346,11 @@ export const curatedHandlers = [
   http.get('*/connectors/:connectorId/syncs', async ({ params, request }) => {
     await delay(LATENCY);
     const limit = Number(new URL(request.url).searchParams.get('limit')) || undefined;
-    const runs = syncRunsFor(params.connectorId as string);
+    const snapshots = snapshotHistory(params.connectorId as string);
+    const runs = syncRunsFor(params.connectorId as string).map((run, index) => ({
+      ...run,
+      snapshotId: run.status === 'success' ? snapshots[index]?.id ?? null : null,
+    }));
     return HttpResponse.json(limit ? runs.slice(0, limit) : runs);
   }),
 

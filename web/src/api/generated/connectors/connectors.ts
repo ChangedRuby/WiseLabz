@@ -38,6 +38,8 @@ import type {
   Error,
   ForbiddenResponse,
   GetConnectorsConnectorIdPermissions200Item,
+  GetConnectorsConnectorIdSnapshotsDiffParams,
+  GetConnectorsConnectorIdSnapshotsParams,
   GetConnectorsConnectorIdSyncsParams,
   GoldenSnapshot,
   HealthCheckResult,
@@ -59,6 +61,9 @@ import type {
   RemovalImpact,
   RestartPreview,
   ServiceSnapshot,
+  SnapshotDiff,
+  SnapshotFull,
+  SnapshotSummary,
   SyncJobRef,
   SyncRun,
   TestResult,
@@ -2764,6 +2769,506 @@ export function useGetConnectorsConnectorIdSyncs<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetConnectorsConnectorIdSyncsQueryOptions(connectorId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Snapshot history for one connector (newest first)
+ */
+export const getConnectorsConnectorIdSnapshots = (
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<SnapshotSummary[]>(
+    { url: `/connectors/${connectorId}/snapshots`, method: 'GET', params, signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdSnapshotsQueryKey = (
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams
+) => {
+  return [`/connectors/${connectorId}/snapshots`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetConnectorsConnectorIdSnapshotsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetConnectorsConnectorIdSnapshotsQueryKey(connectorId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>> = ({
+    signal,
+  }) => getConnectorsConnectorIdSnapshots(connectorId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdSnapshotsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>
+>;
+export type GetConnectorsConnectorIdSnapshotsQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetConnectorsConnectorIdSnapshots<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  params: undefined | GetConnectorsConnectorIdSnapshotsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshots<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshots<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Snapshot history for one connector (newest first)
+ */
+
+export function useGetConnectorsConnectorIdSnapshots<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshots>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdSnapshotsQueryOptions(
+    connectorId,
+    params,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Without format, returns JSON for the browser. With format, downloads an attachment and records an audit event.
+ * @summary Compare two snapshots of one connector
+ */
+export const getConnectorsConnectorIdSnapshotsDiff = (
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<SnapshotDiff | string>(
+    { url: `/connectors/${connectorId}/snapshots/diff`, method: 'GET', params, signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdSnapshotsDiffQueryKey = (
+  connectorId: string,
+  params?: GetConnectorsConnectorIdSnapshotsDiffParams
+) => {
+  return [`/connectors/${connectorId}/snapshots/diff`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetConnectorsConnectorIdSnapshotsDiffQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetConnectorsConnectorIdSnapshotsDiffQueryKey(connectorId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>
+  > = ({ signal }) =>
+    getConnectorsConnectorIdSnapshotsDiff(connectorId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: connectorId !== null && connectorId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdSnapshotsDiffQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>
+>;
+export type GetConnectorsConnectorIdSnapshotsDiffQueryError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export function useGetConnectorsConnectorIdSnapshotsDiff<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshotsDiff<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshotsDiff<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Compare two snapshots of one connector
+ */
+
+export function useGetConnectorsConnectorIdSnapshotsDiff<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  connectorId: string,
+  params: GetConnectorsConnectorIdSnapshotsDiffParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsDiff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdSnapshotsDiffQueryOptions(
+    connectorId,
+    params,
+    options
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Full snapshot belonging to one connector
+ */
+export const getConnectorsConnectorIdSnapshotsSnapshotId = (
+  connectorId: string,
+  snapshotId: string,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<SnapshotFull>(
+    { url: `/connectors/${connectorId}/snapshots/${snapshotId}`, method: 'GET', signal },
+    options
+  );
+};
+
+export const getGetConnectorsConnectorIdSnapshotsSnapshotIdQueryKey = (
+  connectorId: string,
+  snapshotId: string
+) => {
+  return [`/connectors/${connectorId}/snapshots/${snapshotId}`] as const;
+};
+
+export const getGetConnectorsConnectorIdSnapshotsSnapshotIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  snapshotId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetConnectorsConnectorIdSnapshotsSnapshotIdQueryKey(connectorId, snapshotId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>
+  > = ({ signal }) =>
+    getConnectorsConnectorIdSnapshotsSnapshotId(connectorId, snapshotId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      connectorId !== null &&
+      connectorId !== undefined &&
+      snapshotId !== null &&
+      snapshotId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetConnectorsConnectorIdSnapshotsSnapshotIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>
+>;
+export type GetConnectorsConnectorIdSnapshotsSnapshotIdQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetConnectorsConnectorIdSnapshotsSnapshotId<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  snapshotId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshotsSnapshotId<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  snapshotId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+          TError,
+          Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetConnectorsConnectorIdSnapshotsSnapshotId<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  snapshotId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Full snapshot belonging to one connector
+ */
+
+export function useGetConnectorsConnectorIdSnapshotsSnapshotId<
+  TData = Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  connectorId: string,
+  snapshotId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getConnectorsConnectorIdSnapshotsSnapshotId>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetConnectorsConnectorIdSnapshotsSnapshotIdQueryOptions(
+    connectorId,
+    snapshotId,
+    options
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

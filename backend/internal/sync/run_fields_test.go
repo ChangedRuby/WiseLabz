@@ -62,6 +62,10 @@ func TestRunSyncFieldsPersistsPartialFetchAndChange(t *testing.T) {
 	if result.Status != "success" || result.ChangesCount != 1 {
 		t.Fatalf("result = %#v, want successful sync with one change", result)
 	}
+	runs, err := s.ListSyncRunsByConnector(ctx, rec.ID, 1)
+	if err != nil || len(runs) != 1 || runs[0].SnapshotID == nil || *runs[0].SnapshotID != result.SnapshotID {
+		t.Fatalf("persisted sync run = %+v, err %v, want snapshot %s", runs, err, result.SnapshotID)
+	}
 
 	latest, err := s.GetLatestSnapshot(ctx, rec.ID)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -20,9 +21,9 @@ func TestAddJobRegistersAndFires(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	execCount := 0
+	var execCount atomic.Int32
 	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
-		execCount++
+		execCount.Add(1)
 		return nil
 	})
 	if err != nil {
@@ -36,13 +37,13 @@ func TestAddJobRegistersAndFires(t *testing.T) {
 
 	// Wait for at least one execution (the job should fire within 1 second)
 	deadline := time.Now().Add(2 * time.Second)
-	for execCount == 0 && time.Now().Before(deadline) {
+	for execCount.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	r.Stop()
 
-	if execCount == 0 {
+	if execCount.Load() == 0 {
 		t.Fatalf("job did not execute within 2 seconds")
 	}
 }
@@ -63,9 +64,9 @@ func TestRemoveJobDeregisters(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	execCount := 0
+	var execCount atomic.Int32
 	entryID, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
-		execCount++
+		execCount.Add(1)
 		return nil
 	})
 	if err != nil {
@@ -79,23 +80,23 @@ func TestRemoveJobDeregisters(t *testing.T) {
 
 	// Wait for first execution
 	deadline := time.Now().Add(2 * time.Second)
-	for execCount == 0 && time.Now().Before(deadline) {
+	for execCount.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if execCount == 0 {
+	if execCount.Load() == 0 {
 		t.Fatalf("job did not execute before removal")
 	}
 
-	firstCount := execCount
+	firstCount := execCount.Load()
 	r.RemoveJob(entryID)
 
 	// Wait a bit and verify the job doesn't execute again
 	time.Sleep(1500 * time.Millisecond)
 	r.Stop()
 
-	if execCount != firstCount {
-		t.Fatalf("job executed after removal: initial count=%d, final count=%d", firstCount, execCount)
+	if finalCount := execCount.Load(); finalCount != firstCount {
+		t.Fatalf("job executed after removal: initial count=%d, final count=%d", firstCount, finalCount)
 	}
 }
 
@@ -104,10 +105,9 @@ func TestPanicRecovery(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	executionCount := 0
+	var executionCount atomic.Int32
 	_, err := r.AddJob("panic-test", "*/1 * * * * *", func(_ context.Context) error {
-		executionCount++
-		if executionCount == 1 {
+		if executionCount.Add(1) == 1 {
 			panic("intentional panic")
 		}
 		return nil
@@ -123,15 +123,15 @@ func TestPanicRecovery(t *testing.T) {
 
 	// Wait for the panic to happen and the job to run again
 	deadline := time.Now().Add(3 * time.Second)
-	for executionCount < 2 && time.Now().Before(deadline) {
+	for executionCount.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	r.Stop()
 
 	// If we get here without the process exiting, panic recovery works
-	if executionCount < 2 {
-		t.Fatalf("job did not recover from panic and run again, execution count=%d", executionCount)
+	if count := executionCount.Load(); count < 2 {
+		t.Fatalf("job did not recover from panic and run again, execution count=%d", count)
 	}
 }
 
@@ -140,10 +140,10 @@ func TestStopViaContextCancellation(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	started := false
+	var started atomic.Bool
 
 	_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
-		started = true
+		started.Store(true)
 		return nil
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func TestStopViaContextCancellation(t *testing.T) {
 
 	// Give the job a moment to start (up to 2 seconds)
 	deadline := time.Now().Add(2 * time.Second)
-	for !started && time.Now().Before(deadline) {
+	for !started.Load() && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -165,7 +165,7 @@ func TestStopViaContextCancellation(t *testing.T) {
 	// Give a moment for the stop goroutine to execute
 	time.Sleep(500 * time.Millisecond)
 
-	if !started {
+	if !started.Load() {
 		t.Fatalf("job did not start within timeout")
 	}
 }
@@ -175,11 +175,10 @@ func TestMultipleJobsSchedule(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	count1 := 0
-	count2 := 0
+	var count1, count2 atomic.Int32
 
 	_, err := r.AddJob("job1", "*/1 * * * * *", func(_ context.Context) error {
-		count1++
+		count1.Add(1)
 		return nil
 	})
 	if err != nil {
@@ -187,7 +186,7 @@ func TestMultipleJobsSchedule(t *testing.T) {
 	}
 
 	_, err = r.AddJob("job2", "*/1 * * * * *", func(_ context.Context) error {
-		count2++
+		count2.Add(1)
 		return nil
 	})
 	if err != nil {
@@ -201,20 +200,20 @@ func TestMultipleJobsSchedule(t *testing.T) {
 
 	// Wait for both jobs to execute
 	deadline := time.Now().Add(2 * time.Second)
-	for (count1 == 0 || count2 == 0) && time.Now().Before(deadline) {
+	for (count1.Load() == 0 || count2.Load() == 0) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	r.Stop()
 
-	if count1 == 0 {
+	if count1.Load() == 0 {
 		t.Fatalf("job1 did not execute")
 	}
-	if count2 == 0 {
+	if count2.Load() == 0 {
 		t.Fatalf("job2 did not execute")
 	}
-	if count1 != count2 {
-		t.Logf("job counts differ (job1=%d, job2=%d) but both executed, which is acceptable", count1, count2)
+	if first, second := count1.Load(), count2.Load(); first != second {
+		t.Logf("job counts differ (job1=%d, job2=%d) but both executed, which is acceptable", first, second)
 	}
 }
 
@@ -298,10 +297,10 @@ func TestContextGivenToJobFunction(t *testing.T) {
 	logger := testLogger()
 	r := New(logger)
 
-	receivedCtx := false
+	var receivedCtx atomic.Bool
 	_, err := r.AddJob("test", "*/1 * * * * *", func(ctx context.Context) error {
 		if ctx != nil {
-			receivedCtx = true
+			receivedCtx.Store(true)
 		}
 		return nil
 	})
@@ -316,13 +315,13 @@ func TestContextGivenToJobFunction(t *testing.T) {
 
 	// Wait for the job to execute
 	deadline := time.Now().Add(2 * time.Second)
-	for !receivedCtx && time.Now().Before(deadline) {
+	for !receivedCtx.Load() && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	r.Stop()
 
-	if !receivedCtx {
+	if !receivedCtx.Load() {
 		t.Fatalf("job function did not receive a context")
 	}
 }

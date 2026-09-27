@@ -11,8 +11,8 @@ import { faker } from '@faker-js/faker';
 import { HttpResponse, http } from 'msw';
 import type { RequestHandlerOptions } from 'msw';
 
-import { RunbookTargetType } from '../../model';
-import type { Runbook, RunbookPage } from '../../model';
+import { RunbookStepVerb, RunbookTargetType } from '../../model';
+import type { RestartPreview, Runbook, RunbookPage } from '../../model';
 
 export const getGetRunbooksResponseMock = (
   overrideResponse: Partial<Extract<RunbookPage, object>> = {}
@@ -31,6 +31,19 @@ export const getGetRunbooksResponseMock = (
       faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
       undefined,
     ]),
+    steps: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(
+      () => ({
+        id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        position: faker.number.int(),
+        title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        verb: faker.helpers.arrayElement(Object.values(RunbookStepVerb)),
+        entityRef: faker.string.alpha({ length: { min: 10, max: 20 } }),
+        canExecute: faker.datatype.boolean(),
+        executeBlockedReason: faker.helpers.arrayElement(['', 'no_operator_grant'] as const),
+      })
+    ),
     createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
     updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   })),
@@ -56,6 +69,17 @@ export const getPostRunbooksResponseMock = (
     faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
     undefined,
   ]),
+  steps: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    position: faker.number.int(),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    verb: faker.helpers.arrayElement(Object.values(RunbookStepVerb)),
+    entityRef: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    canExecute: faker.datatype.boolean(),
+    executeBlockedReason: faker.helpers.arrayElement(['', 'no_operator_grant'] as const),
+  })),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   ...overrideResponse,
@@ -77,6 +101,17 @@ export const getGetRunbooksRunbookIdResponseMock = (
     faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
     undefined,
   ]),
+  steps: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    position: faker.number.int(),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    verb: faker.helpers.arrayElement(Object.values(RunbookStepVerb)),
+    entityRef: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    canExecute: faker.datatype.boolean(),
+    executeBlockedReason: faker.helpers.arrayElement(['', 'no_operator_grant'] as const),
+  })),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   ...overrideResponse,
@@ -98,8 +133,38 @@ export const getPutRunbooksRunbookIdResponseMock = (
     faker.helpers.arrayElement([faker.string.alpha({ length: { min: 10, max: 20 } }), null]),
     undefined,
   ]),
+  steps: Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, (_, i) => i + 1).map(() => ({
+    id: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    position: faker.number.int(),
+    title: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorId: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    connectorName: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    verb: faker.helpers.arrayElement(Object.values(RunbookStepVerb)),
+    entityRef: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    canExecute: faker.datatype.boolean(),
+    executeBlockedReason: faker.helpers.arrayElement(['', 'no_operator_grant'] as const),
+  })),
   createdAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
   updatedAt: faker.date.past().toISOString().slice(0, 19) + 'Z',
+  ...overrideResponse,
+});
+
+export const getExecuteRunbookStepResponseMock = (
+  overrideResponse: Partial<Extract<RestartPreview, object>> = {}
+): RestartPreview => ({
+  targetService: faker.string.alpha({ length: { min: 10, max: 20 } }),
+  estimatedDowntimeSeconds: faker.number.int({ min: 0 }),
+  dependentServices: Array.from(
+    { length: faker.number.int({ min: 1, max: 4 }) },
+    (_, i) => i + 1
+  ).map(() => ({
+    kind: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    name: faker.string.alpha({ length: { min: 10, max: 20 } }),
+    ref: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      undefined,
+    ]),
+  })),
   ...overrideResponse,
 });
 
@@ -209,10 +274,35 @@ export const getDeleteRunbooksRunbookIdMockHandler = (
     options
   );
 };
+
+export const getExecuteRunbookStepMockHandler = (
+  overrideResponse?:
+    | RestartPreview
+    | ((
+        info: Parameters<Parameters<typeof http.post>[1]>[0]
+      ) => Promise<RestartPreview> | RestartPreview),
+  options?: RequestHandlerOptions
+) => {
+  return http.post(
+    '*/runbooks/:runbookId/steps/:stepId/execute',
+    async (info: Parameters<Parameters<typeof http.post>[1]>[0]) => {
+      return HttpResponse.json(
+        overrideResponse !== undefined
+          ? typeof overrideResponse === 'function'
+            ? await overrideResponse(info)
+            : overrideResponse
+          : getExecuteRunbookStepResponseMock(),
+        { status: 200 }
+      );
+    },
+    options
+  );
+};
 export const getRunbooksMock = () => [
   getGetRunbooksMockHandler(),
   getPostRunbooksMockHandler(),
   getGetRunbooksRunbookIdMockHandler(),
   getPutRunbooksRunbookIdMockHandler(),
   getDeleteRunbooksRunbookIdMockHandler(),
+  getExecuteRunbookStepMockHandler(),
 ];
