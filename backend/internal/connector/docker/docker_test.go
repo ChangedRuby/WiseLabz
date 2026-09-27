@@ -25,8 +25,15 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
+	"github.com/WiseLabz/wiselabz/internal/connector/connectortest"
 	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
+
+func TestFailureContract(t *testing.T) {
+	connectortest.Run(t, func(serverURL string) (connector.Connector, map[string]any, error) {
+		return &Connector{host: "tcp://test", baseURL: serverURL, client: http.DefaultClient}, nil, nil
+	}, false)
+}
 
 func TestValidateHitsVersion(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

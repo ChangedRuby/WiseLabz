@@ -212,6 +212,13 @@ export const getGetConnectorsSchemaResponseMock = (): ConnectorTypeSchema[] =>
       faker.helpers.arrayElements(['restart', 'start', 'stop'] as const),
       undefined,
     ]),
+    capabilities: {
+      restart: faker.datatype.boolean(),
+      start: faker.datatype.boolean(),
+      stop: faker.datatype.boolean(),
+      configPush: faker.datatype.boolean(),
+      credentialRefresh: faker.datatype.boolean(),
+    },
   }));
 
 export const getGetConnectorsConnectorIdResponseMock = (

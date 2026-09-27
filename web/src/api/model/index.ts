@@ -89,6 +89,7 @@ export * from './connectorBulkSyncItemResult';
 export * from './connectorBulkSyncItemResultStatus';
 export * from './connectorBulkSyncRequest';
 export * from './connectorBulkSyncResponse';
+export * from './connectorCapabilities';
 export * from './connectorCategory';
 export * from './connectorCreate';
 export * from './connectorCreateConfig';
