@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
@@ -97,6 +98,17 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to record audit", "action", "doc.restore", "error", err)
 	}
 
-	d, _ := h.Store.GetDoc(r.Context(), docID)
+	d, err := h.Store.GetDoc(r.Context(), docID)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	if err := h.Store.CreateDocVersion(r.Context(), &store.DocVersionRecord{
+		DocID: docID, Rev: d.CurrentVersion, Content: d.Content,
+		Author: auth.UserIDFromContext(r.Context()), Trigger: "restore",
+	}); err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
 	httputil.JSON(w, http.StatusOK, d)
 }
