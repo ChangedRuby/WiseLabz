@@ -24,8 +24,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
         PREFIX: ${{ inputs.prefix }}
       run: |
-        gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$PREFIX" --limit 100 --json id --jq '.[].id' |
-          xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=refs/heads/main&key=$PREFIX&per_page=100" --jq '.actions_caches[].id' |
+          xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/{}"
 
     - name: Save Go cache
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
