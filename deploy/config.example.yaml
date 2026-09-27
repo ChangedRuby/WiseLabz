@@ -77,6 +77,17 @@ ai:
 sync:
   # Cron expression for automatic sync (default: every 6 hours)
   schedule: "0 */6 * * *"
+  # Limit parallel connector fetches (scheduled and sync-all).
+  max_concurrency: 4
+  # Maximum due connectors selected on each scheduler tick.
+  due_batch_size: 50
+  # Per-connector sync deadline; its claim lease is one minute longer.
+  timeout: 5m
+
+# PostgreSQL active/passive mode. Only the leader runs background jobs.
+ha:
+  leader_election: false
+  lock_poll_interval: 5s
 
 # Data retention
 # Background job that bounds growth of historical data by deleting rows past
