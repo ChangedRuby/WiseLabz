@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -27,10 +28,11 @@ var postgresMigrations embed.FS
 func RunMigrations(db *sql.DB, driver string, logger *slog.Logger) error {
 	logger.Info("running database migrations")
 
-	m, err := newMigrator(db, driver)
+	m, cleanup, err := newMigrator(db, driver)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 
 	if driver == "sqlite" {
 		return runSQLiteWithForeignKeysOff(db, func() error {
@@ -94,10 +96,11 @@ func runSQLiteWithForeignKeysOff(db *sql.DB, fn func() error) (err error) {
 func RunMigrationsDown(db *sql.DB, driver string, logger *slog.Logger) error {
 	logger.Info("rolling back database migration")
 
-	m, err := newMigrator(db, driver)
+	m, cleanup, err := newMigrator(db, driver)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 
 	if err := m.Steps(-1); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run down migration: %w", err)
@@ -106,58 +109,63 @@ func RunMigrationsDown(db *sql.DB, driver string, logger *slog.Logger) error {
 	return nil
 }
 
-// newMigrator builds a golang-migrate instance for the given driver, reusing
-// the caller-owned *sql.DB connection.
-//
-// golang-migrate's Close() calls database.Close() on the underlying driver
-// instance, which is owned by the caller. Never call Close() on the returned
-// migrator — doing so breaks idempotent migration re-runs.
-func newMigrator(db *sql.DB, driver string) (*migrate.Migrate, error) {
+// newMigrator reuses the caller-owned *sql.DB and returns a cleanup function
+// for any dedicated connection it checks out. Do not close the migrator: its
+// driver may close the caller's pool.
+func newMigrator(db *sql.DB, driver string) (*migrate.Migrate, func(), error) {
 	switch driver {
 	case "sqlite":
 		sub, err := fs.Sub(sqliteMigrations, "migrations/sqlite")
 		if err != nil {
-			return nil, fmt.Errorf("read sqlite migrations: %w", err)
+			return nil, nil, fmt.Errorf("read sqlite migrations: %w", err)
 		}
 
 		src, err := iofs.New(sub, ".")
 		if err != nil {
-			return nil, fmt.Errorf("create migration source: %w", err)
+			return nil, nil, fmt.Errorf("create migration source: %w", err)
 		}
 
 		dbDriver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
 		if err != nil {
-			return nil, fmt.Errorf("create migration driver: %w", err)
+			return nil, nil, fmt.Errorf("create migration driver: %w", err)
 		}
 
 		m, err := migrate.NewWithInstance("iofs", src, "sqlite3", dbDriver)
 		if err != nil {
-			return nil, fmt.Errorf("create migrator: %w", err)
+			return nil, nil, fmt.Errorf("create migrator: %w", err)
 		}
-		return m, nil
+		return m, func() {}, nil
 	case "postgres":
 		sub, err := fs.Sub(postgresMigrations, "migrations/postgres")
 		if err != nil {
-			return nil, fmt.Errorf("read postgres migrations: %w", err)
+			return nil, nil, fmt.Errorf("read postgres migrations: %w", err)
 		}
 
 		src, err := iofs.New(sub, ".")
 		if err != nil {
-			return nil, fmt.Errorf("create migration source: %w", err)
+			return nil, nil, fmt.Errorf("create migration source: %w", err)
 		}
 
-		dbDriver, err := postgres.WithInstance(db, &postgres.Config{})
+		ctx := context.Background()
+		conn, err := db.Conn(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("create migration driver: %w", err)
+			return nil, nil, fmt.Errorf("get migration connection: %w", err)
+		}
+		cleanup := func() { _ = conn.Close() }
+		dbDriver, err := postgres.WithConnection(ctx, conn, &postgres.Config{})
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("create migration driver: %w", err)
 		}
 
 		m, err := migrate.NewWithInstance("iofs", src, "postgres", dbDriver)
 		if err != nil {
-			return nil, fmt.Errorf("create migrator: %w", err)
+			cleanup()
+			return nil, nil, fmt.Errorf("create migrator: %w", err)
 		}
-		return m, nil
+		return m, cleanup, nil
 	default:
-		return nil, fmt.Errorf("unsupported database driver: %s", driver)
+		return nil, nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
 }
 
@@ -173,10 +181,11 @@ func (s MigrationStatus) Pending() bool { return s.Current < s.Latest }
 
 // GetMigrationStatus reports the applied and latest bundled migration versions.
 func GetMigrationStatus(db *sql.DB, driver string) (MigrationStatus, error) {
-	m, err := newMigrator(db, driver)
+	m, cleanup, err := newMigrator(db, driver)
 	if err != nil {
 		return MigrationStatus{}, err
 	}
+	defer cleanup()
 
 	var st MigrationStatus
 	cur, dirty, err := m.Version()
