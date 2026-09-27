@@ -2,6 +2,7 @@ package docexport_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -75,6 +76,168 @@ func (f *gitFixture) createDoc(id, title, content string) {
 	f.t.Helper()
 	if err := f.store.CreateDoc(f.ctx, &store.DocRecord{ID: id, Title: title, Content: content}); err != nil {
 		f.t.Fatalf("create doc: %v", err)
+	}
+}
+
+func (f *gitFixture) perRevision(authorFromUser bool, revisionLimit int) {
+	f.t.Helper()
+	if err := f.exporter.ConfigureGit(docexport.GitOptions{
+		Remote: f.remote, Branch: "main", Path: "docs",
+		AuthorName: "Doc Bot", AuthorEmail: "bot@example.com",
+		CommitMode: "per_revision", AuthorFromUser: authorFromUser, MaxRevisionsPerRun: revisionLimit,
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *gitFixture) save(id, content, author, when string) {
+	f.t.Helper()
+	if err := f.store.UpdateDoc(f.ctx, id, content, nil); err != nil {
+		f.t.Fatal(err)
+	}
+	d, err := f.store.GetDoc(f.ctx, id)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if err := f.store.CreateDocVersion(f.ctx, &store.DocVersionRecord{
+		DocID: id, Rev: d.CurrentVersion, Content: content, Author: author,
+		Trigger: "manual", CreatedAt: when,
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *gitFixture) commits() []*object.Commit {
+	f.t.Helper()
+	var commits []*object.Commit
+	iter := object.NewCommitPreorderIter(f.head(), nil, nil)
+	if err := iter.ForEach(func(c *object.Commit) error { commits = append(commits, c); return nil }); err != nil {
+		f.t.Fatal(err)
+	}
+	return commits
+}
+
+func TestGitPerRevisionBootstrapReplayAndCap(t *testing.T) {
+	f := newGitFixture(t)
+	f.perRevision(true, 2)
+	f.createDoc(id1, "Runbook", "first")
+	f.createDoc(id2, "Topology", "first")
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	if f.commitCount() != 1 {
+		t.Fatalf("bootstrap commits = %d", f.commitCount())
+	}
+	var state struct {
+		Version int `json:"version"`
+		Docs    map[string]struct {
+			Rev int `json:"rev"`
+		} `json:"docs"`
+	}
+	if err := json.Unmarshal([]byte(f.files()["docs/.wiselabz-export.json"]), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Version != 1 || state.Docs[id1].Rev != 1 || state.Docs[id2].Rev != 1 {
+		t.Fatalf("bootstrap state = %+v", state)
+	}
+	u1 := &store.User{Username: "alice", DisplayName: "Alice A", Email: "alice@example.com"}
+	u2 := &store.User{Username: "bob"}
+	for _, u := range []*store.User{u1, u2} {
+		if err := f.store.CreateUser(f.ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.save(id1, "second", u1.ID, "2026-01-01T01:00:00Z")
+	f.save(id2, "second", u2.ID, "2026-01-01T02:00:00Z")
+	f.save(id1, "third", u1.ID, "2026-01-01T03:00:00Z")
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	if f.commitCount() != 3 {
+		t.Fatalf("capped commits = %d, want 3", f.commitCount())
+	}
+	if got := f.files()["docs/runbook-0000000a.md"]; got != "second" {
+		t.Fatalf("cap caught up early: %q", got)
+	}
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	commits := f.commits()
+	if len(commits) != 4 {
+		t.Fatalf("commits = %d, want 4", len(commits))
+	}
+	for i, want := range []struct{ name, email, date string }{
+		{"Alice A", "alice@example.com", "2026-01-01T03:00:00Z"},
+		{"bob", "bob@users.noreply.wiselabz", "2026-01-01T02:00:00Z"},
+		{"Alice A", "alice@example.com", "2026-01-01T01:00:00Z"},
+	} {
+		c := commits[i]
+		if c.Author.Name != want.name || c.Author.Email != want.email || c.Author.When.UTC().Format(time.RFC3339) != want.date || c.Committer.Name != "Doc Bot" {
+			t.Errorf("commit %d signatures = %+v %+v", i, c.Author, c.Committer)
+		}
+	}
+	if got := f.files()["docs/runbook-0000000a.md"]; got != "third" {
+		t.Fatalf("final content = %q", got)
+	}
+}
+
+func TestGitPerRevisionBotCatchUpAndRejectedPush(t *testing.T) {
+	f := newGitFixture(t)
+	f.perRevision(false, 500)
+	f.createDoc(id1, "Runbook", "first")
+	f.createDoc(id2, "Topology", "first")
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	f.save(id1, "second", "missing-user", "2026-01-01T01:00:00Z")
+	docexport.SetBeforePushForTest(f.exporter, func() { f.pushExternal("README.md", "human") })
+	if err := f.run(); err == nil {
+		t.Fatal("expected rejected push")
+	}
+	docexport.SetBeforePushForTest(f.exporter, nil)
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	if f.head().Author.Name != "Doc Bot" {
+		t.Fatalf("author = %+v", f.head().Author)
+	}
+	if f.files()["README.md"] != "human" {
+		t.Fatal("external commit lost")
+	}
+	if err := f.store.DeleteDoc(f.ctx, id2); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.files()["docs/topology-0000000b.md"]; ok {
+		t.Fatal("deleted doc retained")
+	}
+	if !strings.HasPrefix(f.head().Message, "docs: export") {
+		t.Fatalf("catch-up message = %q", f.head().Message)
+	}
+}
+
+func TestGitPerRevisionMissingIntermediateAndEngineAuthor(t *testing.T) {
+	f := newGitFixture(t)
+	f.perRevision(true, 500)
+	f.createDoc(id1, "Runbook", "first")
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	// A retained head with a gap models retention pruning an intermediate row.
+	if err := f.store.UpdateDoc(f.ctx, id1, "pruned", nil); err != nil {
+		t.Fatal(err)
+	}
+	f.save(id1, "head", "", "2026-01-01T01:00:00Z")
+	if err := f.run(); err != nil {
+		t.Fatal(err)
+	}
+	if f.commitCount() != 2 {
+		t.Fatalf("commits = %d, want baseline and retained head", f.commitCount())
+	}
+	if f.head().Author.Name != "Doc Bot" || f.files()["docs/runbook-0000000a.md"] != "head" {
+		t.Fatalf("head = %+v; files = %v", f.head().Author, f.files())
 	}
 }
 

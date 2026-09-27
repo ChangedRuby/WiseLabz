@@ -2,6 +2,7 @@ package docexport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,11 +26,15 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/WiseLabz/wiselabz/internal/httpx"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 // GitOptions configures the Git remote target. It mirrors
 // config.DocExportGitSettings; scheme validation happens there.
 type GitOptions struct {
+	CommitMode          string
+	AuthorFromUser      bool
+	MaxRevisionsPerRun  int
 	Remote              string
 	Branch              string
 	Path                string // subdirectory of the repo the docs are written to
@@ -43,13 +48,16 @@ type GitOptions struct {
 
 // gitTarget holds the resolved Git settings for an Exporter.
 type gitTarget struct {
-	remote     string
-	branch     plumbing.ReferenceName
-	path       string // slash-separated, relative to the repo root
-	author     object.Signature
-	auth       transport.AuthMethod
-	insecure   bool
-	beforePush func() // test hook, nil in production
+	commitMode         string
+	authorFromUser     bool
+	maxRevisionsPerRun int
+	remote             string
+	branch             plumbing.ReferenceName
+	path               string // slash-separated, relative to the repo root
+	author             object.Signature
+	auth               transport.AuthMethod
+	insecure           bool
+	beforePush         func() // test hook, nil in production
 }
 
 var installHTTPSOnce sync.Once
@@ -86,18 +94,32 @@ func (e *Exporter) ConfigureGit(o GitOptions) error {
 	if o.AuthorEmail == "" {
 		o.AuthorEmail = "wiselabz@localhost"
 	}
+	if o.CommitMode == "" {
+		o.CommitMode = "snapshot"
+	}
+	if o.CommitMode != "snapshot" && o.CommitMode != "per_revision" {
+		return errors.New("git commit mode must be snapshot or per_revision")
+	}
+	if o.MaxRevisionsPerRun == 0 {
+		o.MaxRevisionsPerRun = 500
+	}
+	if o.MaxRevisionsPerRun < 0 {
+		return errors.New("git max revisions per run must be positive")
+	}
 
 	auth, err := gitAuth(o)
 	if err != nil {
 		return err
 	}
 	e.git = &gitTarget{
-		remote:   o.Remote,
-		branch:   plumbing.NewBranchReferenceName(o.Branch),
-		path:     p,
-		author:   object.Signature{Name: o.AuthorName, Email: o.AuthorEmail},
-		auth:     auth,
-		insecure: o.InsecureSkipHostKey,
+		commitMode: o.CommitMode, authorFromUser: o.AuthorFromUser,
+		maxRevisionsPerRun: o.MaxRevisionsPerRun,
+		remote:             o.Remote,
+		branch:             plumbing.NewBranchReferenceName(o.Branch),
+		path:               p,
+		author:             object.Signature{Name: o.AuthorName, Email: o.AuthorEmail},
+		auth:               auth,
+		insecure:           o.InsecureSkipHostKey,
 	}
 	return nil
 }
@@ -164,12 +186,13 @@ func (e *Exporter) runGit(ctx context.Context, dir string, logger *slog.Logger) 
 		return err
 	}
 
-	res, err := e.ExportAll(ctx, filepath.Join(dir, filepath.FromSlash(g.path)))
-	if err != nil {
-		return err
+	var commit commitResult
+	var count int
+	if g.commitMode == "per_revision" {
+		commit, count, err = e.runPerRevision(ctx, dir, repo)
+	} else {
+		commit, count, err = e.runSnapshot(ctx, dir, repo)
 	}
-
-	commit, err := g.commit(repo, res.Count)
 	if err != nil {
 		return err
 	}
@@ -177,11 +200,11 @@ func (e *Exporter) runGit(ctx context.Context, dir string, logger *slog.Logger) 
 	local, err := repo.Reference(g.branch, true)
 	if err != nil {
 		// Nothing was ever committed (empty remote, no docs): nothing to push.
-		logger.Info("doc export: completed, nothing to commit", "count", res.Count)
+		logger.Info("doc export: completed, nothing to commit", "count", count)
 		return nil
 	}
 	if local.Hash() == remoteHead {
-		logger.Info("doc export: completed, no changes", "count", res.Count)
+		logger.Info("doc export: completed, no changes", "count", count)
 		return nil
 	}
 
@@ -196,9 +219,167 @@ func (e *Exporter) runGit(ctx context.Context, dir string, logger *slog.Logger) 
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("push to origin %s rejected or failed (never forced; retrying next run): %w", g.branch.Short(), err)
 	}
-	logger.Info("doc export: pushed", "count", res.Count, "branch", g.branch.Short(),
+	logger.Info("doc export: pushed", "count", count, "branch", g.branch.Short(),
 		"commit", commit.stats(), "head", local.Hash().String())
 	return nil
+}
+
+func (e *Exporter) runSnapshot(ctx context.Context, dir string, repo *git.Repository) (commitResult, int, error) {
+	res, err := e.ExportAll(ctx, filepath.Join(dir, filepath.FromSlash(e.git.path)))
+	if err != nil {
+		return commitResult{}, 0, err
+	}
+	commit, err := e.git.commit(repo, res.Count)
+	return commit, res.Count, err
+}
+
+type exportCursor struct {
+	Rev  int    `json:"rev"`
+	File string `json:"file"`
+}
+
+type exportState struct {
+	Version int                     `json:"version"`
+	Docs    map[string]exportCursor `json:"docs"`
+}
+
+func writeExportState(file string, state exportState) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(file, append(data, '\n'), 0o644)
+}
+
+func (e *Exporter) runPerRevision(ctx context.Context, dir string, repo *git.Repository) (commitResult, int, error) {
+	g := e.git
+	exportDir := filepath.Join(dir, filepath.FromSlash(g.path))
+	stateFile := filepath.Join(exportDir, ".wiselabz-export.json")
+	docs, err := fetchAllDocs(ctx, e.store)
+	if err != nil {
+		return commitResult{}, 0, fmt.Errorf("fetch docs: %w", err)
+	}
+	current := make(map[string]store.DocRecord, len(docs))
+	for _, d := range docs {
+		current[d.ID] = d
+	}
+	data, err := os.ReadFile(stateFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		res, err := e.ExportAll(ctx, exportDir)
+		if err != nil {
+			return commitResult{}, 0, err
+		}
+		state := exportState{Version: 1, Docs: make(map[string]exportCursor, len(docs))}
+		for _, d := range docs {
+			state.Docs[d.ID] = exportCursor{Rev: d.CurrentVersion, File: fileName(d)}
+		}
+		if err := writeExportState(stateFile, state); err != nil {
+			return commitResult{}, 0, fmt.Errorf("write export state: %w", err)
+		}
+		commit, err := g.commit(repo, res.Count)
+		return commit, res.Count, err
+	}
+	if err != nil {
+		return commitResult{}, 0, fmt.Errorf("read export state: %w", err)
+	}
+	var state exportState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return commitResult{}, 0, fmt.Errorf("parse export state: %w", err)
+	}
+	if state.Version != 1 || state.Docs == nil {
+		return commitResult{}, 0, errors.New("invalid export state: version 1 with docs is required")
+	}
+	after := make(map[string]int, len(state.Docs))
+	for id, cursor := range state.Docs {
+		after[id] = cursor.Rev
+	}
+	versions, err := e.store.ListDocVersionsAfter(ctx, after, g.maxRevisionsPerRun)
+	if err != nil {
+		return commitResult{}, 0, err
+	}
+	users := make(map[string]*store.User)
+	var total commitResult
+	for _, v := range versions {
+		d := current[v.DocID]
+		name := fileName(d)
+		if old := state.Docs[v.DocID].File; old != "" && old != name {
+			if !IsGeneratedName(old) || filepath.Base(old) != old {
+				return total, len(docs), fmt.Errorf("invalid export state filename %q", old)
+			}
+			if err := os.Remove(filepath.Join(exportDir, old)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return total, len(docs), err
+			}
+		}
+		if err := os.WriteFile(filepath.Join(exportDir, name), []byte(v.Content), 0o644); err != nil {
+			return total, len(docs), fmt.Errorf("write revision: %w", err)
+		}
+		state.Docs[v.DocID] = exportCursor{Rev: v.Rev, File: name}
+		if err := writeExportState(stateFile, state); err != nil {
+			return total, len(docs), err
+		}
+		when, err := time.Parse(time.RFC3339, v.CreatedAt)
+		if err != nil {
+			return total, len(docs), fmt.Errorf("parse revision time: %w", err)
+		}
+		author := g.author
+		author.When = when
+		if g.authorFromUser && v.Author != "" {
+			user, found := users[v.Author]
+			if !found {
+				user, err = e.store.GetUserByID(ctx, v.Author)
+				if err != nil && !errors.Is(err, store.ErrNotFound) {
+					return total, len(docs), err
+				}
+				users[v.Author] = user
+			}
+			if user != nil && !user.Disabled {
+				author.Name = user.DisplayName
+				if author.Name == "" {
+					author.Name = user.Username
+				}
+				author.Email = user.Email
+				if author.Email == "" {
+					author.Email = user.Username + "@users.noreply.wiselabz"
+				}
+			}
+		}
+		committer := g.author
+		committer.When = time.Now()
+		message := fmt.Sprintf("docs(%s): rev %d (%s)", slugify(d.Title), v.Rev, v.Trigger)
+		part, err := g.commitWith(repo, 0, message, author, committer)
+		if err != nil {
+			return total, len(docs), err
+		}
+		total.added = append(total.added, part.added...)
+		total.modified = append(total.modified, part.modified...)
+		total.removed = append(total.removed, part.removed...)
+	}
+	if len(versions) == g.maxRevisionsPerRun {
+		return total, len(docs), nil
+	}
+	res, err := e.ExportAll(ctx, exportDir)
+	if err != nil {
+		return total, len(docs), err
+	}
+	for id := range state.Docs {
+		if _, ok := current[id]; !ok {
+			delete(state.Docs, id)
+		}
+	}
+	for _, d := range docs {
+		state.Docs[d.ID] = exportCursor{Rev: d.CurrentVersion, File: fileName(d)}
+	}
+	if err := writeExportState(stateFile, state); err != nil {
+		return total, len(docs), err
+	}
+	part, err := g.commit(repo, res.Count)
+	if err != nil {
+		return total, len(docs), err
+	}
+	total.added = append(total.added, part.added...)
+	total.modified = append(total.modified, part.modified...)
+	total.removed = append(total.removed, part.removed...)
+	return total, len(docs), nil
 }
 
 // open returns the persistent clone in dir. An empty (or missing) dir is
@@ -309,6 +490,12 @@ func (c commitResult) empty() bool {
 // commit stages every change under the export path (adds, edits and
 // removals) and commits it. A clean tree makes no commit.
 func (g *gitTarget) commit(repo *git.Repository, count int) (commitResult, error) {
+	sig := g.author
+	sig.When = time.Now()
+	return g.commitWith(repo, count, "", sig, sig)
+}
+
+func (g *gitTarget) commitWith(repo *git.Repository, count int, message string, author, committer object.Signature) (commitResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return commitResult{}, err
@@ -348,9 +535,10 @@ func (g *gitTarget) commit(repo *git.Repository, count int) (commitResult, error
 	sort.Strings(res.modified)
 	sort.Strings(res.removed)
 
-	sig := g.author
-	sig.When = time.Now()
-	if _, err := wt.Commit(commitMessage(count, res), &git.CommitOptions{Author: &sig, Committer: &sig}); err != nil {
+	if message == "" {
+		message = commitMessage(count, res)
+	}
+	if _, err := wt.Commit(message, &git.CommitOptions{Author: &author, Committer: &committer}); err != nil {
 		return commitResult{}, fmt.Errorf("commit: %w", err)
 	}
 	return res, nil
