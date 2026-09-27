@@ -3,7 +3,10 @@
 # =============================================================================
 # Stage 1/3: frontend — build the Vite/React/TS SPA -> web/dist/
 # =============================================================================
-FROM oven/bun:1-alpine AS frontend
+# The builder stages run on the build host's platform ($BUILDPLATFORM) and
+# cross-compile for the target, so multi-arch builds need no QEMU emulation.
+# The SPA output is architecture-independent, so it is built once and shared.
+FROM --platform=$BUILDPLATFORM oven/bun:1-alpine AS frontend
 WORKDIR /repo/web
 
 # Install deps first, isolated from source changes, so `bun install` is cached.
@@ -20,7 +23,7 @@ RUN bun run build
 # =============================================================================
 # Stage 2/3: backend — build the static Go binary
 # =============================================================================
-FROM golang:1.27-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS backend
 
 # git is required for `go build`'s automatic VCS stamping (debug.ReadBuildInfo,
 # included in the operator diagnostics bundle) — the alpine golang image ships without it.
@@ -53,7 +56,8 @@ WORKDIR /src/backend
 # SQLite, jackc/pgx/v5/stdlib for Postgres) — no cgo/libc dependency, so the
 # resulting binary is statically linked and runs on the cgo-less distroless
 # base in stage 3.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/wiselabz ./cmd/server
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/wiselabz ./cmd/server
 
 # Pre-create the default SQLite data directory owned by the distroless
 # "nonroot" UID/GID (65532:65532). distroless/static has no shell to mkdir

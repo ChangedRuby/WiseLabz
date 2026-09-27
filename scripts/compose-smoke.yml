@@ -1,5 +1,8 @@
 services:
   app:
+    # Tag for the built image; CI pre-builds it with a layer cache and sets
+    # COMPOSE_SMOKE_PREBUILT so compose-smoke.sh reuses it instead of rebuilding.
+    image: wiselabz:compose-smoke
     env_file: !override
       - ${COMPOSE_SMOKE_ENV_FILE:?COMPOSE_SMOKE_ENV_FILE is required}
     ports: !override

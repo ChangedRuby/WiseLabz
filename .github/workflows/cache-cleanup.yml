@@ -1,0 +1,32 @@
+name: Cache cleanup
+
+# A PR's caches are only restorable by that PR, so they are dead weight once it
+# closes, yet they count toward the 10 GB repository quota and push main's
+# caches out. This includes the ~450 MB dependency caches that GitHub's
+# CodeQL Code Quality scans save on refs/pull/<n>/head.
+#
+# pull_request_target so fork PRs get a token that can delete caches. It is
+# safe here: the job never checks out or runs PR code.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Delete PR caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Delete caches for this PR's refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          for ref in "refs/pull/$PR/merge" "refs/pull/$PR/head"; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$ref&per_page=100" --jq '.actions_caches[].id' |
+              xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/{}"
+          done

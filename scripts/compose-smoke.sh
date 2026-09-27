@@ -32,7 +32,9 @@ POSTGRES_DB=wiselabz
 EOF
 
 "${compose[@]}" config -q
-"${compose[@]}" up --build --wait --wait-timeout 120
+build_flag=--build
+[[ -n "${COMPOSE_SMOKE_PREBUILT:-}" ]] && build_flag=--no-build
+"${compose[@]}" up "$build_flag" --wait --wait-timeout 120
 
 base_url="http://127.0.0.1:$port/api"
 root_url="${base_url%/api}"

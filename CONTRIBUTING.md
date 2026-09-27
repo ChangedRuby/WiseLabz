@@ -109,6 +109,18 @@ Releases are automated with [release-please](https://github.com/googleapis/relea
 No manual tagging or changelog editing is needed — write a correct
 Conventional Commit and the rest is automatic.
 
+### Self-hosted runners
+
+The release image build and the weekly scheduled CodeQL scan can run on a
+self-hosted runner. Set the `RELEASE_RUNNER` / `CODEQL_RUNNER` repository
+variables to the runner's label to opt in; leave them unset (or delete them to
+fall back instantly if the runner is down) to use GitHub-hosted runners.
+The release runner needs Docker with buildx.
+
+Never route `pull_request` jobs to a self-hosted runner: this repository is
+public, so any fork PR could run arbitrary code on it. Main-branch CI also
+stays GitHub-hosted because it saves the caches that PR runs restore.
+
 ## Testing and coverage baseline
 
 The frontend rewrite (#52) landed, so the deferral in the old policy (#12) no
