@@ -3,7 +3,6 @@ package custom
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,14 +101,9 @@ func TestValidateAndFetchServiceUnavailableError(t *testing.T) {
 				t.Errorf("Validate() error = %v, want *connector.ServiceUnavailableError", err)
 			}
 
-			// Fetch doesn't check status codes - it just returns the response as-is
-			snap, err := c.Fetch(context.Background(), map[string]any{"url": server.URL})
-			if err != nil {
-				t.Errorf("Fetch() error = %v, want nil (Fetch tolerates any status code)", err)
-				return
-			}
-			if snap.Metadata["status_code"] != fmt.Sprintf("%d", tt.statusCode) {
-				t.Errorf("Fetch() status_code = %s, want %d", snap.Metadata["status_code"], tt.statusCode)
+			_, err = c.Fetch(context.Background(), map[string]any{"url": server.URL})
+			if !errors.As(err, &unavailErr) {
+				t.Errorf("Fetch() error = %v, want *connector.ServiceUnavailableError", err)
 			}
 		})
 	}

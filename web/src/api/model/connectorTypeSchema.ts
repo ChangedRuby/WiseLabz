@@ -6,6 +6,7 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ConnectorCapabilities } from './connectorCapabilities';
 import type { ConnectorCategory } from './connectorCategory';
 import type { ConnectorTypeSchemaLifecycleVerbsItem } from './connectorTypeSchemaLifecycleVerbsItem';
 import type { SchemaField } from './schemaField';
@@ -23,4 +24,5 @@ export interface ConnectorTypeSchema {
   isCredentialRefresher?: boolean;
   /** The lifecycle verbs (restart/start/stop) this type's connector implementation supports, e.g. for filtering the runbook step editor's verb picker to what a chosen connector can actually do. */
   lifecycleVerbs?: ConnectorTypeSchemaLifecycleVerbsItem[];
+  capabilities: ConnectorCapabilities;
 }

@@ -193,6 +193,9 @@ func (c *Connector) doRequestBody(ctx context.Context, method, path string, body
 	if statusErr := connector.CheckStatus(resp.StatusCode, data); statusErr != nil {
 		return nil, statusErr
 	}
+	if method == http.MethodGet && len(data) > 0 && !json.Valid(data) {
+		return nil, connector.NewMalformedResponseError(fmt.Errorf("invalid JSON response"))
+	}
 
 	return data, nil
 }

@@ -3839,7 +3839,7 @@ components:
         snapshotId: { type: string, description: 'Snapshot to pin as golden; omit to pin the connector''s current latest snapshot' }
     ConnectorTypeSchema:
       type: object
-      required: [category, type, displayName, fields]
+      required: [category, type, displayName, fields, capabilities]
       properties:
         category: { $ref: '#/components/schemas/ConnectorCategory' }
         type: { type: string }
@@ -3874,6 +3874,17 @@ components:
             The lifecycle verbs (restart/start/stop) this type's connector
             implementation supports, e.g. for filtering the runbook step
             editor's verb picker to what a chosen connector can actually do.
+        capabilities:
+          $ref: '#/components/schemas/ConnectorCapabilities'
+    ConnectorCapabilities:
+      type: object
+      required: [restart, start, stop, configPush, credentialRefresh]
+      properties:
+        restart: { type: boolean }
+        start: { type: boolean }
+        stop: { type: boolean }
+        configPush: { type: boolean }
+        credentialRefresh: { type: boolean }
     SchemaField:
       type: object
       required: [name, label, kind, required]

@@ -33,6 +33,8 @@ type TypeSchema struct {
 	// the lifecycle verbs (restart/start/stop) this type's Connector
 	// implementation supports (see SupportsLifecycleVerb).
 	LifecycleVerbs []string `json:"lifecycleVerbs"`
+	// Capabilities is computed from the connector's optional interfaces.
+	Capabilities CapabilityDescriptor `json:"capabilities"`
 }
 
 // DegradedLatencyThreshold returns this type's configured health-check
@@ -226,6 +228,7 @@ func ListSchemas() []TypeSchema {
 	for _, s := range typeSchema {
 		if factory, ok := registry[s.Type]; ok {
 			if inst, err := factory(map[string]any{}); err == nil {
+				s.Capabilities = Capabilities(inst)
 				_, s.IsCredentialRefresher = inst.(CredentialRefresher)
 				s.LifecycleVerbs = supportedLifecycleVerbs(inst)
 			}

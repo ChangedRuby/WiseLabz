@@ -212,6 +212,19 @@ func TestSchema(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
+	var schemas []connector.TypeSchema
+	if err := json.Unmarshal(rr.Body.Bytes(), &schemas); err != nil {
+		t.Fatalf("decode schema: %v", err)
+	}
+	for _, schema := range schemas {
+		if schema.Type == "docker" {
+			if !schema.Capabilities.Restart || !schema.Capabilities.Start || !schema.Capabilities.Stop || !schema.Capabilities.ConfigPush {
+				t.Fatalf("docker capabilities = %+v", schema.Capabilities)
+			}
+			return
+		}
+	}
+	t.Fatal("docker schema missing")
 }
 
 func TestTestSuccess(t *testing.T) {
