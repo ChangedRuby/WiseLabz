@@ -114,3 +114,19 @@ with a new action string, same audit writer with a new action name, and a
 dry-run preview required before UI exposure. Config-push and start/stop
 each need their own ADR because their rollback and blast-radius stories
 differ from restart's and are not resolved by this decision.
+
+### Addendum (#282): runbook steps are an additional entry point
+
+Runbook steps (`runbook_steps`, `POST
+/api/runbooks/{id}/steps/{stepId}/execute`) let a runbook point at a
+connector's `restart`/`start`/`stop`, but they are not a new operation and
+not a new guardrail model — they are a second entry point into the exact
+same boundaries this ADR (and its start/stop follow-up) already defines:
+the same `connector.<verb>` elevation action, the same operator-grant
+check, the same dry-run-preview/elevation-gated-mutate split, the same
+failure-alert-instead-of-rollback behavior, and the same audit writer
+(`connector.<verb>`, now additionally carrying `runbookId`/`stepId` in
+`detail`). Authoring a step is deliberately **not** gated by a connector
+grant — only linking guidance to a connector, same as issue #42 established
+for the pre-existing snapshot/doc pointers — so the operator-grant check
+happens at execution time, not authoring time.

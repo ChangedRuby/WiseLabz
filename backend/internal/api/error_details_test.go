@@ -82,8 +82,9 @@ func TestValidationErrorDetails(t *testing.T) {
 			name: "runbooks list mutually exclusive filters", role: "viewer",
 			method: "GET", path: "/api/runbooks?changeType=upgrade&alertSeverity=critical",
 			details: []httputil.FieldError{
-				{Field: "changeType", Msg: "is mutually exclusive with alertSeverity"},
-				{Field: "alertSeverity", Msg: "is mutually exclusive with changeType"},
+				{Field: "changeType", Msg: "is mutually exclusive with alertSeverity and findingCheckType"},
+				{Field: "alertSeverity", Msg: "is mutually exclusive with changeType and findingCheckType"},
+				{Field: "findingCheckType", Msg: "is mutually exclusive with changeType and alertSeverity"},
 			},
 		},
 		{

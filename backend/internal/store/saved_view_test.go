@@ -43,8 +43,12 @@ func TestCreateAndListSavedViews(t *testing.T) {
 	if views[0].ID == "" || views[0].CreatedAt == "" {
 		t.Errorf("ListSavedViews()[0] missing generated ID/CreatedAt: %+v", views[0])
 	}
-	if views[1].Filters != "{}" {
-		t.Errorf("Filters default = %q, want {} when unset", views[1].Filters)
+	// Both views can share a created_at second, so order is not guaranteed;
+	// look the unset-filters view up by name.
+	for _, v := range views {
+		if v.Name == "All virtualization" && v.Filters != "{}" {
+			t.Errorf("Filters default = %q, want {} when unset", v.Filters)
+		}
 	}
 
 	empty, err := s.ListSavedViews(ctx, "user-1", "alerts")

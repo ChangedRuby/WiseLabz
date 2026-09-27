@@ -21,9 +21,13 @@ import type {
 
 import type {
   BadRequestResponse,
+  ElevationRequiredResponse,
+  Error,
+  ExecuteRunbookStepParams,
   ForbiddenResponse,
   GetRunbooksParams,
   NotFoundResponse,
+  RestartPreview,
   Runbook,
   RunbookCreate,
   RunbookPage,
@@ -52,7 +56,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * `changeType` and `alertSeverity` are mutually exclusive filters — pass at most one. `changeType` matches target_type=change_type / target_value=<changeType>; `alertSeverity` matches target_type=alert_severity / target_value=<alertSeverity>. With neither given, returns all runbooks.
+ * `changeType`, `alertSeverity`, and `findingCheckType` are mutually exclusive filters — pass at most one. `changeType` matches target_type=change_type / target_value=<changeType>; `alertSeverity` matches target_type=alert_severity / target_value=<alertSeverity>; `findingCheckType` matches target_type=finding_check_type / target_value=<findingCheckType>. With none given, returns all runbooks.
  * @summary List runbooks, optionally filtered by change type or alert severity
  */
 export const getRunbooks = (
@@ -709,6 +713,156 @@ export function useDeleteRunbooksRunbookId<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getDeleteRunbooksRunbookIdQueryOptions(runbookId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Resolves the target connector, verb, and entityRef from the stored step — the request body is ignored — and runs the exact same dry-run-preview / elevation-gated-mutate path as the connector-level restart/start/stop endpoints (see ADR 0001/0002). Linking a step grants nothing on its own: the caller must additionally hold at least an operator grant on the step's connector, and a real (non dry-run) execution still requires a valid X-Elevation-Token for action `connector.<verb>`. On success, records a `connector.<verb>` audit row whose detail includes this runbookId/stepId in addition to entityRef.
+ * @summary Execute (or preview) one runbook step's lifecycle operation
+ */
+export const executeRunbookStep = (
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams,
+  options?: SecondParameter<typeof customInstance>,
+  signal?: AbortSignal
+) => {
+  return customInstance<RestartPreview>(
+    { url: `/runbooks/${runbookId}/steps/${stepId}/execute`, method: 'POST', params, signal },
+    options
+  );
+};
+
+export const getExecuteRunbookStepQueryKey = (
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams
+) => {
+  return [
+    'POST',
+    `/runbooks/${runbookId}/steps/${stepId}/execute`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExecuteRunbookStepQueryOptions = <
+  TData = Awaited<ReturnType<typeof executeRunbookStep>>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExecuteRunbookStepQueryKey(runbookId, stepId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof executeRunbookStep>>> = ({ signal }) =>
+    executeRunbookStep(runbookId, stepId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      runbookId !== null && runbookId !== undefined && stepId !== null && stepId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ExecuteRunbookStepQueryResult = NonNullable<
+  Awaited<ReturnType<typeof executeRunbookStep>>
+>;
+export type ExecuteRunbookStepQueryError = ErrorType<
+  Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+export function useExecuteRunbookStep<
+  TData = Awaited<ReturnType<typeof executeRunbookStep>>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  runbookId: string,
+  stepId: string,
+  params: undefined | ExecuteRunbookStepParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof executeRunbookStep>>,
+          TError,
+          Awaited<ReturnType<typeof executeRunbookStep>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useExecuteRunbookStep<
+  TData = Awaited<ReturnType<typeof executeRunbookStep>>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof executeRunbookStep>>,
+          TError,
+          Awaited<ReturnType<typeof executeRunbookStep>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useExecuteRunbookStep<
+  TData = Awaited<ReturnType<typeof executeRunbookStep>>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Execute (or preview) one runbook step's lifecycle operation
+ */
+
+export function useExecuteRunbookStep<
+  TData = Awaited<ReturnType<typeof executeRunbookStep>>,
+  TError = ErrorType<Error | ElevationRequiredResponse | ForbiddenResponse | NotFoundResponse>,
+>(
+  runbookId: string,
+  stepId: string,
+  params?: ExecuteRunbookStepParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof executeRunbookStep>>, TError, TData>>;
+    request?: SecondParameter<typeof customInstance>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getExecuteRunbookStepQueryOptions(runbookId, stepId, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

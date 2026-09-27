@@ -125,20 +125,22 @@ func newRouterDeps(cfg Config) routerDeps {
 		ruleEvaluator = cfg.QualityChecker
 	}
 
+	connH := connhandler.NewHandler(cfg.Store, cfg.SyncEngine, cfg.Config, cfg.JWT, cfg.WSHub)
+
 	return routerDeps{
 		cfg:         cfg,
 		sysH:        sysH,
 		authH:       authhandler.NewHandler(cfg.Store, cfg.JWT, cfg.Config),
 		apiKeyH:     apikeyhandler.NewHandler(cfg.Store),
 		settingH:    settingH,
-		connH:       connhandler.NewHandler(cfg.Store, cfg.SyncEngine, cfg.Config, cfg.JWT, cfg.WSHub),
+		connH:       connH,
 		tmplH:       tmplhandler.NewHandler(cfg.Store, cfg.DocEngine),
 		changeH:     changehandler.NewHandler(cfg.Store, settingH, cfg.AIRegistry, cfg.WSHub),
 		alertH:      alerthandler.NewHandler(cfg.Store),
 		attentionH:  attentionhandler.NewHandler(cfg.Store),
 		findingH:    findinghandler.NewHandler(cfg.Store),
 		notifH:      notifhandler.NewHandler(cfg.Store),
-		runbookH:    runbookhandler.NewHandler(cfg.Store),
+		runbookH:    runbookhandler.NewHandler(cfg.Store, connH),
 		dashH:       dashhandler.NewHandler(cfg.Store),
 		docH:        dochandler.NewHandler(cfg.Store, cfg.DocEngine, settingH, cfg.AIRegistry, cfg.EmbedRegistry, cfg.WSHub),
 		savedViewH:  savedviewhandler.NewHandler(cfg.Store),

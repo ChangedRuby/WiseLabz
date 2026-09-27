@@ -211,6 +211,10 @@ export const getGetConnectorsSchemaResponseMock = (): ConnectorTypeSchema[] =>
     stub: faker.datatype.boolean(),
     degradedLatencyThresholdMs: faker.helpers.arrayElement([faker.number.int(), undefined]),
     isCredentialRefresher: faker.datatype.boolean(),
+    lifecycleVerbs: faker.helpers.arrayElement([
+      faker.helpers.arrayElements(['restart', 'start', 'stop'] as const),
+      undefined,
+    ]),
   }));
 
 export const getGetConnectorsConnectorIdResponseMock = (

@@ -20,35 +20,13 @@ import (
 // previews the restart from the latest stored snapshot without touching the
 // connector; dryRun absent/false performs the real, elevation-gated restart.
 func (h *Handler) RestartPreview(w http.ResponseWriter, r *http.Request) {
-	h.mutatingOpPreview(w, r, mutatingOp{
-		verb:          "restart",
-		auditAction:   "connector.restart",
-		elevateAction: "connector.restart",
-		call: func(conn connector.Connector) (func(ctx context.Context, cfg map[string]any, entityRef string) error, bool) {
-			restarter, ok := conn.(connector.Restarter)
-			if !ok {
-				return nil, false
-			}
-			return restarter.Restart, true
-		},
-	})
+	h.serveLifecycleFromRequest(w, r, "restart")
 }
 
 // StartPreview handles POST /api/connectors/{id}/start. Same dry-run/mutate
 // split as RestartPreview.
 func (h *Handler) StartPreview(w http.ResponseWriter, r *http.Request) {
-	h.mutatingOpPreview(w, r, mutatingOp{
-		verb:          "start",
-		auditAction:   "connector.start",
-		elevateAction: "connector.start",
-		call: func(conn connector.Connector) (func(ctx context.Context, cfg map[string]any, entityRef string) error, bool) {
-			starter, ok := conn.(connector.Starter)
-			if !ok {
-				return nil, false
-			}
-			return starter.Start, true
-		},
-	})
+	h.serveLifecycleFromRequest(w, r, "start")
 }
 
 // StopPreview handles POST /api/connectors/{id}/stop. Same dry-run/mutate
@@ -56,44 +34,58 @@ func (h *Handler) StartPreview(w http.ResponseWriter, r *http.Request) {
 // since a stop's downtime is indefinite until an explicit start, not a
 // bounded window.
 func (h *Handler) StopPreview(w http.ResponseWriter, r *http.Request) {
-	h.mutatingOpPreview(w, r, mutatingOp{
-		verb:          "stop",
-		auditAction:   "connector.stop",
-		elevateAction: "connector.stop",
-		call: func(conn connector.Connector) (func(ctx context.Context, cfg map[string]any, entityRef string) error, bool) {
-			stopper, ok := conn.(connector.Stopper)
-			if !ok {
-				return nil, false
-			}
-			return stopper.Stop, true
-		},
-	})
+	h.serveLifecycleFromRequest(w, r, "stop")
 }
 
-// mutatingOp describes one lab-mutating verb (restart/start/stop) sharing
-// the ADR 0001/0002 dry-run-preview + elevation-gated-mutate shape.
-type mutatingOp struct {
-	verb          string // "restart", "start", "stop" — used in error/audit text
-	auditAction   string
-	elevateAction string
-	// call type-asserts conn against the verb's interface (Restarter/
-	// Starter/Stopper) and returns its method, or ok=false if unsupported.
-	call func(conn connector.Connector) (fn func(ctx context.Context, cfg map[string]any, entityRef string) error, ok bool)
+// serveLifecycleFromRequest resolves connectorID from the path and
+// entityRef from the JSON body — read for both the dry-run and real-mutate
+// cases, so a dry-run can preview against a specific entity too — and
+// delegates to ServeLifecycleOp with no extra audit detail. This is the
+// path used by the connector-scoped restart/start/stop endpoints; the
+// runbooks handler calls ServeLifecycleOp directly with a stored
+// connector/verb/entityRef and its own extraAudit instead.
+func (h *Handler) serveLifecycleFromRequest(w http.ResponseWriter, r *http.Request, verb string) {
+	id := r.PathValue("id")
+	var body struct {
+		EntityRef string `json:"entityRef"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body) // ponytail: absent/empty body means entityRef == "", matches default
+	}
+	h.ServeLifecycleOp(w, r, id, verb, body.EntityRef, nil)
 }
 
-// mutatingOpPreview implements the shared dry-run/mutate split for restart,
-// start, and stop: dryRun=true returns a preview built from the latest
-// stored snapshot without touching the connector; dryRun absent/false
-// performs the real, elevation-gated mutation.
-func (h *Handler) mutatingOpPreview(w http.ResponseWriter, r *http.Request, op mutatingOp) {
+// ServeLifecycleOp implements the shared dry-run/mutate split for the
+// lifecycle verbs (restart/start/stop), driven by an already-resolved
+// connectorID/verb/entityRef rather than reading them itself — so both the
+// connector-scoped handlers above (id from the path, entityRef from the
+// body) and the runbooks ExecuteStep handler (id/verb/entityRef from a
+// stored RunbookStepRecord, body ignored) can share it.
+//
+// dryRun=true previews from the latest stored snapshot without touching the
+// connector, targeting entityRef's matching entity when one is given.
+// dryRun absent/false performs the real, elevation-gated mutation per ADR
+// 0001/0002: config parse, verb-support check ("unsupported_operation"),
+// X-Elevation-Token validation against "connector.<verb>", entityRef
+// validation, a critical AlertRecord + ws broadcast on failure (no
+// rollback), and an audit row on success whose detail is {entityRef} merged
+// with extraAudit (e.g. {runbookId, stepId} from the runbooks handler).
+func (h *Handler) ServeLifecycleOp(w http.ResponseWriter, r *http.Request, connectorID, verb, entityRef string, extraAudit map[string]any) {
 	dryRun := len(r.URL.Query()["dryRun"]) == 1 && r.URL.Query()["dryRun"][0] == "true"
-	if !dryRun {
-		h.mutateOp(w, r, op)
+	if dryRun {
+		h.lifecycleOpPreview(w, r, connectorID, verb, entityRef)
 		return
 	}
+	h.lifecycleOpMutate(w, r, connectorID, verb, entityRef, extraAudit)
+}
 
-	id := r.PathValue("id")
-	if _, err := h.Store.GetConnector(r.Context(), id); err != nil {
+// lifecycleOpPreview builds the dry-run preview response for connectorID's
+// latest snapshot. When entityRef matches a snapshot entity by ExternalID,
+// that entity's name is used as targetService instead of the top-level
+// service name, so a per-entity restart/start/stop previews the entity
+// actually being targeted.
+func (h *Handler) lifecycleOpPreview(w http.ResponseWriter, r *http.Request, connectorID, verb, entityRef string) {
+	if _, err := h.Store.GetConnector(r.Context(), connectorID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
 			return
@@ -102,7 +94,7 @@ func (h *Handler) mutatingOpPreview(w http.ResponseWriter, r *http.Request, op m
 		return
 	}
 
-	sn, err := h.Store.GetLatestSnapshot(r.Context(), id)
+	sn, err := h.Store.GetLatestSnapshot(r.Context(), connectorID)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "not_found", "No snapshot available for connector")
 		return
@@ -118,31 +110,39 @@ func (h *Handler) mutatingOpPreview(w http.ResponseWriter, r *http.Request, op m
 		return
 	}
 
+	targetService := snap.ServiceName
+	if entityRef != "" {
+		for _, e := range snap.Entities {
+			if e.ExternalID == entityRef {
+				targetService = e.Name
+				break
+			}
+		}
+	}
+
 	dependencies := snap.Dependencies
 	if dependencies == nil {
 		dependencies = []connector.ServiceDependency{}
 	}
 	downtime := restartPreviewDowntimeSeconds
-	if op.verb == "stop" {
+	if verb == "stop" {
 		// A stop's downtime is indefinite (no scheduled restart), not a
 		// bounded estimate — 0 rather than inventing a new field.
 		downtime = 0
 	}
 	httputil.JSON(w, http.StatusOK, map[string]any{
-		"targetService":            snap.ServiceName,
+		"targetService":            targetService,
 		"estimatedDowntimeSeconds": downtime,
 		"dependentServices":        dependencies,
 	})
 }
 
-// mutateOp handles the real, mutating side of restart/start/stop (dryRun
-// absent/false). Per ADR 0001/0002: gated by the verb's elevation action,
-// no rollback on failure (an AlertRecord is raised instead), and only
-// successes are audited.
-func (h *Handler) mutateOp(w http.ResponseWriter, r *http.Request, op mutatingOp) {
-	id := r.PathValue("id")
-
-	rec, err := h.Store.GetConnector(r.Context(), id)
+// lifecycleOpMutate handles the real, mutating side of restart/start/stop
+// (dryRun absent/false). Per ADR 0001/0002: gated by the verb's elevation
+// action, no rollback on failure (an AlertRecord is raised instead), and
+// only successes are audited.
+func (h *Handler) lifecycleOpMutate(w http.ResponseWriter, r *http.Request, connectorID, verb, entityRef string, extraAudit map[string]any) {
+	rec, err := h.Store.GetConnector(r.Context(), connectorID)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "not_found", "Connector not found")
 		return
@@ -166,58 +166,55 @@ func (h *Handler) mutateOp(w http.ResponseWriter, r *http.Request, op mutatingOp
 		return
 	}
 
-	fn, ok := op.call(conn)
+	fn, ok := connector.LifecycleOp(conn, verb)
 	if !ok {
-		httputil.Error(w, http.StatusBadRequest, "unsupported_operation", "connector does not support "+op.verb)
+		httputil.Error(w, http.StatusBadRequest, "unsupported_operation", "connector does not support "+verb)
 		return
 	}
 
-	if err := auth.ValidateElevationHeader(h.JWT, h.Store, op.elevateAction, r); err != nil {
+	elevateAction := "connector." + verb
+	if err := auth.ValidateElevationHeader(h.JWT, h.Store, elevateAction, r); err != nil {
 		auth.WriteElevationError(w, err)
 		return
 	}
 
-	var body struct {
-		EntityRef string `json:"entityRef"`
-	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body) // ponytail: absent/empty body means entityRef == "", matches default
-	}
-
-	if err := connector.ValidateCompositeRef(body.EntityRef); err != nil {
+	if err := connector.ValidateCompositeRef(entityRef); err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "invalid entityRef")
 		return
 	}
 
-	if err := fn(r.Context(), cfg, body.EntityRef); err != nil {
-		slog.Error("connector "+op.verb+" failed", "connector", id, "error", err)
+	if err := fn(r.Context(), cfg, entityRef); err != nil {
+		slog.Error("connector "+verb+" failed", "connector", connectorID, "error", err)
 		alert := &store.AlertRecord{
-			ServiceID:   id,
+			ServiceID:   connectorID,
 			Severity:    "critical",
-			Title:       fmt.Sprintf("%s failed for %s", capitalize(op.verb), rec.Name),
+			Title:       fmt.Sprintf("%s failed for %s", capitalize(verb), rec.Name),
 			Description: err.Error(),
 		}
 		if createErr := h.Store.CreateAlert(r.Context(), alert); createErr != nil {
-			slog.Error("failed to create "+op.verb+" failure alert", "error", createErr)
+			slog.Error("failed to create "+verb+" failure alert", "error", createErr)
 		} else if h.WSHub != nil {
 			h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
 				"alertId":   alert.ID,
-				"serviceId": id,
+				"serviceId": connectorID,
 				"severity":  alert.Severity,
 				"title":     alert.Title,
 			})
 		}
-		httputil.Error(w, http.StatusBadGateway, op.verb+"_failed", err.Error())
+		httputil.Error(w, http.StatusBadGateway, verb+"_failed", err.Error())
 		return
 	}
 
-	if err := h.Store.RecordAuditFromContext(r.Context(), op.auditAction, "connector", id, map[string]any{
-		"entityRef": body.EntityRef,
-	}); err != nil {
-		slog.Error("failed to record audit", "action", op.auditAction, "error", err)
+	detail := map[string]any{"entityRef": entityRef}
+	for k, v := range extraAudit {
+		detail[k] = v
+	}
+	auditAction := "connector." + verb
+	if err := h.Store.RecordAuditFromContext(r.Context(), auditAction, "connector", connectorID, detail); err != nil {
+		slog.Error("failed to record audit", "action", auditAction, "error", err)
 	}
 
-	httputil.JSON(w, http.StatusOK, map[string]any{"status": op.verb + "ed"})
+	httputil.JSON(w, http.StatusOK, map[string]any{"status": verb + "ed"})
 }
 
 // capitalize upper-cases a word's first byte (ASCII verbs only: "restart",
@@ -265,11 +262,12 @@ func (h *Handler) BulkRestart(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-// restartConnector performs one connector's restart (config load, Restarter
-// type-assert, call, failure-alert) without the per-call elevation check or
-// per-call audit write — those are handled once, batch-wide, by BulkRestart.
-// The single-connector RestartPreview/mutateOp path still does its own
-// per-call elevation + audit, since it isn't part of a batch.
+// restartConnector performs one connector's restart (config load,
+// LifecycleOp lookup, call, failure-alert) without the per-call elevation
+// check or per-call audit write — those are handled once, batch-wide, by
+// BulkRestart. The single-connector RestartPreview/ServeLifecycleOp path
+// still does its own per-call elevation + audit, since it isn't part of a
+// batch.
 func (h *Handler) restartConnector(ctx context.Context, rec *store.ConnectorRecord) error {
 	cfg, err := store.ParseConnectorConfig(rec.Type, rec.ConfigData, h.Config.Encryption.Key)
 	if err != nil {
@@ -282,12 +280,12 @@ func (h *Handler) restartConnector(ctx context.Context, rec *store.ConnectorReco
 	if err != nil {
 		return err
 	}
-	restarter, ok := conn.(connector.Restarter)
+	restart, ok := connector.LifecycleOp(conn, "restart")
 	if !ok {
 		return fmt.Errorf("connector does not support restart")
 	}
 
-	if err := restarter.Restart(ctx, cfg, ""); err != nil {
+	if err := restart(ctx, cfg, ""); err != nil {
 		slog.Error("connector restart failed", "connector", rec.ID, "error", err)
 		alert := &store.AlertRecord{
 			ServiceID:   rec.ID,

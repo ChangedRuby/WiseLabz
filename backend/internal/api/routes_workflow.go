@@ -40,6 +40,11 @@ func mountWorkflowRoutes(r chi.Router, d routerDeps) {
 	r.Route("/runbooks", func(r chi.Router) {
 		r.Get("/", d.runbookH.List)
 		r.Get("/{id}", d.runbookH.Get)
+		// Not admin-only: ExecuteStep checks store.UserHasConnectorRole
+		// itself (operator grant on the step's connector), same reasoning
+		// as changes/alerts/findings above — plus the elevation check
+		// inside ServeLifecycleOp.
+		r.Post("/{id}/steps/{stepId}/execute", d.runbookH.ExecuteStep)
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireInstanceAdmin)

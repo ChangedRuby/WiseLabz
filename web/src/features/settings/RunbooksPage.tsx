@@ -16,18 +16,38 @@ import {
   putRunbooksRunbookId,
   deleteRunbooksRunbookId,
 } from '../../api/generated/runbooks/runbooks';
-import type { Runbook, RunbookTargetType } from '../../api/model';
+import { useGetConnectors, useGetConnectorsSchema } from '../../api/generated/connectors/connectors';
+import type { Runbook, RunbookStepInput, RunbookStepVerb, RunbookTargetType } from '../../api/model';
 import { Severity } from '../../api/model/severity';
 import { Button, IconButton } from '../../components/ui/Button';
 import { Panel } from '../../components/ui/Panel';
 import { Dialog } from '../../components/ui/Dialog';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { SkeletonRows, ErrorState, EmptyState } from '../../components/ui/states';
+import { EntityPicker } from '../../components/manager/EntityPicker';
 import { toast } from '../../lib/toast';
 import { SubHeader, Field, TextInput, Select } from './parts';
-import { FileTextIcon, PlusIcon, EditIcon, XIcon } from '../../components/icons';
+import { FileTextIcon, PlusIcon, EditIcon, XIcon, ChevronDownIcon } from '../../components/icons';
 
-const TARGET_TYPES: RunbookTargetType[] = ['change_type', 'alert_severity'];
+const TARGET_TYPES: RunbookTargetType[] = ['change_type', 'alert_severity', 'finding_check_type'];
+const MAX_STEPS = 20;
+
+/** A step being edited: same shape as RunbookStepInput, but with a stable
+ * client-side key so React can track rows across add/remove/reorder before
+ * any of them have a server id. */
+interface StepDraft {
+  key: string;
+  id?: string;
+  title: string;
+  connectorId: string;
+  verb: RunbookStepVerb;
+  entityRef: string;
+}
+
+let stepKeySeq = 0;
+function newStepDraft(): StepDraft {
+  return { key: `new-${++stepKeySeq}`, title: '', connectorId: '', verb: 'restart', entityRef: '' };
+}
 
 interface Draft {
   title: string;
@@ -36,6 +56,7 @@ interface Draft {
   targetValue: string;
   docId: string;
   snapshotId: string;
+  steps: StepDraft[];
 }
 
 const emptyDraft: Draft = {
@@ -45,6 +66,7 @@ const emptyDraft: Draft = {
   targetValue: '',
   docId: '',
   snapshotId: '',
+  steps: [],
 };
 
 export function RunbooksPage() {
@@ -55,13 +77,18 @@ export function RunbooksPage() {
   const [editing, setEditing] = useState<Runbook | 'new' | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [formError, setFormError] = useState<string | null>(null);
+  const [stepErrors, setStepErrors] = useState<Record<number, string>>({});
   const [toDelete, setToDelete] = useState<Runbook | null>(null);
+
+  const connectors = useGetConnectors();
+  const schemas = useGetConnectorsSchema();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getGetRunbooksQueryKey() });
 
   const openCreate = () => {
     setDraft(emptyDraft);
     setFormError(null);
+    setStepErrors({});
     setEditing('new');
   };
 
@@ -73,14 +100,24 @@ export function RunbooksPage() {
       targetValue: rb.targetValue,
       docId: rb.docId ?? '',
       snapshotId: rb.snapshotId ?? '',
+      steps: rb.steps.map((s) => ({
+        key: s.id,
+        id: s.id,
+        title: s.title,
+        connectorId: s.connectorId,
+        verb: s.verb,
+        entityRef: s.entityRef,
+      })),
     });
     setFormError(null);
+    setStepErrors({});
     setEditing(rb);
   };
 
   const closeDialog = () => {
     setEditing(null);
     setFormError(null);
+    setStepErrors({});
   };
 
   const toPayload = () => ({
@@ -90,9 +127,39 @@ export function RunbooksPage() {
     targetValue: draft.targetValue.trim(),
     docId: draft.docId.trim() || null,
     snapshotId: draft.snapshotId.trim() || null,
+    steps: draft.steps.map(
+      (s): RunbookStepInput => ({
+        ...(s.id ? { id: s.id } : {}),
+        title: s.title.trim(),
+        connectorId: s.connectorId,
+        verb: s.verb,
+        ...(s.entityRef ? { entityRef: s.entityRef } : {}),
+      })
+    ),
   });
 
   const conflictMessage = t('settings.runbooks.conflict');
+
+  const applyFieldErrors = (error: unknown): boolean => {
+    if (!isAxiosError(error) || error.response?.status !== 400) return false;
+    const details = (error.response?.data as { details?: { field: string; msg: string }[] } | undefined)
+      ?.details;
+    if (!details || details.length === 0) return false;
+    const nextStepErrors: Record<number, string> = {};
+    const otherMessages: string[] = [];
+    for (const d of details) {
+      const m = /^steps\[(\d+)\]/.exec(d.field);
+      if (m) {
+        nextStepErrors[Number(m[1])] = d.msg;
+      } else {
+        otherMessages.push(d.msg);
+      }
+    }
+    setStepErrors(nextStepErrors);
+    if (otherMessages.length > 0) setFormError(otherMessages.join(' '));
+    else if (Object.keys(nextStepErrors).length > 0) setFormError(t('settings.runbooks.steps.invalid'));
+    return true;
+  };
 
   const create = useMutation({
     mutationFn: () => postRunbooks(toPayload()),
@@ -106,6 +173,7 @@ export function RunbooksPage() {
         setFormError(conflictMessage);
         return;
       }
+      if (applyFieldErrors(error)) return;
       toast.error(t('settings.runbooks.toastCreateError'));
     },
   });
@@ -122,6 +190,7 @@ export function RunbooksPage() {
         setFormError(conflictMessage);
         return;
       }
+      if (applyFieldErrors(error)) return;
       toast.error(t('settings.runbooks.toastSaveError'));
     },
   });
@@ -138,6 +207,28 @@ export function RunbooksPage() {
 
   const saving = create.isPending || update.isPending;
   const canSave = draft.title.trim() !== '' && draft.targetValue.trim() !== '';
+
+  const addStep = () =>
+    setDraft((d) => (d.steps.length >= MAX_STEPS ? d : { ...d, steps: [...d.steps, newStepDraft()] }));
+
+  const removeStep = (key: string) =>
+    setDraft((d) => ({ ...d, steps: d.steps.filter((s) => s.key !== key) }));
+
+  const moveStep = (key: string, dir: -1 | 1) =>
+    setDraft((d) => {
+      const idx = d.steps.findIndex((s) => s.key === key);
+      const next = idx + dir;
+      if (idx < 0 || next < 0 || next >= d.steps.length) return d;
+      const steps = [...d.steps];
+      [steps[idx], steps[next]] = [steps[next], steps[idx]];
+      return { ...d, steps };
+    });
+
+  const updateStep = (key: string, patch: Partial<StepDraft>) =>
+    setDraft((d) => ({
+      ...d,
+      steps: d.steps.map((s) => (s.key === key ? { ...s, ...patch } : s)),
+    }));
 
   return (
     <div>
@@ -269,7 +360,11 @@ export function RunbooksPage() {
                 <TextInput
                   id="runbook-target-value"
                   value={draft.targetValue}
-                  placeholder={t('settings.runbooks.changeTypePlaceholder')}
+                  placeholder={
+                    draft.targetType === 'finding_check_type'
+                      ? t('settings.runbooks.checkTypePlaceholder')
+                      : t('settings.runbooks.changeTypePlaceholder')
+                  }
                   onChange={(e) => setDraft((d) => ({ ...d, targetValue: e.target.value }))}
                 />
               )}
@@ -305,6 +400,141 @@ export function RunbooksPage() {
                 onChange={(e) => setDraft((d) => ({ ...d, snapshotId: e.target.value }))}
               />
             </Field>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-mono text-2xs text-ink-faint">
+                {t('settings.runbooks.steps.heading')}
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={addStep}
+                disabled={draft.steps.length >= MAX_STEPS}
+              >
+                <PlusIcon size={13} />
+                {t('settings.runbooks.steps.add')}
+              </Button>
+            </div>
+            <p className="mb-2 text-2xs leading-relaxed text-ink-faint">
+              {t('settings.runbooks.steps.hint')}
+            </p>
+
+            {draft.steps.length === 0 ? (
+              <p className="text-xs text-ink-muted">{t('settings.runbooks.steps.empty')}</p>
+            ) : (
+              <ul className="space-y-3">
+                {draft.steps.map((step, index) => (
+                  <li
+                    key={step.key}
+                    className="space-y-2 rounded-md border border-line-soft bg-canvas-sunken p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <TextInput
+                        aria-label={t('settings.runbooks.steps.titleLabel')}
+                        value={step.title}
+                        placeholder={t('settings.runbooks.steps.titlePlaceholder')}
+                        onChange={(e) => updateStep(step.key, { title: e.target.value })}
+                        className="flex-1"
+                      />
+                      <IconButton
+                        label={t('settings.runbooks.steps.moveUp')}
+                        onClick={() => moveStep(step.key, -1)}
+                        disabled={index === 0}
+                      >
+                        <ChevronDownIcon size={14} className="rotate-180" />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.runbooks.steps.moveDown')}
+                        onClick={() => moveStep(step.key, 1)}
+                        disabled={index === draft.steps.length - 1}
+                      >
+                        <ChevronDownIcon size={14} />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.runbooks.steps.remove')}
+                        onClick={() => removeStep(step.key)}
+                        className="hover:text-err"
+                      >
+                        <XIcon size={14} />
+                      </IconButton>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <label className="block">
+                        <span className="mb-1 block text-2xs text-ink-faint">
+                          {t('settings.runbooks.steps.connectorLabel')}
+                        </span>
+                        <Select
+                          aria-label={t('settings.runbooks.steps.connectorLabel')}
+                          value={step.connectorId}
+                          onChange={(e) => {
+                            const connectorId = e.target.value;
+                            const type = connectors.data?.find((c) => c.id === connectorId)?.type;
+                            const verbs = schemas.data?.find((s) => s.type === type)?.lifecycleVerbs ?? [];
+                            updateStep(step.key, {
+                              connectorId,
+                              entityRef: '',
+                              verb: (verbs[0] ?? step.verb) as RunbookStepVerb,
+                            });
+                          }}
+                        >
+                          <option value="" disabled>
+                            {t('settings.runbooks.steps.connectorPlaceholder')}
+                          </option>
+                          {(connectors.data ?? []).map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1 block text-2xs text-ink-faint">
+                          {t('settings.runbooks.steps.verbLabel')}
+                        </span>
+                        <Select
+                          aria-label={t('settings.runbooks.steps.verbLabel')}
+                          value={step.verb}
+                          onChange={(e) =>
+                            updateStep(step.key, { verb: e.target.value as RunbookStepVerb })
+                          }
+                        >
+                          {(() => {
+                            const type = connectors.data?.find((c) => c.id === step.connectorId)?.type;
+                            const verbs =
+                              schemas.data?.find((s) => s.type === type)?.lifecycleVerbs ??
+                              (['restart', 'start', 'stop'] as RunbookStepVerb[]);
+                            return verbs.map((v) => (
+                              <option key={v} value={v}>
+                                {v}
+                              </option>
+                            ));
+                          })()}
+                        </Select>
+                      </label>
+
+                      {step.connectorId && (
+                        <EntityPicker
+                          connectorId={step.connectorId}
+                          value={step.entityRef}
+                          onChange={(entityRef) => updateStep(step.key, { entityRef })}
+                        />
+                      )}
+                    </div>
+
+                    {stepErrors[index] && (
+                      <p role="alert" className="text-2xs text-err">
+                        {stepErrors[index]}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {formError && (
