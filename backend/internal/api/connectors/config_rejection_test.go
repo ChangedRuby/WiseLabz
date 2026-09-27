@@ -14,7 +14,6 @@ import (
 // schema declares a Pattern/MinLength/MaxLength/Options rule today, so
 // connector.ValidateConfig cannot be made to fail over the wire.
 func TestWriteConfigRejection(t *testing.T) {
-	t.Fatal("TEMP: verify CI Status fails when a catch-all race shard fails")
 	tests := []struct {
 		name      string
 		err       error
