@@ -8,15 +8,17 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
 
-// maxSyncConcurrency bounds how many connectors RunSyncAll fetches at once,
-// matching notifications.maxConcurrentNotifications' fanout pattern.
-const maxSyncConcurrency = 4
+// Defaults preserve the existing single-instance sync behavior.
+const defaultMaxSyncConcurrency = 4
+const defaultDueBatchSize = 50
+const defaultSyncTimeout = 5 * time.Minute
 
 // ErrAlreadyRunning means this connector already has an active sync.
 var ErrAlreadyRunning = errors.New("connector sync already running")
@@ -53,12 +55,20 @@ type Engine struct {
 	// baseCtx parents detached (request-triggered) syncs so they outlive the
 	// HTTP request but are cancelled on server shutdown. Defaults to
 	// context.Background() until SetBaseContext is called.
-	baseCtx context.Context
+	baseCtx        context.Context
+	maxConcurrency int
+	dueBatchSize   int
+	timeout        time.Duration
 }
 
 // NewEngine creates a new sync engine.
 func NewEngine(s *store.Store, h *ws.Hub, notifier AlertNotifier, qualityChecker QualityChecker, encKey string) *Engine {
-	return &Engine{store: s, hub: h, notifier: notifier, qualityChecker: qualityChecker, encKey: encKey, baseCtx: context.Background()}
+	return &Engine{store: s, hub: h, notifier: notifier, qualityChecker: qualityChecker, encKey: encKey, baseCtx: context.Background(), maxConcurrency: defaultMaxSyncConcurrency, dueBatchSize: defaultDueBatchSize, timeout: defaultSyncTimeout}
+}
+
+// SetLimits applies validated sync settings before the engine starts.
+func (e *Engine) SetLimits(maxConcurrency, dueBatchSize int, timeout time.Duration) {
+	e.maxConcurrency, e.dueBatchSize, e.timeout = maxConcurrency, dueBatchSize, timeout
 }
 
 // SetDocRegenerator wires a DocRegenerator into the engine after
@@ -77,7 +87,7 @@ func (e *Engine) SetBaseContext(ctx context.Context) {
 
 // BaseContext returns the context detached syncs should run under: it survives
 // the triggering HTTP request and is cancelled on shutdown. Each run is still
-// bounded by syncTimeout inside runSyncFields.
+// bounded by the configured timeout inside runSyncFields.
 func (e *Engine) BaseContext() context.Context {
 	if e.baseCtx == nil {
 		return context.Background()
@@ -107,7 +117,7 @@ func (e *Engine) RunSyncAll(ctx context.Context, jobID string) ([]RunResult, err
 	// notifications.Dispatcher's fanoutSem pattern. Results are written to
 	// per-index slots so ordering stays deterministic (matching connectors order)
 	// despite concurrent completion.
-	sem := make(chan struct{}, maxSyncConcurrency)
+	sem := make(chan struct{}, e.maxConcurrency)
 	slots := make([]*RunResult, len(connectors))
 	var wg sync.WaitGroup
 	for i, c := range connectors {

@@ -42,7 +42,7 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 	select {
 	case ctx := <-c.entered:
 		deadline, ok := ctx.Deadline()
-		if !ok || time.Until(deadline) > syncTimeout {
+		if !ok || time.Until(deadline) > e.timeout {
 			t.Error("sync must have a bounded deadline")
 		}
 	case <-time.After(5 * time.Second):
@@ -125,5 +125,48 @@ func TestSyncCancellationRecordsFailureAndReleasesGuard(t *testing.T) {
 	close(c.release)
 	if _, err := e.RunSync(context.Background(), rec.ID, "retry"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRunDueSyncsRespectsLimits(t *testing.T) {
+	s := newTestStore(t)
+	c := &blockingConnector{entered: make(chan context.Context, 3), release: make(chan struct{})}
+	connector.Register(connector.TypeSchema{Type: "due_limits", Category: "networking"}, func(map[string]any) (connector.Connector, error) { return c, nil })
+	schedule := 30
+	for i := 0; i < 3; i++ {
+		rec := &store.ConnectorRecord{Name: "due", Type: "due_limits", Category: "networking", Enabled: true, ScheduleSeconds: &schedule}
+		if err := s.CreateConnector(context.Background(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := NewEngine(s, nil, nil, nil, "")
+	e.SetLimits(2, 2, time.Minute)
+	done := make(chan error, 1)
+	go func() { done <- e.RunDueSyncs(context.Background(), slog.Default()) }()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-c.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("expected two concurrent fetches")
+		}
+	}
+	select {
+	case <-c.entered:
+		t.Fatal("batch exceeded two connectors")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(c.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler did not finish")
+	}
+	select {
+	case <-c.entered:
+		t.Fatal("third connector fetched despite batch limit")
+	default:
 	}
 }

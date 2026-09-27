@@ -42,7 +42,10 @@ func TestSchemaMatchesConfig(t *testing.T) {
 			}
 			check(typ.Elem(), child, path, false)
 		default:
-			want := map[reflect.Kind]string{reflect.String: "string", reflect.Int: "integer", reflect.Bool: "boolean"}[typ.Kind()]
+			want := map[reflect.Kind]string{reflect.String: "string", reflect.Int: "integer", reflect.Int64: "integer", reflect.Bool: "boolean"}[typ.Kind()]
+			if typ.String() == "time.Duration" {
+				want = "string"
+			}
 			if want == "" || node["type"] != want {
 				t.Fatalf("%s: schema type %v does not match %s", path, node["type"], typ)
 			}

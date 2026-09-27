@@ -33,6 +33,21 @@ func (c *Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		errs = append(errs, fmt.Errorf("server.port %d out of range 1-65535", c.Server.Port))
 	}
+	if c.Sync.MaxConcurrency <= 0 {
+		errs = append(errs, errors.New("sync.max_concurrency must be positive"))
+	}
+	if c.Sync.DueBatchSize <= 0 {
+		errs = append(errs, errors.New("sync.due_batch_size must be positive"))
+	}
+	if c.Sync.Timeout <= 0 {
+		errs = append(errs, errors.New("sync.timeout must be positive"))
+	}
+	if c.HA.LockPollInterval <= 0 {
+		errs = append(errs, errors.New("ha.lock_poll_interval must be positive"))
+	}
+	if c.HA.LeaderElection && c.DB.Driver != "postgres" {
+		errs = append(errs, errors.New("ha.leader_election requires db.driver postgres"))
+	}
 	if err := c.DocExport.Git.Validate(); err != nil {
 		errs = append(errs, err)
 	}
