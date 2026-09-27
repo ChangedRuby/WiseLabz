@@ -96,14 +96,16 @@ func (r *Runner) SetHealthTracking(store HealthStore, notifier Notifier) {
 // notification. Returns the cron entry ID for later removal, or an error if
 // the cron expression is invalid.
 func (r *Runner) AddJob(name, cronExpr string, fn func(ctx context.Context) error) (cron.EntryID, error) {
+	// name can embed user input (report slugs), so log a sanitized copy.
+	logName := logsafe.Sanitize(name)
 	// Wrap the function to recover panics, log entry/exit, and track health.
 	wrapped := func() {
-		r.logger.Debug("job started", "job", name)
+		r.logger.Debug("job started", "job", logName)
 		var jobErr error
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					r.logger.Error("job panicked", "job", name, "panic", rec)
+					r.logger.Error("job panicked", "job", logName, "panic", rec)
 					jobErr = fmt.Errorf("panic: %v", rec)
 				}
 			}()
@@ -113,10 +115,10 @@ func (r *Runner) AddJob(name, cronExpr string, fn func(ctx context.Context) erro
 			jobErr = fn(r.jobContext())
 		}()
 		if jobErr != nil {
-			r.logger.Error("job failed", "job", name, "error", jobErr)
+			r.logger.Error("job failed", "job", logName, "error", logsafe.Sanitize(jobErr.Error()))
 		}
 		r.trackHealth(name, cronExpr, jobErr)
-		r.logger.Debug("job completed", "job", name)
+		r.logger.Debug("job completed", "job", logName)
 	}
 
 	// Use AddFunc which takes the cron expression directly and validates it
@@ -129,7 +131,7 @@ func (r *Runner) AddJob(name, cronExpr string, fn func(ctx context.Context) erro
 	r.entries[name] = jobEntry{id: entryID, cronExpr: cronExpr}
 	r.mu.Unlock()
 
-	r.logger.Debug("job registered", "job", name, "cron", logsafe.Sanitize(cronExpr))
+	r.logger.Debug("job registered", "job", logName, "cron", logsafe.Sanitize(cronExpr))
 	return entryID, nil
 }
 
@@ -156,7 +158,7 @@ func (r *Runner) trackHealth(name, cronExpr string, jobErr error) {
 		// Any other error is unexpected but must not block the job; just
 		// log and fall back to prevStatus == "ok" so we never suppress a
 		// legitimate first "failing" notification.
-		r.logger.Error("job health: read previous status", "job", name, "error", err)
+		r.logger.Error("job health: read previous status", "job", logsafe.Sanitize(name), "error", err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -179,7 +181,7 @@ func (r *Runner) trackHealth(name, cronExpr string, jobErr error) {
 	}
 
 	if err := r.healthStore.UpsertJobHealth(ctx, rec); err != nil {
-		r.logger.Error("job health: persist status", "job", name, "error", err)
+		r.logger.Error("job health: persist status", "job", logsafe.Sanitize(name), "error", err)
 	}
 
 	if r.notifier == nil || prevStatus == rec.LastStatus {

@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 
+	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/storeerr"
 )
 
@@ -105,7 +107,7 @@ func Errorf(w http.ResponseWriter, err error) {
 	if rw, ok := w.(contextResponseWriter); ok {
 		logger = Logger(rw.Context())
 	}
-	logger.Error("internal server error", "error", err)
+	logger.Error("internal server error", "error", logsafe.Sanitize(fmt.Sprint(err)))
 	Error(w, http.StatusInternalServerError, "internal_error", "An internal error occurred")
 }
 

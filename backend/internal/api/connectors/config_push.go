@@ -9,6 +9,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
+	"github.com/WiseLabz/wiselabz/internal/logsafe"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/sync"
 	"github.com/WiseLabz/wiselabz/internal/ws"
@@ -58,7 +59,7 @@ func (h *Handler) ConfigPush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := pusher.ConfigPush(r.Context(), cfg, req.EntityRef, req.FieldKey, req.Value); err != nil {
-		slog.Error("connector config-push failed", "connector", id, "field", req.FieldKey, "error", err)
+		slog.Error("connector config-push failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(req.FieldKey), "error", logsafe.Sanitize(err.Error()))
 		httputil.Error(w, http.StatusBadGateway, "config_push_failed", err.Error())
 		return
 	}
@@ -175,9 +176,9 @@ func (h *Handler) revertConfigPush(w http.ResponseWriter, r *http.Request, pushe
 	desc := fmt.Sprintf("Pushed field %q did not verify after write; auto-revert to the pre-push value was attempted.", fieldKey)
 	if revertErr != nil {
 		desc = fmt.Sprintf("Pushed field %q did not verify after write; auto-revert FAILED (%v) — manual intervention required.", fieldKey, revertErr)
-		slog.Error("config-push auto-revert failed", "connector", id, "field", fieldKey, "error", revertErr)
+		slog.Error("config-push auto-revert failed", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(fieldKey), "error", logsafe.Sanitize(revertErr.Error()))
 	} else {
-		slog.Warn("config-push mismatch, auto-reverted", "connector", id, "field", fieldKey)
+		slog.Warn("config-push mismatch, auto-reverted", "connector", logsafe.Sanitize(id), "field", logsafe.Sanitize(fieldKey))
 	}
 
 	alert := &store.AlertRecord{
