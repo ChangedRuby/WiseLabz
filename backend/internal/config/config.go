@@ -234,6 +234,9 @@ type DocExportSettings struct {
 // Git mode is on when Remote is set. Token (HTTPS) and SSHKeyPath (SSH) are
 // mutually exclusive; Token is a secret and must never be logged.
 type DocExportGitSettings struct {
+	CommitMode          string `mapstructure:"commit_mode"`            // snapshot or per_revision
+	AuthorFromUser      bool   `mapstructure:"author_from_user"`       // expose user identity in Git history
+	MaxRevisionsPerRun  int    `mapstructure:"max_revisions_per_run"`  // replay cap
 	Remote              string `mapstructure:"remote"`                 // https://… or ssh://… (or scp-style user@host:path)
 	Branch              string `mapstructure:"branch"`                 // branch to fetch, reset to and push
 	Path                string `mapstructure:"path"`                   // subdirectory of the repo the docs are written to
@@ -266,6 +269,12 @@ func IsSSHRemote(remote string) bool {
 func (g DocExportGitSettings) Validate() error {
 	if !g.Enabled() {
 		return nil
+	}
+	if g.CommitMode != "" && g.CommitMode != "snapshot" && g.CommitMode != "per_revision" {
+		return errors.New("doc_export.git.commit_mode must be snapshot or per_revision")
+	}
+	if g.MaxRevisionsPerRun < 0 {
+		return errors.New("doc_export.git.max_revisions_per_run must be positive")
 	}
 	ssh := IsSSHRemote(g.Remote)
 	if !ssh && !strings.HasPrefix(g.Remote, "https://") {
@@ -358,6 +367,9 @@ func Load() (*Config, error) {
 	v.SetDefault("doc_export.git.path", "docs")
 	v.SetDefault("doc_export.git.author_name", "WiseLabz")
 	v.SetDefault("doc_export.git.author_email", "wiselabz@localhost")
+	v.SetDefault("doc_export.git.commit_mode", "snapshot")
+	v.SetDefault("doc_export.git.author_from_user", false)
+	v.SetDefault("doc_export.git.max_revisions_per_run", 500)
 
 	// Bind every field to its WISELABZ_ env var. viper's AutomaticEnv alone
 	// does not reliably resolve nested keys through Unmarshal, so each key
@@ -386,6 +398,7 @@ func Load() (*Config, error) {
 		"doc_export.git.remote", "doc_export.git.branch", "doc_export.git.path",
 		"doc_export.git.author_name", "doc_export.git.author_email", "doc_export.git.token",
 		"doc_export.git.ssh_key_path", "doc_export.git.ssh_known_hosts", "doc_export.git.insecure_skip_host_key",
+		"doc_export.git.commit_mode", "doc_export.git.author_from_user", "doc_export.git.max_revisions_per_run",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind env %q: %w", key, err)

@@ -214,6 +214,8 @@ func main() {
 				AuthorName: g.AuthorName, AuthorEmail: g.AuthorEmail,
 				Token: g.Token, SSHKeyPath: g.SSHKeyPath, SSHKnownHosts: g.SSHKnownHosts,
 				InsecureSkipHostKey: g.InsecureSkipHostKey,
+				CommitMode:          g.CommitMode, AuthorFromUser: g.AuthorFromUser,
+				MaxRevisionsPerRun: g.MaxRevisionsPerRun,
 			}); err != nil {
 				logger.Error("Failed to configure doc export Git target", "error", err)
 				os.Exit(1)
