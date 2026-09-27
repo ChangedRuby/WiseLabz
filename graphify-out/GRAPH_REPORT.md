@@ -1,7 +1,7 @@
 # Graph Report - gsaraiva2109-feat-docexport-per-revision-commits  (2026-09-27)
 
 ## Corpus Check
-- 865 files · ~534,383 words
+- 865 files · ~534,402 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 21 file(s) not represented in the graph (top: (none) 10, .toml 2, .tmpl 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f15c66fc`
+- Built from commit: `94798326`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1041,9 +1041,9 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `Store` connect `Store` to `testing.T`, `Handler`, `Handler`, `createUser`, `VerifyBundleFile`, `Errorf`, `Handler`, `Config`, `runRestore`, `NewStore`, `go_pkg_context`, `ServiceSnapshot`, `gitFixture`, `NewUser`, `lifecycleDeps`, `rowScanner`, `NewEngine`, `ReportData`, `dispatcher_test.go`, `net/http.ResponseWriter`, `.call`, `RunMigrations`, `ErrorWithDetails`, `DecodeKey`, `retention/retention_test.go`, `chat/chat.go`, `NewChecker`, `Engine`, `Dispatcher`, `ExportToFile`, `engine_maintenance_test.go`, `NewEngine`, `nilToStr`, `rewritePlaceholders`, `Checker`, `Manager`, `newTestHandler`, `backup/backup.go`, `Handler`, `diagnostics/diagnostics.go`, `time.Time`, `testApp`?**
   _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Why does `gitFixture` connect `gitFixture` to `testing.T`, `context.Context`, `log/slog.Logger`, `go_pkg_os`, `Store`?**
-  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **Why does `UserIDFromContext()` connect `Errorf` to `net/http.ResponseWriter`, `net/http.Handler`, `context.Context`, `Handler`, `routerDeps`, `ErrorWithDetails`, `Handler`, `AuthMiddleware`, `Handler`, `response.go`, `User`, `HashToken`, `chat/chat.go`, `Store`, `go_pkg_github_com_wiselabz_wiselabz_internal_connector`, `net/http.Request`, `NewUser`, `rowScanner`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **What connects `github.com/WiseLabz/wiselabz`, `bulkSnoozeRequest`, `bulkSnoozeItemResult` to the rest of the system?**
   _568 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `testing.T` be split into smaller, more focused modules?**
