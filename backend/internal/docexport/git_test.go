@@ -189,7 +189,11 @@ func TestGitPerRevisionBotCatchUpAndRejectedPush(t *testing.T) {
 	if err := f.run(); err != nil {
 		t.Fatal(err)
 	}
-	f.save(id1, "second", "missing-user", "2026-01-01T01:00:00Z")
+	user := &store.User{Username: "alice", DisplayName: "Alice", Email: "alice@example.com"}
+	if err := f.store.CreateUser(f.ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	f.save(id1, "second", user.ID, "2026-01-01T01:00:00Z")
 	docexport.SetBeforePushForTest(f.exporter, func() { f.pushExternal("README.md", "human") })
 	if err := f.run(); err == nil {
 		t.Fatal("expected rejected push")
