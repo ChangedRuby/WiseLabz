@@ -1,0 +1,35 @@
+name: Save per-kind Go cache
+description: >
+  Saves the cache restored by go-cache-restore, on pushes to main only, and
+  deletes the older main caches with the same prefix first so the rolling
+  per-run keys don't fill the repository cache quota. PRs only restore, since
+  a PR's own caches are invisible to every other PR. The job needs
+  `actions: write` to delete caches.
+
+inputs:
+  prefix:
+    description: The prefix output of go-cache-restore.
+    required: true
+  paths:
+    description: The paths output of go-cache-restore.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Delete superseded Go caches
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PREFIX: ${{ inputs.prefix }}
+      run: |
+        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=refs/heads/main&key=$PREFIX&per_page=100" --jq '.actions_caches[].id' |
+          xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/{}"
+
+    - name: Save Go cache
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.paths }}
+        key: ${{ inputs.prefix }}${{ github.run_id }}

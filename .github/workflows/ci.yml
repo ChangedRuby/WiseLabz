@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -19,6 +22,9 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       compose: ${{ steps.filter.outputs.compose }}
+      race_shards: ${{ steps.shards.outputs.race }}
+      cover_shards: ${{ steps.shards.outputs.cover }}
+      postgres_shards: ${{ steps.shards.outputs.postgres }}
 
     steps:
       - name: Checkout
@@ -33,6 +39,8 @@ jobs:
               - 'backend/**'
               - 'go.work'
               - 'go.work.sum'
+              - 'scripts/ci/**'
+              - '.github/actions/**'
               - '.github/workflows/ci.yml'
             frontend:
               - 'web/**'
@@ -49,23 +57,35 @@ jobs:
               - 'scripts/compose-smoke.yml'
               - '.github/workflows/ci.yml'
 
+      # Shard names come from scripts/ci/test-shards.json, the single place
+      # shards are defined; see scripts/ci/test-shards.sh.
+      - name: Load test shard matrices
+        id: shards
+        run: |
+          for suite in race cover postgres; do
+            echo "$suite=$(scripts/ci/test-shards.sh matrix "$suite")" >> "$GITHUB_OUTPUT"
+          done
+
   lint-backend:
     name: Lint (Backend)
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    timeout-minutes: 5
+    # The shard check compiles test packages to list their tests.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: lint
 
       - name: Check gofmt
         run: |
@@ -83,23 +103,34 @@ jobs:
           working-directory: backend
           args: --timeout=3m
 
+      - name: Validate test shard definitions
+        run: scripts/ci/test-shards.sh check
+
+      - name: Save Go cache
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
+
   staticcheck:
     name: Staticcheck (Backend)
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: static
 
       # internal/web/dist/index.html is committed as an embed placeholder, so
       # vet/staticcheck work on a clean checkout without a built frontend.
@@ -111,27 +142,41 @@ jobs:
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
         working-directory: backend
 
+      - name: Save Go cache
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
+
   govulncheck:
     name: Govulncheck (Backend)
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: vuln
 
       - name: Run govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
         working-directory: backend
+
+      - name: Save Go cache
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
 
   lint-frontend:
     name: Lint (Frontend)
@@ -219,29 +264,84 @@ jobs:
           retention-days: 7
 
   test-backend:
-    name: Test (Backend)
+    name: Test (Backend, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.cover_shards) }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: cover
 
       - name: Run tests
         # -coverpkg=./... attributes coverage to the package under test, not just
         # the package the test file lives in: most handler packages here are
         # exercised through internal/api's router-level integration tests, so
         # per-package-only coverage (the previous default) undercounted them.
-        run: go test -coverpkg=./... -coverprofile=coverage.out ./...
+        # Shards write binary coverage data; the coverage job merges it.
+        run: |
+          mkdir -p "$RUNNER_TEMP/cov"
+          scripts/ci/test-shards.sh run cover "$SHARD" -coverpkg=./... -- -test.gocoverdir="$RUNNER_TEMP/cov"
+        env:
+          SHARD: ${{ matrix.shard }}
+
+      - name: Upload coverage data
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: covdata-${{ matrix.shard }}
+          path: ${{ runner.temp }}/cov
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Save Go cache
+        if: matrix.shard == 'other'
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
+
+  coverage:
+    name: Coverage (Backend)
+    runs-on: ubuntu-latest
+    needs: [changes, test-backend]
+    if: needs.changes.outputs.backend == 'true'
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        id: go
+        uses: ./.github/actions/go-cache-restore
+        with:
+          kind: cover
+
+      - name: Download coverage data
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: covdata-*
+          path: ${{ runner.temp }}/covdata
+
+      - name: Merge coverage
+        run: |
+          mkdir -p "$RUNNER_TEMP/covmerged"
+          go tool covdata merge -i="$(ls -d "$RUNNER_TEMP"/covdata/*/ | paste -sd, -)" -o "$RUNNER_TEMP/covmerged"
+          go tool covdata textfmt -i="$RUNNER_TEMP/covmerged" -o coverage.out
         working-directory: backend
 
       - name: Enforce coverage baseline
@@ -259,34 +359,56 @@ jobs:
           retention-days: 7
 
   test-backend-race:
-    name: Test (Backend, race)
+    name: Test (Backend, race, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    # Connector race tests can take over 8 minutes; allow setup and cleanup.
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.race_shards) }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # The core and connector shards compile different packages, so they keep
+      # separate build caches.
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: ${{ matrix.shard == 'core' && 'race-core' || 'race-connectors' }}
 
       - name: Run race-sensitive tests
-        run: go test -race ./internal/ws/... ./internal/notifications/... ./internal/sync/... ./internal/api/connectors/...
-        working-directory: backend
+        run: scripts/ci/test-shards.sh run race "$SHARD" -race
+        env:
+          SHARD: ${{ matrix.shard }}
+
+      - name: Save Go cache
+        if: matrix.shard == 'core' || matrix.shard == 'connectors-rest'
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
 
   test-backend-postgres:
-    name: Test (Backend, Postgres)
+    name: Test (Backend, Postgres, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.postgres_shards) }}
 
     services:
       postgres:
@@ -308,19 +430,20 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: postgres
 
       - name: Run store tests and migration parity against Postgres
-        run: go test -p 1 ./internal/store/...
-        working-directory: backend
+        run: scripts/ci/test-shards.sh run postgres "$SHARD" -p 1
         env:
+          SHARD: ${{ matrix.shard }}
           WISELABZ_TEST_POSTGRES_DSN: postgres://wiselabz:wiselabz@localhost:5432/wiselabz?sslmode=disable
 
+      # Runs in one shard only; every shard has its own fresh Postgres service.
       - name: Verify migrate up/status/verify on Postgres
+        if: matrix.shard == 'a-g'
         run: |
           go run ./cmd/migrate up
           go run ./cmd/migrate verify
@@ -329,16 +452,23 @@ jobs:
           WISELABZ_DB_DRIVER: postgres
           WISELABZ_DB_DSN: postgres://wiselabz:wiselabz@localhost:5432/wiselabz?sslmode=disable
 
+      - name: Save Go cache
+        if: matrix.shard == 'a-g'
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
+
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race, test-backend-postgres]
-    if: |
-      always() &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') &&
-      !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled')
+    # Independent of lint/tests: CI Status aggregates every result.
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout
@@ -357,11 +487,10 @@ jobs:
           key: node-modules-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        id: go
+        uses: ./.github/actions/go-cache-restore
         with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: backend/go.sum
+          kind: build
 
       - name: Install frontend dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -383,6 +512,12 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
+      - name: Save Go cache
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
+
   compose-smoke:
     name: Compose smoke
     runs-on: ubuntu-latest
@@ -400,7 +535,19 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, lint-backend, lint-frontend, test-frontend, test-backend, test-backend-race, test-backend-postgres, build, compose-smoke]
+    needs:
+      - changes
+      - lint-backend
+      - staticcheck
+      - govulncheck
+      - lint-frontend
+      - test-frontend
+      - test-backend
+      - coverage
+      - test-backend-race
+      - test-backend-postgres
+      - build
+      - compose-smoke
     if: always()
     timeout-minutes: 2
 
