@@ -124,6 +124,9 @@ func (c *Connector) Fetch(ctx context.Context, config map[string]any) (*connecto
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
+	if err := connector.CheckStatus(resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
 	snapshot := &connector.ServiceSnapshot{
 		ServiceName: "Custom: " + rawURL,

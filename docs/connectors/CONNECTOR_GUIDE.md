@@ -274,6 +274,11 @@ files need to change.
 
 ### 6. Write tests
 
+Add the connector to `TestConnectorFailureContract` in
+`backend/internal/connector/all/all_test.go`. The shared `connectortest` suite
+checks rejected credentials, deadlines, and malformed upstream responses in
+both `Validate` and `Fetch`.
+
 ```go
 func TestConnector_Fetch(t *testing.T) {
     // Start a test HTTP server that mimics your service's API

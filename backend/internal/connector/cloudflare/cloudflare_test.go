@@ -6,7 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/WiseLabz/wiselabz/internal/connector"
+	"github.com/WiseLabz/wiselabz/internal/connector/connectortest"
 )
+
+func TestFailureContract(t *testing.T) {
+	connectortest.Run(t, func(serverURL string) (connector.Connector, map[string]any, error) {
+		return &Connector{apiToken: "bad", accountID: "test", baseURL: serverURL, client: http.DefaultClient}, nil, nil
+	}, false)
+}
 
 func TestConnector_Fetch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
