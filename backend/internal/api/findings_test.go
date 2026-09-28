@@ -30,6 +30,7 @@ func seedQualityFinding(t *testing.T, app *testApp) *store.QualityFindingRecord 
 }
 
 func TestFindingsListSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 	finding := seedQualityFinding(t, app)
@@ -55,6 +56,7 @@ func TestFindingsListSuccess(t *testing.T) {
 }
 
 func TestFindingsGetSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 	finding := seedQualityFinding(t, app)
@@ -79,6 +81,7 @@ func TestFindingsGetSuccess(t *testing.T) {
 }
 
 func TestFindingsResolveRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 	finding := seedQualityFinding(t, app)
@@ -90,6 +93,7 @@ func TestFindingsResolveRoleBoundary(t *testing.T) {
 }
 
 func TestFindingsResolveSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	finding := seedQualityFinding(t, app)

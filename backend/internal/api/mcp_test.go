@@ -20,6 +20,7 @@ import (
 // call the tool handlers in-process, bypassing HTTP), this proves the full
 // wiring in routes_mcp.go and router.go actually works end to end.
 func TestMCPEndToEnd(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, _ := app.user(t, "viewer")
 	connectorID := "svc-1"
@@ -94,6 +95,7 @@ func TestMCPEndToEnd(t *testing.T) {
 // list_connectors call narrows to its allow-list over the real HTTP path,
 // same as a REST client hitting /api/connectors would see.
 func TestMCPConnectorRestrictedKey(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, _ := app.user(t, "viewer")
 	allowedID, deniedID := "svc-allowed", "svc-denied"

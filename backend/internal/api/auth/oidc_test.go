@@ -159,13 +159,15 @@ func TestOIDCProviderEnabled(t *testing.T) {
 	})
 }
 
+// The issuer is a closed local port: discovery fails at once without leaving
+// the machine, which is the uninitializable-provider case these subtests want.
 func TestGetOrInitOIDCProvider(t *testing.T) {
 	t.Run("provider not in cache", func(t *testing.T) {
 		th := newTestHandler(t)
 		cfg := &config.OIDCProvider{
 			ID:           "test-provider",
 			DisplayName:  "Test",
-			IssuerURL:    "https://example.com",
+			IssuerURL:    "http://127.0.0.1:1",
 			ClientID:     "test-client",
 			ClientSecret: "test-secret",
 		}
@@ -184,7 +186,7 @@ func TestGetOrInitOIDCProvider(t *testing.T) {
 		cfg := &config.OIDCProvider{
 			ID:           "cached-provider",
 			DisplayName:  "Cached",
-			IssuerURL:    "https://example.com",
+			IssuerURL:    "http://127.0.0.1:1",
 			ClientID:     "test-client",
 			ClientSecret: "test-secret",
 		}

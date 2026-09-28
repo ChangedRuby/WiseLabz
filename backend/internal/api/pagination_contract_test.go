@@ -43,6 +43,7 @@ var bareArrayListHandlers = map[string]string{
 // Hand-building {items,total,page,pageSize} is how the envelope drifted in the
 // first place, and a divergent envelope is invisible until a client breaks.
 func TestListHandlersUseSharedPaginationWriter(t *testing.T) {
+	t.Parallel()
 	root := "."
 	fset := token.NewFileSet()
 
@@ -105,6 +106,7 @@ func TestListHandlersUseSharedPaginationWriter(t *testing.T) {
 // TestBareArrayAllowlistIsCurrent keeps the allowlist from outliving its
 // entries: a handler listed there must still exist and still paginate.
 func TestBareArrayAllowlistIsCurrent(t *testing.T) {
+	t.Parallel()
 	found := map[string]bool{}
 	fset := token.NewFileSet()
 
@@ -151,6 +153,7 @@ var envelopeKeys = []string{"items", "pageSize"}
 // went through httputil.Paginate. WritePaginated is the only place the
 // envelope's shape should be decided.
 func TestNoHandRolledPaginationEnvelopes(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	var offenders []string
 

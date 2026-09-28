@@ -7,6 +7,7 @@ import (
 )
 
 func TestGetJobsRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -21,6 +22,7 @@ func TestGetJobsRoleBoundary(t *testing.T) {
 // api.NewRouter registers itself via InitBackupJob — without needing any
 // job to have actually run yet (#384).
 func TestGetJobsListsRegisteredJobs(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 

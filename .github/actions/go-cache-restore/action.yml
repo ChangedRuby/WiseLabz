@@ -7,7 +7,7 @@ description: >
 
 inputs:
   kind:
-    description: Cache kind, e.g. race-core, cover, lint.
+    description: Cache kind, e.g. race, cover, lint.
     required: true
 
 outputs:

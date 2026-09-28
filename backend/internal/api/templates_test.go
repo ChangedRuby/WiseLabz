@@ -65,6 +65,7 @@ func seedPreviewConnector(t *testing.T, app *testApp, name, category, connectorT
 }
 
 func TestTemplatesPreviewDoesNotCreateDoc(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -108,6 +109,7 @@ func TestTemplatesPreviewDoesNotCreateDoc(t *testing.T) {
 }
 
 func TestTemplatesPreviewAffectedConnectors(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -146,6 +148,7 @@ func TestTemplatesPreviewAffectedConnectors(t *testing.T) {
 }
 
 func TestTemplatesPreviewCapturesMissingSnapshot(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -176,6 +179,7 @@ func TestTemplatesPreviewCapturesMissingSnapshot(t *testing.T) {
 }
 
 func TestTemplatesPreviewZeroMatches(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -198,6 +202,7 @@ func TestTemplatesPreviewZeroMatches(t *testing.T) {
 }
 
 func TestTemplatesUpdateCreatesVersion(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization"})
@@ -226,6 +231,7 @@ func TestTemplatesUpdateCreatesVersion(t *testing.T) {
 }
 
 func TestTemplatesConcurrentUpdatesCreateDistinctVersions(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	template := seedTemplate(t, app, opToken, nil)
@@ -261,6 +267,7 @@ func TestTemplatesConcurrentUpdatesCreateDistinctVersions(t *testing.T) {
 }
 
 func TestTemplatesVersionsListAndGetRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -307,6 +314,7 @@ func TestTemplatesVersionsListAndGetRoleBoundary(t *testing.T) {
 }
 
 func TestTemplatesRestoreCreatesNewVersionAndUpdatesLiveContent(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	operatorID, opToken := app.user(t, "operator")
 	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization"})
@@ -348,6 +356,7 @@ func TestTemplatesRestoreCreatesNewVersionAndUpdatesLiveContent(t *testing.T) {
 }
 
 func TestTemplatesRestoreCurrentRevisionCreatesNewVersion(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	template := seedTemplate(t, app, opToken, nil)
@@ -366,6 +375,7 @@ func TestTemplatesRestoreCurrentRevisionCreatesNewVersion(t *testing.T) {
 }
 
 func TestTemplatesRestoreRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")

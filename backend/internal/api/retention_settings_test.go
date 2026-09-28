@@ -8,6 +8,7 @@ import (
 )
 
 func TestRetentionSettingsRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -23,6 +24,7 @@ func TestRetentionSettingsRoleBoundary(t *testing.T) {
 }
 
 func TestRetentionSettingsGetPutRoundTrip(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -74,6 +76,7 @@ func TestRetentionSettingsGetPutRoundTrip(t *testing.T) {
 }
 
 func TestRetentionSettingsValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -100,6 +103,7 @@ func TestRetentionSettingsValidation(t *testing.T) {
 }
 
 func TestRetentionSettingsUpdateRecordsAudit(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 

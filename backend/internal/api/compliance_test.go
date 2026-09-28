@@ -7,6 +7,7 @@ import (
 )
 
 func TestComplianceSchemaRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -17,6 +18,7 @@ func TestComplianceSchemaRequiresInstanceAdmin(t *testing.T) {
 }
 
 func TestComplianceSchemaReturnsConnectorAttributeCatalog(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, adminToken := app.user(t, "operator")
 

@@ -7,6 +7,7 @@ import (
 )
 
 func TestHealthReportsHealthy(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	rec := app.req(t, http.MethodGet, "/api/health", nil, "")
 	if rec.Code != http.StatusOK {
@@ -25,6 +26,7 @@ func TestHealthReportsHealthy(t *testing.T) {
 }
 
 func TestHealthProbeRoutes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	for _, path := range []string{"/healthz", "/readyz"} {
 		rec := app.req(t, http.MethodGet, path, nil, "")
@@ -35,6 +37,7 @@ func TestHealthProbeRoutes(t *testing.T) {
 }
 
 func TestVersionRouteIsNotExposed(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	rec := app.req(t, http.MethodGet, "/api/version", nil, "")
 	if rec.Code != http.StatusNotFound {

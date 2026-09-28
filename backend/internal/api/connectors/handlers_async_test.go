@@ -46,19 +46,22 @@ func (c *actionConnector) Fetch(ctx context.Context, cfg map[string]any) (*conne
 }
 
 func TestActionAsyncSync(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"single empty", "single fields", "single failure", "bulk", "all"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newTestHandler(t)
 			fields := make(chan []string, 1)
 			release := make(chan struct{})
 			done := make(completedSync, 1)
-			connector.Register(connector.TypeSchema{Type: "action_async", Name: "Async", Category: "networking"}, func(map[string]any) (connector.Connector, error) {
+			// Unique per subtest: the factory captures this subtest's channels.
+			typ := "action_async/" + t.Name()
+			connector.Register(connector.TypeSchema{Type: typ, Name: "Async", Category: "networking"}, func(map[string]any) (connector.Connector, error) {
 				return &actionConnector{fields: fields, release: release, fail: mode == "single failure"}, nil
 			})
 			h.SyncEngine = syncengine.NewEngine(h.Store, nil, nil, nil, h.Config.Encryption.Key)
 			h.SyncEngine.SetDocRegenerator(done)
 			c := seedCoverageConnector(t, h, "async", "networking")
-			if err := h.Store.UpdateConnector(context.Background(), c.ID, map[string]any{"type": "action_async", "enabled": true}); err != nil {
+			if err := h.Store.UpdateConnector(context.Background(), c.ID, map[string]any{"type": typ, "enabled": true}); err != nil {
 				t.Fatal(err)
 			}
 			user := apitest.NewUser(t, h.Store, "operator")
@@ -183,13 +186,15 @@ func (c *failingPushConnector) ConfigPush(context.Context, map[string]any, strin
 }
 
 func TestActionConfigPushFailures(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"pre", "push", "post"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newTestHandler(t)
 			fake := &failingPushConnector{mode: mode}
-			connector.Register(connector.TypeSchema{Type: "action_push", Name: "Push", Category: "networking"}, func(map[string]any) (connector.Connector, error) { return fake, nil })
+			typ := "action_push/" + t.Name() // unique per subtest: the factory captures fake
+			connector.Register(connector.TypeSchema{Type: typ, Name: "Push", Category: "networking"}, func(map[string]any) (connector.Connector, error) { return fake, nil })
 			c := seedCoverageConnector(t, h, "push", "networking")
-			if err := h.Store.UpdateConnector(context.Background(), c.ID, map[string]any{"type": "action_push"}); err != nil {
+			if err := h.Store.UpdateConnector(context.Background(), c.ID, map[string]any{"type": typ}); err != nil {
 				t.Fatal(err)
 			}
 			token, err := h.JWT.IssueElevation("", "connector.configPush")

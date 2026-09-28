@@ -172,9 +172,10 @@ func TestDoRequestErrorCases(t *testing.T) {
 }
 
 func TestDoRequestContextTimeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(1 * time.Second)
-		_, _ = w.Write([]byte(`{}`))
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// Hang until the client gives up, so the test waits for the
+		// client timeout only, not a fixed server-side sleep.
+		<-r.Context().Done()
 	}))
 	defer server.Close()
 

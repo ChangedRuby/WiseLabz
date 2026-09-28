@@ -23,7 +23,6 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       compose: ${{ steps.filter.outputs.compose }}
       race_shards: ${{ steps.shards.outputs.race }}
-      cover_shards: ${{ steps.shards.outputs.cover }}
       postgres_shards: ${{ steps.shards.outputs.postgres }}
 
     steps:
@@ -62,7 +61,7 @@ jobs:
       - name: Load test shard matrices
         id: shards
         run: |
-          for suite in race cover postgres; do
+          for suite in race postgres; do
             echo "$suite=$(scripts/ci/test-shards.sh matrix "$suite")" >> "$GITHUB_OUTPUT"
           done
 
@@ -264,7 +263,7 @@ jobs:
           retention-days: 7
 
   test-backend:
-    name: Test (Backend, ${{ matrix.shard }})
+    name: Test (Backend)
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
@@ -272,10 +271,6 @@ jobs:
     permissions:
       contents: read
       actions: write
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.changes.outputs.cover_shards) }}
 
     steps:
       - name: Checkout
@@ -288,60 +283,15 @@ jobs:
           kind: cover
 
       - name: Run tests
-        # -coverpkg=./... attributes coverage to the package under test, not just
+        # -coverpkg attributes coverage to the package under test, not just
         # the package the test file lives in: most handler packages here are
         # exercised through internal/api's router-level integration tests, so
         # per-package-only coverage (the previous default) undercounted them.
-        # Shards write binary coverage data; the coverage job merges it.
-        run: |
-          mkdir -p "$RUNNER_TEMP/cov"
-          scripts/ci/test-shards.sh run cover "$SHARD" -coverpkg=./... -- -test.gocoverdir="$RUNNER_TEMP/cov"
-        env:
-          SHARD: ${{ matrix.shard }}
-
-      - name: Upload coverage data
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: covdata-${{ matrix.shard }}
-          path: ${{ runner.temp }}/cov
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Save Go cache
-        if: matrix.shard == 'other'
-        uses: ./.github/actions/go-cache-save
-        with:
-          prefix: ${{ steps.go.outputs.prefix }}
-          paths: ${{ steps.go.outputs.paths }}
-
-  coverage:
-    name: Coverage (Backend)
-    runs-on: ubuntu-latest
-    needs: [changes, test-backend]
-    if: needs.changes.outputs.backend == 'true'
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        id: go
-        uses: ./.github/actions/go-cache-restore
-        with:
-          kind: cover
-
-      - name: Download coverage data
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: covdata-*
-          path: ${{ runner.temp }}/covdata
-
-      - name: Merge coverage
-        run: |
-          mkdir -p "$RUNNER_TEMP/covmerged"
-          go tool covdata merge -i="$(ls -d "$RUNNER_TEMP"/covdata/*/ | paste -sd, -)" -o "$RUNNER_TEMP/covmerged"
-          go tool covdata textfmt -i="$RUNNER_TEMP/covmerged" -o coverage.out
+        # coverpkg.sh lists ./... minus test-only helper packages. One job,
+        # not shards: after #401 the whole run takes about as long as the
+        # slowest former shard and matches its merged coverage (see
+        # docs/TESTING.md).
+        run: go test -coverpkg="$(../scripts/ci/coverpkg.sh)" -coverprofile=coverage.out ./...
         working-directory: backend
 
       - name: Enforce coverage baseline
@@ -357,6 +307,12 @@ jobs:
           name: coverage
           path: backend/coverage.out
           retention-days: 7
+
+      - name: Save Go cache
+        uses: ./.github/actions/go-cache-save
+        with:
+          prefix: ${{ steps.go.outputs.prefix }}
+          paths: ${{ steps.go.outputs.paths }}
 
   test-backend-race:
     name: Test (Backend, race, ${{ matrix.shard }})
@@ -376,13 +332,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # The core and connector shards compile different packages, so they keep
-      # separate build caches.
+      # One shard since #401 (see docs/TESTING.md); the matrix stays so the
+      # suite can be re-split in scripts/ci/test-shards.json alone.
       - name: Setup Go
         id: go
         uses: ./.github/actions/go-cache-restore
         with:
-          kind: ${{ matrix.shard == 'core' && 'race-core' || 'race-connectors' }}
+          kind: race
 
       - name: Run race-sensitive tests
         run: scripts/ci/test-shards.sh run race "$SHARD" -race
@@ -390,7 +346,6 @@ jobs:
           SHARD: ${{ matrix.shard }}
 
       - name: Save Go cache
-        if: matrix.shard == 'core' || matrix.shard == 'connectors-rest'
         uses: ./.github/actions/go-cache-save
         with:
           prefix: ${{ steps.go.outputs.prefix }}
@@ -559,7 +514,6 @@ jobs:
       - lint-frontend
       - test-frontend
       - test-backend
-      - coverage
       - test-backend-race
       - test-backend-postgres
       - build

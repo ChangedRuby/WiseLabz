@@ -14,6 +14,7 @@ import (
 )
 
 func TestConnectorsListSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -32,6 +33,7 @@ func TestConnectorsListSuccess(t *testing.T) {
 }
 
 func TestConnectorsSchemaMarksStubTypes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -62,6 +64,7 @@ func TestConnectorsSchemaMarksStubTypes(t *testing.T) {
 }
 
 func TestConnectorsCreateRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -75,6 +78,7 @@ func TestConnectorsCreateRoleBoundary(t *testing.T) {
 }
 
 func TestConnectorsCreateValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -97,6 +101,7 @@ func TestConnectorsCreateValidation(t *testing.T) {
 }
 
 func TestConnectorsCreateSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -125,6 +130,7 @@ func TestConnectorsCreateSuccess(t *testing.T) {
 }
 
 func TestConnectorsUpdateOwner(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	c := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com", Owner: "Platform"}
@@ -146,6 +152,7 @@ func TestConnectorsUpdateOwner(t *testing.T) {
 }
 
 func TestConnectorsUpdateRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -157,6 +164,7 @@ func TestConnectorsUpdateRoleBoundary(t *testing.T) {
 }
 
 func TestConnectorsUpdateScheduleSeconds(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -210,6 +218,7 @@ func TestConnectorsUpdateScheduleSeconds(t *testing.T) {
 }
 
 func TestConnectorsSyncsHistory(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerUserID, viewerToken := app.user(t, "viewer")
 
@@ -271,6 +280,7 @@ func TestConnectorsSyncsHistory(t *testing.T) {
 }
 
 func TestConnectorRestartPreview(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -418,6 +428,7 @@ func TestConnectorRestartPreview(t *testing.T) {
 }
 
 func TestConnectorRestartNonDryRunOnMissingConnectorReturnsNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	app.connectorGrant(t, opUserID, "unknown", "operator")
@@ -435,6 +446,7 @@ func TestConnectorRestartNonDryRunOnMissingConnectorReturnsNotFound(t *testing.T
 }
 
 func TestConnectorRestartPreviewSnapshotErrors(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -474,6 +486,7 @@ func TestConnectorRestartPreviewSnapshotErrors(t *testing.T) {
 }
 
 func TestConnectorsDeleteElevationBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -536,6 +549,7 @@ func TestConnectorsDeleteElevationBoundary(t *testing.T) {
 // operator grant on the connector gets a per-item "forbidden" outcome, not a
 // blanket 403 — see the matching TestAlertsBulkSnoozeRoleBoundary comment.
 func TestConnectorsBulkSyncAndReauthRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -565,6 +579,7 @@ func TestConnectorsBulkSyncAndReauthRoleBoundary(t *testing.T) {
 // own distinct "connector.bulkRestart" action string (not per-item, and not
 // reusable from a "connector.restart" token).
 func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -647,6 +662,7 @@ func TestConnectorsBulkRestartElevationBoundary(t *testing.T) {
 }
 
 func TestConnectorsListPermissionPagination(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 	_, emptyToken := app.user(t, "operator")

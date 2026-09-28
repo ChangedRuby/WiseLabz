@@ -20,6 +20,7 @@ func seedMaintenanceConnector(t *testing.T, app *testApp) *store.ConnectorRecord
 }
 
 func TestOpenMaintenanceWindowRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	conn := seedMaintenanceConnector(t, app)
@@ -35,6 +36,7 @@ func TestOpenMaintenanceWindowRoleBoundary(t *testing.T) {
 // connector.delete/start/stop, opening a maintenance window succeeds for an
 // operator with no X-Elevation-Token at all — it's reversible and time-boxed.
 func TestOpenMaintenanceWindowNoElevationRequired(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	conn := seedMaintenanceConnector(t, app)
@@ -67,6 +69,7 @@ func TestOpenMaintenanceWindowNoElevationRequired(t *testing.T) {
 }
 
 func TestOpenMaintenanceWindowInvalidDuration(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	conn := seedMaintenanceConnector(t, app)
@@ -80,6 +83,7 @@ func TestOpenMaintenanceWindowInvalidDuration(t *testing.T) {
 }
 
 func TestOpenMaintenanceWindowConnectorNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	app.connectorGrant(t, opUserID, "does-not-exist", "operator")
@@ -95,6 +99,7 @@ func TestOpenMaintenanceWindowConnectorNotFound(t *testing.T) {
 // on the connector (default deny), not just any authenticated user — the
 // name predates #240's per-connector permissions.
 func TestGetMaintenanceWindowAnyAuthenticatedUser(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	viewerUserID, viewerToken := app.user(t, "viewer")
@@ -130,6 +135,7 @@ func TestGetMaintenanceWindowAnyAuthenticatedUser(t *testing.T) {
 }
 
 func TestCloseMaintenanceWindowRoleBoundaryAndNoElevation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	viewerUserID, viewerToken := app.user(t, "viewer")
@@ -182,6 +188,7 @@ func TestCloseMaintenanceWindowRoleBoundaryAndNoElevation(t *testing.T) {
 }
 
 func TestListActiveMaintenanceWindowsEndpoint(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	viewerUserID, viewerToken := app.user(t, "viewer")

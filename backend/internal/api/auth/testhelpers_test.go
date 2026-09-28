@@ -3,10 +3,8 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/config"
 	"github.com/WiseLabz/wiselabz/internal/crypto"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 )
 
 // testHandler wires a Handler to a fresh, migrated SQLite database, matching
@@ -32,18 +31,12 @@ type testHandler struct {
 func newTestHandler(t *testing.T) *testHandler {
 	t.Helper()
 
-	dir := t.TempDir()
-	db, err := sql.Open("sqlite", "file:"+dir+"/test.db?cache=shared")
+	db, err := sql.Open("sqlite", "file:"+storetest.MigratedSQLite(t)+"?cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 
 	s := store.New(db, "sqlite")
 	if err := s.Init(context.Background(), "admin-seed-pw-1234"); err != nil {

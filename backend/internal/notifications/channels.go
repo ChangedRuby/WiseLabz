@@ -16,11 +16,12 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/connector"
 )
 
-// defaultNtfyServer is used when a channel's config omits "url".
-const defaultNtfyServer = "https://ntfy.sh"
+// defaultNtfyServer is used when a channel's config omits "url". It and telegramAPIBase are vars
+// only so tests can point them at a local server instead of the public services.
+var defaultNtfyServer = "https://ntfy.sh"
 
 // telegramAPIBase is the Telegram Bot API base URL; the bot token (channel secret) is appended.
-const telegramAPIBase = "https://api.telegram.org/bot"
+var telegramAPIBase = "https://api.telegram.org/bot"
 
 // smtpTimeout bounds SMTP dial, handshake and send.
 const smtpTimeout = 10 * time.Second

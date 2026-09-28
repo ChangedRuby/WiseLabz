@@ -27,6 +27,7 @@ func seedChangeWithSeverity(t *testing.T, app *testApp, severity string) *store.
 }
 
 func TestChangesListSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	seedChange(t, app)
@@ -38,6 +39,7 @@ func TestChangesListSuccess(t *testing.T) {
 }
 
 func TestChangesAcknowledgeRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	c := seedChange(t, app)
@@ -49,6 +51,7 @@ func TestChangesAcknowledgeRoleBoundary(t *testing.T) {
 }
 
 func TestChangesAcknowledgeSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	c := seedChange(t, app)
@@ -69,6 +72,7 @@ func TestChangesAcknowledgeSuccess(t *testing.T) {
 }
 
 func TestChangesDismissNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -82,6 +86,7 @@ func TestChangesDismissNotFound(t *testing.T) {
 // grant on the change's connector gets a per-item "forbidden" outcome, not a
 // blanket 403 — see the matching TestAlertsBulkSnoozeRoleBoundary comment.
 func TestChangesBulkResolveRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	c := seedChange(t, app)
@@ -111,6 +116,7 @@ func TestChangesBulkResolveRoleBoundary(t *testing.T) {
 // own re-check, and a nonexistent id) must not abort — each item gets its own
 // outcome, and only the successful item is acknowledged and audited.
 func TestChangesBulkResolvePartialFailure(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -199,6 +205,7 @@ func TestChangesBulkResolvePartialFailure(t *testing.T) {
 }
 
 func TestChangesBulkResolveInvalidStatus(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	c := seedChange(t, app)
@@ -211,6 +218,7 @@ func TestChangesBulkResolveInvalidStatus(t *testing.T) {
 }
 
 func TestChangesBulkResolveEmptyIDs(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -222,6 +230,7 @@ func TestChangesBulkResolveEmptyIDs(t *testing.T) {
 }
 
 func TestChangesBulkResolveRejectsTooManyIDs(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	ids := make([]string, 501)

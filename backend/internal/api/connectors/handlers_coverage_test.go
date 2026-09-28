@@ -25,6 +25,7 @@ func seedCoverageConnector(t *testing.T, h *Handler, name, category string) *sto
 }
 
 func TestListFiltersGrantsBeforePagination(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	user := apitest.NewUser(t, h.Store, "viewer")
 	for i, role := range []string{"", "viewer", "operator", "viewer"} {
@@ -76,6 +77,7 @@ func TestListFiltersGrantsBeforePagination(t *testing.T) {
 }
 
 func TestGetRequiresGrantEvenForInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	c := seedCoverageConnector(t, h, "Private", "networking")
 	for _, tc := range []struct {
@@ -114,6 +116,7 @@ func TestGetRequiresGrantEvenForInstanceAdmin(t *testing.T) {
 }
 
 func TestSyncsLimitAndIsolation(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	c := seedCoverageConnector(t, h, "History", "networking")
 	other := seedCoverageConnector(t, h, "Other", "networking")
@@ -157,6 +160,7 @@ func TestSyncsLimitAndIsolation(t *testing.T) {
 }
 
 func TestDataSnapshotPaths(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, data string
 		status     int
@@ -209,6 +213,7 @@ func TestDataSnapshotPaths(t *testing.T) {
 }
 
 func TestConnectorStoreErrorPaths(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	for name, fn := range map[string]http.HandlerFunc{"list": h.List, "get": h.Get, "create": h.Create, "update": h.Update, "delete": h.Delete, "test": h.Test, "health": h.Health, "data": h.Data, "syncs": h.Syncs, "removal": h.RemovalImpact, "config fields": h.ConfigFields, "toggle": h.ToggleEnabled} {
 		t.Run(name, func(t *testing.T) {

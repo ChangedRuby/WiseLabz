@@ -47,6 +47,7 @@ func (a *testApp) operatorWithPermission(t *testing.T, canManage bool) (userID, 
 }
 
 func TestDashboardLayoutPerUserIsolation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, aliceToken := app.user(t, "viewer")
 	_, bobToken := app.user(t, "viewer")
@@ -85,6 +86,7 @@ func TestDashboardLayoutPerUserIsolation(t *testing.T) {
 }
 
 func TestDashboardAdminDefaultPermissionGate(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, plainOperatorToken := app.operatorWithPermission(t, false)
 	_, permittedOperatorToken := app.operatorWithPermission(t, true)
@@ -125,6 +127,7 @@ func TestDashboardAdminDefaultPermissionGate(t *testing.T) {
 }
 
 func TestDashboardResetRestoresAdminDefault(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, userToken := app.user(t, "viewer")
 
@@ -170,6 +173,7 @@ func TestDashboardResetRestoresAdminDefault(t *testing.T) {
 }
 
 func TestDashboardOverviewDaysWindow(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 

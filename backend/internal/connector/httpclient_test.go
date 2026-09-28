@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/WiseLabz/wiselabz/internal/httpx"
 )
 
 type timeoutError struct{}
@@ -67,6 +69,12 @@ func TestCheckStatus(t *testing.T) {
 		if err := CheckStatus(tt.status, []byte("body")); !tt.check(err) {
 			t.Errorf("CheckStatus(%d) = %v", tt.status, err)
 		}
+	}
+}
+
+func TestRetryBackoffOnlyShortenedUnderTest(t *testing.T) {
+	if retryPolicy.BaseDelay <= 0 || retryPolicy.BaseDelay >= httpx.DefaultBaseDelay {
+		t.Fatalf("retryPolicy.BaseDelay = %v, want a positive delay below httpx.DefaultBaseDelay inside test binaries", retryPolicy.BaseDelay)
 	}
 }
 

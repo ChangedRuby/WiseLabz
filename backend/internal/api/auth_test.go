@@ -26,6 +26,7 @@ func loginRefreshCookie(t *testing.T, app *testApp, username string) *http.Cooki
 }
 
 func TestLoginExpiresLegacyRefreshCookiePath(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "alice", "correct-password", "viewer")
 	rec := app.req(t, http.MethodPost, "/api/auth/login", map[string]any{"username": "alice", "password": "correct-password"}, "")
@@ -56,6 +57,7 @@ func seedLocalUser(t *testing.T, app *testApp, username, password, role string) 
 }
 
 func TestLoginValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	tests := []struct {
@@ -76,6 +78,7 @@ func TestLoginValidation(t *testing.T) {
 }
 
 func TestLoginWrongPassword(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "alice", "correct-password", "viewer")
 
@@ -86,6 +89,7 @@ func TestLoginWrongPassword(t *testing.T) {
 }
 
 func TestLoginSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "alice", "correct-password", "viewer")
 
@@ -96,6 +100,7 @@ func TestLoginSuccess(t *testing.T) {
 }
 
 func TestLoginCreatesLocalSessionWithEmptyAuthProvider(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	user := seedLocalUser(t, app, "alice", "correct-password", "viewer")
 
@@ -121,6 +126,7 @@ func TestLoginCreatesLocalSessionWithEmptyAuthProvider(t *testing.T) {
 }
 
 func TestRefreshRotatesOnlyActiveSession(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "alice", "correct-password", "viewer")
 	first := loginRefreshCookie(t, app, "alice")
@@ -141,6 +147,7 @@ func TestRefreshRotatesOnlyActiveSession(t *testing.T) {
 }
 
 func TestRefreshRejectsAccessToken(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, access := app.user(t, "viewer")
 	rec := app.req(t, http.MethodPost, "/api/auth/refresh", map[string]any{"refreshToken": access}, "")
@@ -150,6 +157,7 @@ func TestRefreshRejectsAccessToken(t *testing.T) {
 }
 
 func TestElevationCannotCrossOperators(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerID, _ := app.user(t, "operator")
 	_, otherToken := app.user(t, "operator")
@@ -162,6 +170,7 @@ func TestElevationCannotCrossOperators(t *testing.T) {
 }
 
 func TestUpdateMeSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 
@@ -172,6 +181,7 @@ func TestUpdateMeSuccess(t *testing.T) {
 }
 
 func TestChangePasswordWrongCurrentPassword(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 	_ = userID
@@ -185,6 +195,7 @@ func TestChangePasswordWrongCurrentPassword(t *testing.T) {
 }
 
 func TestUsersRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -204,6 +215,7 @@ func TestUsersRoleBoundary(t *testing.T) {
 }
 
 func TestUsersCreateValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -214,6 +226,7 @@ func TestUsersCreateValidation(t *testing.T) {
 }
 
 func TestUsersCreateSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -224,6 +237,7 @@ func TestUsersCreateSuccess(t *testing.T) {
 }
 
 func TestUsersDeleteElevationBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	targetID, _ := app.user(t, "viewer")
@@ -257,6 +271,7 @@ func TestUsersDeleteElevationBoundary(t *testing.T) {
 }
 
 func TestUsersResetPasswordElevationBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	targetID, _ := app.user(t, "viewer")
@@ -280,6 +295,7 @@ func TestUsersResetPasswordElevationBoundary(t *testing.T) {
 }
 
 func TestLogoutSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "testuser", "correct-password", "viewer")
 	cookie := loginRefreshCookie(t, app, "testuser")
@@ -301,6 +317,7 @@ func TestLogoutSuccess(t *testing.T) {
 }
 
 func TestElevateSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "alice", "correct-password", "viewer")
 	_, token := app.user(t, "viewer")
@@ -323,6 +340,7 @@ func TestElevateSuccess(t *testing.T) {
 }
 
 func TestElevateWrongPassword(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 
@@ -336,6 +354,7 @@ func TestElevateWrongPassword(t *testing.T) {
 }
 
 func TestProvidersEmpty(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 
@@ -363,6 +382,7 @@ func TestProvidersEmpty(t *testing.T) {
 }
 
 func TestMeSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 
@@ -384,6 +404,7 @@ func TestMeSuccess(t *testing.T) {
 }
 
 func TestListSessionsSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "sessionuser", "correct-password", "viewer")
 
@@ -414,6 +435,7 @@ func TestListSessionsSuccess(t *testing.T) {
 }
 
 func TestDeleteSessionSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	seedLocalUser(t, app, "deluser", "correct-password", "viewer")
 
@@ -452,6 +474,7 @@ func TestDeleteSessionSuccess(t *testing.T) {
 }
 
 func TestDeleteSessionNotOwner(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Create and login user1
@@ -502,6 +525,7 @@ func TestDeleteSessionNotOwner(t *testing.T) {
 }
 
 func TestListUsersAsAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -521,6 +545,7 @@ func TestListUsersAsAdmin(t *testing.T) {
 }
 
 func TestListUsersAsNonAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -531,6 +556,7 @@ func TestListUsersAsNonAdmin(t *testing.T) {
 }
 
 func TestUpdateUserSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	targetID, _ := app.user(t, "viewer")
@@ -550,6 +576,7 @@ func TestUpdateUserSuccess(t *testing.T) {
 }
 
 func TestUpdateUserAsNonAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	targetID, _ := app.user(t, "viewer")
@@ -561,6 +588,7 @@ func TestUpdateUserAsNonAdmin(t *testing.T) {
 }
 
 func TestOIDCCallbackStateMismatch(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	rec := app.req(t, http.MethodPost, "/api/auth/oidc/callback", map[string]any{
@@ -574,6 +602,7 @@ func TestOIDCCallbackStateMismatch(t *testing.T) {
 }
 
 func TestOIDCCallbackNoProvider(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Create a valid state token (this mimics what a real OIDC flow would do)

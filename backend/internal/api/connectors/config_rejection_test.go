@@ -14,6 +14,7 @@ import (
 // schema declares a Pattern/MinLength/MaxLength/Options rule today, so
 // connector.ValidateConfig cannot be made to fail over the wire.
 func TestWriteConfigRejection(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		err       error

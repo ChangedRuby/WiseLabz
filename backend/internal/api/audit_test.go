@@ -12,6 +12,7 @@ import (
 )
 
 func TestAuditListRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -25,6 +26,7 @@ func TestAuditListRoleBoundary(t *testing.T) {
 // end-to-end: creating a connector must leave a matching row retrievable
 // through the audit list endpoint, attributed to the acting operator.
 func TestConnectorCreateProducesAuditRecord(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -74,6 +76,7 @@ func TestConnectorCreateProducesAuditRecord(t *testing.T) {
 }
 
 func TestAuditListFiltersByAction(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -108,6 +111,7 @@ func TestAuditListFiltersByAction(t *testing.T) {
 }
 
 func TestElevationAttemptAuditThroughHTTPRoutes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -168,6 +172,7 @@ func TestElevationAttemptAuditThroughHTTPRoutes(t *testing.T) {
 }
 
 func TestAlertResolveProducesAuditRecord(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -213,6 +218,7 @@ func TestAlertResolveProducesAuditRecord(t *testing.T) {
 }
 
 func TestAlertDismissProducesAuditRecord(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -258,6 +264,7 @@ func TestAlertDismissProducesAuditRecord(t *testing.T) {
 }
 
 func TestAlertSnoozeProducesAuditRecord(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -303,6 +310,7 @@ func TestAlertSnoozeProducesAuditRecord(t *testing.T) {
 }
 
 func TestFindingResolveProducesAuditRecord(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	finding := seedQualityFinding(t, app)
@@ -348,6 +356,7 @@ func TestFindingResolveProducesAuditRecord(t *testing.T) {
 }
 
 func TestAuditExportRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -371,6 +380,7 @@ func seedAuditRecords(t *testing.T, app *testApp, action, targetType string, n i
 }
 
 func TestAuditExportJSON(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	seedAuditRecords(t, app, "export.test", "widget", 3)
@@ -399,6 +409,7 @@ func TestAuditExportJSON(t *testing.T) {
 }
 
 func TestAuditExportCSV(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	seedAuditRecords(t, app, "export.csv.test", "widget", 2)
@@ -438,6 +449,7 @@ func TestAuditExportCSV(t *testing.T) {
 }
 
 func TestAuditExportInvalidFormat(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -448,6 +460,7 @@ func TestAuditExportInvalidFormat(t *testing.T) {
 }
 
 func TestAuditExportFilters(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	seedAuditRecords(t, app, "export.filter.match", "gadget", 2)

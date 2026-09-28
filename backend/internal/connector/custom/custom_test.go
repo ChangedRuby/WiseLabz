@@ -57,9 +57,10 @@ func TestValidateSurfacesAuthError(t *testing.T) {
 }
 
 func TestValidateAndFetchTimeoutError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(2 * time.Second)
-		_, _ = w.Write([]byte(`{}`))
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// Hang until the client gives up, so the test waits for the
+		// client timeout only, not a fixed server-side sleep.
+		<-r.Context().Done()
 	}))
 	defer server.Close()
 
@@ -70,7 +71,7 @@ func TestValidateAndFetchTimeoutError(t *testing.T) {
 		t.Errorf("Validate() error = %v, want *connector.TimeoutError", err)
 	}
 
-	err = c.Validate(context.Background(), map[string]any{"url": server.URL})
+	_, err = c.Fetch(context.Background(), map[string]any{"url": server.URL})
 	if !errors.As(err, &timeoutErr) {
 		t.Errorf("Fetch() error = %v, want *connector.TimeoutError", err)
 	}

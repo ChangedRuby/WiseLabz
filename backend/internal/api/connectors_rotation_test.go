@@ -11,6 +11,7 @@ import (
 )
 
 func TestConnectorsCreateRotationValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -42,6 +43,7 @@ func TestConnectorsCreateRotationValidation(t *testing.T) {
 }
 
 func TestConnectorsUpdateRotationValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
@@ -70,6 +72,7 @@ func TestConnectorsUpdateRotationValidation(t *testing.T) {
 // TestConnectorsUpdateRotationFieldsRoleBoundary reuses the #240 per-connector
 // role model: a viewer grant must not be able to change rotation settings.
 func TestConnectorsUpdateRotationFieldsRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerUserID, viewerToken := app.user(t, "viewer")
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
@@ -88,6 +91,7 @@ func TestConnectorsUpdateRotationFieldsRoleBoundary(t *testing.T) {
 // travel through create, GET, update (including clearing via explicit null),
 // and that secretRotatedAt is present and read-only (never accepted on write).
 func TestConnectorsRotationFieldsRoundTrip(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -166,6 +170,7 @@ func TestConnectorsRotationFieldsRoundTrip(t *testing.T) {
 // create -> update HTTP path: only an actual secret change bumps
 // secret_rotated_at, not a rename or a resubmitted-identical secret.
 func TestConnectorsSecretChangeBumpsSecretRotatedAtViaAPI(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -226,6 +231,7 @@ func TestConnectorsSecretChangeBumpsSecretRotatedAtViaAPI(t *testing.T) {
 // existing connector.update discipline (docs/AUDIT.md) applies unchanged to
 // rotation fields.
 func TestConnectorUpdateAuditNeverLeaksSecretValue(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	conn := &store.ConnectorRecord{Name: "svc", Category: "virtualization", Type: "proxmox", URL: "https://example.com"}

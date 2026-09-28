@@ -4,10 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -16,25 +14,19 @@ import (
 	"github.com/WiseLabz/wiselabz/internal/api/apitest"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 )
 
-// newTestStore spins up a fresh, migrated in-memory sqlite store, mirroring
-// the pattern used by internal/store's own tests (see doc_test.go).
+// newTestStore opens a fresh copy of the migrated sqlite template (see
+// storetest), so each test gets its own database without re-running
+// migrations.
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	dir := t.TempDir()
-	dsn := "file:" + dir + "/test.db?cache=shared"
-
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", "file:"+storetest.MigratedSQLite(t)+"?cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 
 	return store.New(db, "sqlite")
 }

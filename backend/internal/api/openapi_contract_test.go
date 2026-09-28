@@ -96,6 +96,7 @@ func specOperations(t *testing.T) map[string]bool {
 }
 
 func TestOpenAPIMatchesRouter(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	routes, ok := app.Router.(chi.Routes)
 	if !ok {
@@ -149,6 +150,7 @@ func TestOpenAPIMatchesRouter(t *testing.T) {
 }
 
 func TestAPIV1AliasServesSameHandlers(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	for _, path := range []string{"/api/health", "/api/v1/health"} {
 		rec := httptest.NewRecorder()
@@ -168,6 +170,7 @@ func TestAPIV1AliasServesSameHandlers(t *testing.T) {
 }
 
 func TestOpenAPIHealthProbeRoutes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	for _, path := range []string{"/healthz", "/readyz"} {
 		rec := httptest.NewRecorder()

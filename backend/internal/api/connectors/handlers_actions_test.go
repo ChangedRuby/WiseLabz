@@ -31,6 +31,7 @@ func actionResponse(t *testing.T, fn http.HandlerFunc, r *http.Request, status i
 }
 
 func TestActionMaintenanceLifecycle(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	user := apitest.NewUser(t, h.Store, "operator")
 	visible := seedCoverageConnector(t, h, "visible", "networking")
@@ -97,6 +98,7 @@ func TestActionMaintenanceLifecycle(t *testing.T) {
 }
 
 func TestActionPermissions(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	c := seedCoverageConnector(t, h, "permissions", "networking")
 	user := apitest.NewUser(t, h.Store, "viewer")
@@ -141,6 +143,7 @@ func TestActionPermissions(t *testing.T) {
 }
 
 func TestActionLifecyclePreviews(t *testing.T) {
+	t.Parallel()
 	for _, verb := range []string{"restart", "start", "stop"} {
 		for _, data := range []string{"", `{`, `{"serviceName":"lab"}`, `{"serviceName":"lab","dependencies":[{"serviceName":"database"}]}`} {
 			t.Run(verb+"/"+data, func(t *testing.T) {
@@ -192,6 +195,7 @@ func TestActionLifecyclePreviews(t *testing.T) {
 }
 
 func TestActionStoreFailures(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	for name, fn := range map[string]http.HandlerFunc{
 		"sync": h.Sync, "bulk sync": h.BulkSync, "bulk restart": h.BulkRestart, "bulk reauth": h.BulkReauth,
@@ -213,6 +217,7 @@ func TestActionStoreFailures(t *testing.T) {
 }
 
 func TestActionBulkGrantBoundaries(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	user := apitest.NewUser(t, h.Store, "viewer")
 	viewer := seedCoverageConnector(t, h, "viewer", "networking")
@@ -247,6 +252,7 @@ func TestActionBulkGrantBoundaries(t *testing.T) {
 }
 
 func TestActionInvalidConnectorConfig(t *testing.T) {
+	t.Parallel()
 	for _, cfg := range []string{"{", "{}"} {
 		h := newTestHandler(t)
 		c := seedCoverageConnector(t, h, "invalid", "networking")

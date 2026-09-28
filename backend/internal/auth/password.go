@@ -2,11 +2,24 @@ package auth
 
 import (
 	"fmt"
+	"testing"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-const bcryptCost = 12
+// productionBcryptCost is the work factor every non-test binary uses.
+const productionBcryptCost = 12
+
+// bcryptCost drops to bcrypt.MinCost inside `go test` binaries only: each
+// cost-12 hash takes ~165ms and nearly every handler test hashes at least
+// twice (admin seed + test user), which dominated backend test time.
+// testing.Testing() is false in every production build.
+var bcryptCost = func() int {
+	if testing.Testing() {
+		return bcrypt.MinCost
+	}
+	return productionBcryptCost
+}()
 
 // maxPasswordBytes is bcrypt's input limit.
 const maxPasswordBytes = 72

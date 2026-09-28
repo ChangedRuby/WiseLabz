@@ -11,6 +11,7 @@ import (
 )
 
 func TestWebSocketTicketFlow(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "viewer")
 	srv := httptest.NewServer(app.Router)

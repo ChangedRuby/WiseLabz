@@ -6,14 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 	_ "modernc.org/sqlite"
 )
 
@@ -101,18 +100,13 @@ func (f *fakeConnector) Validate(_ context.Context, _ map[string]any) error { re
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	dir := t.TempDir()
-	dsn := "file:" + dir + "/test.db?cache=shared"
+	dsn := "file:" + storetest.MigratedSQLite(t) + "?cache=shared"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() }) //nolint:errcheck
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 	return store.New(db, "sqlite")
 }
 

@@ -36,6 +36,7 @@ func init() {
 }
 
 func TestConnectorsCreateRejectsMalformedConfig(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -50,6 +51,7 @@ func TestConnectorsCreateRejectsMalformedConfig(t *testing.T) {
 }
 
 func TestConnectorsCreateAcceptsValidConfig(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -64,6 +66,7 @@ func TestConnectorsCreateAcceptsValidConfig(t *testing.T) {
 }
 
 func TestConnectorsCreateRejectsInvalidEnum(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -78,6 +81,7 @@ func TestConnectorsCreateRejectsInvalidEnum(t *testing.T) {
 }
 
 func TestConnectorsUpdateRejectsMalformedConfig(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -103,6 +107,7 @@ func TestConnectorsUpdateRejectsMalformedConfig(t *testing.T) {
 }
 
 func TestConnectorsSyncAcceptsFieldsHint(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		body any
@@ -138,7 +143,10 @@ func TestConnectorsSyncAcceptsFieldsHint(t *testing.T) {
 
 func waitForSyncRuns(t *testing.T, app *testApp, connectorID string, want int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// The deadline is only a hang guard: polling returns as soon as the runs
+	// land. It must stay generous because -race plus parallel tests can slow a
+	// real sync well past a couple of seconds on small CI/dev machines.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		runs, err := app.Store.ListSyncRunsByConnector(context.Background(), connectorID, want)
 		if err == nil && len(runs) >= want {

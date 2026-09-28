@@ -488,13 +488,16 @@ func TestDocLockRenewalByHolder(t *testing.T) {
 		t.Fatalf("CreateDoc() error: %v", err)
 	}
 
-	lock1, err := s.AcquireDocLock(ctx, d.ID, "user-1")
-	if err != nil {
+	if _, err := s.AcquireDocLock(ctx, d.ID, "user-1"); err != nil {
 		t.Fatalf("first AcquireDocLock() error: %v", err)
 	}
-	first := lock1.ExpiresAt
-
-	time.Sleep(1100 * time.Millisecond)
+	// Pull the expiry earlier but keep the lock live, so the renewal below
+	// must go through the holder branch (not the expired one) and visibly
+	// push ExpiresAt forward without sleeping past RFC3339's 1s resolution.
+	first := time.Now().UTC().Add(time.Minute).Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `UPDATE doc_locks SET expires_at = ? WHERE doc_id = ?`, first, d.ID); err != nil {
+		t.Fatalf("update expires_at: %v", err)
+	}
 
 	lock2, err := s.AcquireDocLock(ctx, d.ID, "user-1")
 	if err != nil {

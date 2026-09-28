@@ -9,6 +9,7 @@ import (
 )
 
 func TestAPIKeyRoutesEndToEnd(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	expiresAt := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
@@ -79,6 +80,7 @@ func TestAPIKeyRoutesEndToEnd(t *testing.T) {
 }
 
 func TestAPIKeyCreateRejectsInvalidExpiryAndEmptyName(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 	for name, body := range map[string]any{

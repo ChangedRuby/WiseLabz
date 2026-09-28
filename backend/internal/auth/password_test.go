@@ -36,3 +36,12 @@ func TestHashTooShort(t *testing.T) {
 		t.Error("expected error for password < 8 chars")
 	}
 }
+
+func TestBcryptCostOnlyLoweredUnderTest(t *testing.T) {
+	if productionBcryptCost != 12 {
+		t.Fatalf("productionBcryptCost = %d, want 12", productionBcryptCost)
+	}
+	if bcryptCost == productionBcryptCost {
+		t.Fatal("bcryptCost should be lowered inside test binaries")
+	}
+}

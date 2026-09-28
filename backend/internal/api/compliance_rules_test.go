@@ -22,6 +22,7 @@ func validComplianceRule() map[string]any {
 }
 
 func TestComplianceRulesCRUDAndAdminGate(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, adminToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")
@@ -102,6 +103,7 @@ func badRegexMessage(t *testing.T, pattern string) string {
 // Each case runs against all three routes that validate a rule body, since
 // Create, Update and Test share one rejection path and must not drift apart.
 func TestComplianceRuleValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "operator")
 

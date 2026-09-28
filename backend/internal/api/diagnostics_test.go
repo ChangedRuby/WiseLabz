@@ -10,6 +10,7 @@ import (
 )
 
 func TestDiagnosticsRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -20,6 +21,7 @@ func TestDiagnosticsRoleBoundary(t *testing.T) {
 }
 
 func TestDiagnosticsRedactsSecrets(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -60,6 +62,7 @@ func TestDiagnosticsRedactsSecrets(t *testing.T) {
 }
 
 func TestDiagnosticsIncludesHealthVersionsAndFailures(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 

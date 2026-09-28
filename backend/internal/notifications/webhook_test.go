@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/crypto"
@@ -153,5 +154,16 @@ func TestDispatcher_SignsWithEncryptedChannelSecret(t *testing.T) {
 	}
 	if want := signWebhook("known-secret", gotTS, gotBody); gotSig != want {
 		t.Errorf("signature = %q, want %q", gotSig, want)
+	}
+}
+
+// A request whose context deadline has passed reports a timeout without the
+// URL, which can carry a secret (Telegram puts the bot token in the path).
+func TestDoHTTPRequest_DeadlineRedactsURL(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	err := doHTTPRequest(ctx, "https://api.telegram.org/botsecret-token/sendMessage", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "request timed out") || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("doHTTPRequest() error = %v, want a redacted timeout", err)
 	}
 }

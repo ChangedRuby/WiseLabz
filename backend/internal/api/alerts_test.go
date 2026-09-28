@@ -22,6 +22,7 @@ func seedAlert(t *testing.T, app *testApp) *store.AlertRecord {
 }
 
 func TestAlertsListSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	seedAlert(t, app)
@@ -33,6 +34,7 @@ func TestAlertsListSuccess(t *testing.T) {
 }
 
 func TestAlertsResolveRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	a := seedAlert(t, app)
@@ -44,6 +46,7 @@ func TestAlertsResolveRoleBoundary(t *testing.T) {
 }
 
 func TestAlertsResolveSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -64,6 +67,7 @@ func TestAlertsResolveSuccess(t *testing.T) {
 }
 
 func TestAlertsSnoozeValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -88,6 +92,7 @@ func TestAlertsSnoozeValidation(t *testing.T) {
 }
 
 func TestAlertsSnoozeSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -104,6 +109,7 @@ func TestAlertsSnoozeSuccess(t *testing.T) {
 // blanket 403 — bulk endpoints report per-ID authorization since a batch can
 // span connectors the caller has different access to on each.
 func TestAlertsBulkSnoozeRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	a := seedAlert(t, app)
@@ -129,6 +135,7 @@ func TestAlertsBulkSnoozeRoleBoundary(t *testing.T) {
 }
 
 func TestAlertsBulkSnoozeValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	a := seedAlert(t, app)
@@ -154,6 +161,7 @@ func TestAlertsBulkSnoozeValidation(t *testing.T) {
 }
 
 func TestAlertsBulkSnoozeRejectsTooManyIDs(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	ids := make([]string, 501) // no connector grant needed: rejected before authorization
@@ -171,6 +179,7 @@ func TestAlertsBulkSnoozeRejectsTooManyIDs(t *testing.T) {
 // and a nonexistent id) must not abort — each item gets its own outcome, and
 // only the successful item is snoozed and audited.
 func TestAlertsBulkSnoozePartialFailure(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 
@@ -247,6 +256,7 @@ func TestAlertsBulkSnoozePartialFailure(t *testing.T) {
 // just the recent one under ?days=1, with no days param defaulting back to
 // "everything" for back-compat with the full Alerts page.
 func TestAlertsListDaysWindow(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerUserID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerUserID, "svc-1", "viewer")

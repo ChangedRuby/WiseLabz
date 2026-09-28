@@ -58,6 +58,7 @@ func snapshotResponse(t *testing.T, handler http.Handler, r *http.Request, want 
 }
 
 func TestSnapshotsViewerAndCursor(t *testing.T) {
+	t.Parallel()
 	h, id, _, _ := snapshotFixture(t)
 	user := apitest.NewUser(t, h.Store, "viewer")
 	path := "/api/connectors/" + id + "/snapshots?cursor=&limit=1"
@@ -85,6 +86,7 @@ func TestSnapshotsViewerAndCursor(t *testing.T) {
 }
 
 func TestSnapshotOwnershipAndFullShape(t *testing.T) {
+	t.Parallel()
 	h, id, from, _ := snapshotFixture(t)
 	other := &store.ConnectorRecord{Name: "Other", Type: "custom", Category: "networking", URL: "https://example.com"}
 	if err := h.Store.CreateConnector(context.Background(), other); err != nil {
@@ -105,6 +107,7 @@ func TestSnapshotOwnershipAndFullShape(t *testing.T) {
 }
 
 func TestSnapshotDiffValidationOwnershipAndAudit(t *testing.T) {
+	t.Parallel()
 	h, id, from, to := snapshotFixture(t)
 	other := &store.ConnectorRecord{Name: "Other", Type: "custom", Category: "networking", URL: "https://example.com"}
 	if err := h.Store.CreateConnector(context.Background(), other); err != nil {

@@ -15,6 +15,7 @@ import (
 )
 
 func TestBackupExportRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -25,6 +26,7 @@ func TestBackupExportRoleBoundary(t *testing.T) {
 }
 
 func TestBackupExportRedactsSecrets(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -54,6 +56,7 @@ func TestBackupExportRedactsSecrets(t *testing.T) {
 }
 
 func TestBackupImportBadVersion(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -64,6 +67,7 @@ func TestBackupImportBadVersion(t *testing.T) {
 }
 
 func TestBackupImportMalformedJSON(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -76,6 +80,7 @@ func TestBackupImportMalformedJSON(t *testing.T) {
 }
 
 func TestBackupImportRollbackNotVisibleViaAPI(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -101,6 +106,7 @@ func TestBackupImportRollbackNotVisibleViaAPI(t *testing.T) {
 }
 
 func TestBackupScheduleRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -113,6 +119,7 @@ func TestBackupScheduleRoleBoundary(t *testing.T) {
 }
 
 func TestBackupUpdateScheduleRejectsInvalidCron(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -125,6 +132,7 @@ func TestBackupUpdateScheduleRejectsInvalidCron(t *testing.T) {
 }
 
 func TestBackupUpdateScheduleRejectsEmptyCron(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -137,6 +145,7 @@ func TestBackupUpdateScheduleRejectsEmptyCron(t *testing.T) {
 }
 
 func TestBackupUpdateScheduleAcceptsValidCronAndPersists(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -165,6 +174,7 @@ func TestBackupUpdateScheduleAcceptsValidCronAndPersists(t *testing.T) {
 }
 
 func TestBackupImportRejectsOversizedBody(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	body := bytes.Repeat([]byte(" "), system.MaxImportBytes+1)
@@ -177,6 +187,7 @@ func TestBackupImportRejectsOversizedBody(t *testing.T) {
 }
 
 func TestBackupExportImportRoundTrip(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 

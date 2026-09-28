@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,13 +63,37 @@ func TestSendNtfyChannel_MissingTopic(t *testing.T) {
 	}
 }
 
+// fakePublicAPI points *base (defaultNtfyServer or telegramAPIBase) at a local server for the
+// rest of the test, so tests never reach the real public service, and returns a func reporting
+// the request paths it received. It swaps a package var, so its callers must not run in parallel.
+func fakePublicAPI(t *testing.T, base *string, suffix string) func() []string {
+	t.Helper()
+	connector.AllowLoopbackForTest(t)
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		paths = append(paths, r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+	old := *base
+	*base = srv.URL + suffix
+	t.Cleanup(func() { *base = old })
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(paths)
+	}
+}
+
 func TestSendNtfyChannel_DefaultsToNtfySh(t *testing.T) {
-	// No network call is expected to succeed (ntfy.sh isn't reachable/allowed in this sandbox),
-	// but the URL construction path must not error out before the request is attempted; a
-	// "topic not configured" error would indicate the default-server branch was skipped.
-	err := sendNtfyChannel(context.Background(), channelCfg{Config: map[string]any{"topic": "t"}}, "", "T", "M")
-	if err != nil && strings.Contains(err.Error(), "topic not configured") {
-		t.Errorf("expected default server to be used, got %v", err)
+	paths := fakePublicAPI(t, &defaultNtfyServer, "")
+	if err := sendNtfyChannel(context.Background(), channelCfg{Config: map[string]any{"topic": "t"}}, "", "T", "M"); err != nil {
+		t.Fatalf("sendNtfyChannel: %v", err)
+	}
+	if got := paths(); !slices.Equal(got, []string{"/t"}) {
+		t.Errorf("default server got requests %q, want [/t]", got)
 	}
 }
 

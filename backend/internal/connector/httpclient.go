@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"testing"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/httpx"
@@ -13,6 +14,19 @@ import (
 
 // DefaultHTTPTimeout bounds a whole connector request, retries included.
 const DefaultHTTPTimeout = 30 * time.Second
+
+// retryPolicy is httpx's default backoff (250ms, then 500ms) in every
+// non-test binary. Inside `go test` binaries only it drops to 1ms: connector
+// tests exercise real 502/503/504 responses and refused dials, and the
+// production backoff made each such case sleep 0.75s. Requests are still
+// retried, so the retry path stays covered; httpx's own tests check the
+// delays themselves with explicit policies.
+var retryPolicy = func() httpx.RetryPolicy {
+	if testing.Testing() {
+		return httpx.RetryPolicy{BaseDelay: time.Millisecond, MaxDelay: time.Millisecond}
+	}
+	return httpx.RetryPolicy{}
+}()
 
 // HTTPClientOptions configures NewHTTPClient. The zero value verifies TLS.
 type HTTPClientOptions struct {
@@ -36,7 +50,7 @@ func NewHTTPClient(o HTTPClientOptions) *http.Client {
 	})
 	return &http.Client{
 		Timeout:       DefaultHTTPTimeout,
-		Transport:     httpx.RetryTransport(transport, httpx.RetryPolicy{}),
+		Transport:     httpx.RetryTransport(transport, retryPolicy),
 		Jar:           o.Jar,
 		CheckRedirect: httpx.NoRedirect,
 	}

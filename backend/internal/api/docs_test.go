@@ -19,6 +19,7 @@ func seedDoc(t *testing.T, app *testApp) *store.DocRecord {
 }
 
 func TestDocsListAndGetSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	d := seedDoc(t, app)
@@ -36,6 +37,7 @@ func TestDocsListAndGetSuccess(t *testing.T) {
 }
 
 func TestDocsSaveRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	d := seedDoc(t, app)
@@ -47,6 +49,7 @@ func TestDocsSaveRoleBoundary(t *testing.T) {
 }
 
 func TestDocsSaveValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
@@ -59,6 +62,7 @@ func TestDocsSaveValidation(t *testing.T) {
 }
 
 func TestDocsSaveSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
@@ -79,6 +83,7 @@ func TestDocsSaveSuccess(t *testing.T) {
 }
 
 func TestDocLockRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	d := seedDoc(t, app)
@@ -95,6 +100,7 @@ func TestDocLockRoleBoundary(t *testing.T) {
 }
 
 func TestDocLockHappyPath(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opID, opToken := app.user(t, "operator")
 	d := seedDoc(t, app)
@@ -148,6 +154,7 @@ func TestDocLockHappyPath(t *testing.T) {
 }
 
 func TestDocLockConflict(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	user1, op1Token := app.user(t, "operator")
 	user2, op2Token := app.user(t, "operator")

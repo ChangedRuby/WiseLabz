@@ -11,6 +11,7 @@ import (
 )
 
 func TestAttentionEmptyList(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -35,6 +36,7 @@ func TestAttentionEmptyList(t *testing.T) {
 }
 
 func TestAttentionMergesAlertsAndFindings(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerID, "svc-1", "viewer")
@@ -105,6 +107,7 @@ func TestAttentionMergesAlertsAndFindings(t *testing.T) {
 }
 
 func TestAttentionSeverityOrdering(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerID, "svc-1", "viewer")
@@ -161,6 +164,7 @@ func TestAttentionSeverityOrdering(t *testing.T) {
 }
 
 func TestAttentionRunbookLinkForAlert(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerID, "svc-1", "viewer")
@@ -196,6 +200,7 @@ func TestAttentionRunbookLinkForAlert(t *testing.T) {
 }
 
 func TestAttentionRunbookLinkForFinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerID, "svc-1", "viewer")
@@ -236,6 +241,7 @@ func TestAttentionRunbookLinkForFinding(t *testing.T) {
 // down to just the two recent items under ?days=1, with no days param
 // defaulting back to "everything" for back-compat.
 func TestAttentionDaysWindow(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	viewerID, viewerToken := app.user(t, "viewer")
 	app.connectorGrant(t, viewerID, "svc-1", "viewer")
@@ -313,6 +319,7 @@ func TestAttentionDaysWindow(t *testing.T) {
 }
 
 func TestAttentionAuthenticatedAccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -323,6 +330,7 @@ func TestAttentionAuthenticatedAccess(t *testing.T) {
 }
 
 func TestAttentionHidesUngrantedConnectors(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	seedAlert(t, app)

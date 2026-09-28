@@ -32,6 +32,7 @@ func createDNSResolverConnector(t *testing.T, h *Handler, url string) string {
 }
 
 func TestStartStopHandler(t *testing.T) {
+	t.Parallel()
 	createConnectorProxmox := func(t *testing.T, h *Handler, url string) string {
 		t.Helper()
 		body := `{"name":"Test","category":"virtualization","type":"proxmox","url":"` + url + `","config":{"token_id":"u@pam!t","token_secret":"secret"}}`
@@ -175,6 +176,7 @@ func TestStartStopHandler(t *testing.T) {
 }
 
 func TestConfigFieldsHandler(t *testing.T) {
+	t.Parallel()
 	t.Run("not found", func(t *testing.T) {
 		h := newTestHandler(t)
 		req := httptest.NewRequest(http.MethodGet, "/api/connectors/missing/config-fields", nil)
@@ -223,6 +225,7 @@ func itoa(n int) string {
 }
 
 func TestConfigPushHandler(t *testing.T) {
+	t.Parallel()
 	pushReq := func(id, entityRef, fieldKey string, value, previousValue any, token string) *http.Request {
 		payload := map[string]any{"entityRef": entityRef, "fieldKey": fieldKey, "value": value, "previousValue": previousValue}
 		b, _ := json.Marshal(payload)

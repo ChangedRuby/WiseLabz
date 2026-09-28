@@ -90,6 +90,7 @@ func bulkReq(method, path, body string) *http.Request {
 }
 
 func TestBulkSync(t *testing.T) {
+	t.Parallel()
 	registerBulkFakeConnector(t)
 
 	t.Run("empty ids returns 400", func(t *testing.T) {
@@ -170,6 +171,7 @@ func TestBulkSync(t *testing.T) {
 }
 
 func TestBulkReauth(t *testing.T) {
+	t.Parallel()
 	registerBulkFakeConnector(t)
 
 	t.Run("empty ids returns 400", func(t *testing.T) {
@@ -232,6 +234,7 @@ func TestBulkReauth(t *testing.T) {
 }
 
 func TestBulkRestart(t *testing.T) {
+	t.Parallel()
 	registerBulkFakeConnector(t)
 
 	t.Run("empty ids returns 400", func(t *testing.T) {

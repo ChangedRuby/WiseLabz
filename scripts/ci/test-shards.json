@@ -1,71 +1,7 @@
 {
   "race": {
-    "core": {
-      "packages": ["./internal/ws/...", "./internal/notifications/...", "./internal/sync/..."]
-    },
-    "connectors-1": {
-      "packages": ["./internal/api/connectors/..."],
-      "tests": [
-        "TestActionLifecyclePreviews",
-        "TestBulkReauth",
-        "TestActionMaintenanceLifecycle",
-        "TestSnapshotsViewerAndCursor",
-        "TestUpdate",
-        "TestRemovalImpactSuccess",
-        "TestCreateRotationValidationDetails",
-        "TestUpdateEndpointChangeRequiresInstanceAdmin",
-        "TestSchema"
-      ]
-    },
-    "connectors-2": {
-      "packages": ["./internal/api/connectors/..."],
-      "tests": [
-        "TestActionAsyncSync",
-        "TestBulkSync",
-        "TestDataSnapshotPaths",
-        "TestActionPermissions",
-        "TestListFiltersGrantsBeforePagination",
-        "TestCreateValidationDetails",
-        "TestSyncAllSuccess",
-        "TestGetNotFoundMatchesSpec",
-        "TestSyncsLimitAndIsolation",
-        "TestSnapshotOwnershipAndFullShape",
-        "TestCreate"
-      ]
-    },
-    "connectors-3": {
-      "packages": ["./internal/api/connectors/..."],
-      "tests": [
-        "TestRestart",
-        "TestGetRequiresGrantEvenForInstanceAdmin",
-        "TestActionInvalidConnectorConfig",
-        "TestConfigFieldsHandler",
-        "TestSnapshotDiffValidationOwnershipAndAudit",
-        "TestTestSuccess",
-        "TestDelete",
-        "TestListEmpty",
-        "TestConnectorStoreErrorPaths",
-        "TestConnectorSuccessPayloadsMatchSpec",
-        "TestToggleEnabledNotFound"
-      ]
-    },
-    "connectors-rest": {
-      "packages": ["./internal/api/connectors/..."],
-      "rest": true
-    }
-  },
-  "cover": {
-    "api-a-c": {
-      "packages": ["./internal/api"],
-      "pattern": "^Test[A-C]"
-    },
-    "api-rest": {
-      "packages": ["./internal/api"],
-      "rest": true
-    },
-    "other": {
-      "packages": ["./..."],
-      "exclude": ["./internal/api"]
+    "all": {
+      "packages": ["./internal/ws/...", "./internal/notifications/...", "./internal/sync/...", "./internal/api/..."]
     }
   },
   "postgres": {

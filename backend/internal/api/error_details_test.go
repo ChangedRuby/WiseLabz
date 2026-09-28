@@ -22,6 +22,7 @@ func complianceRule(mut func(map[string]any)) map[string]any {
 // handler cannot quietly drop back to a detail-less 400. It also asserts the
 // response still matches the Error schema in docs/openapi.yaml.
 func TestValidationErrorDetails(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		role    string

@@ -30,6 +30,26 @@ func TestVectorCacheBoundedLRU(t *testing.T) {
 	}
 }
 
+// A second put for a cached key replaces its vector in place and refreshes
+// its recency, rather than adding a duplicate entry.
+func TestVectorCachePutExistingKeyUpdatesInPlace(t *testing.T) {
+	c := newVectorCache(2)
+	g := c.generation()
+	c.put(vectorKey{"d", "a"}, []float32{1}, g)
+	c.put(vectorKey{"d", "b"}, []float32{2}, g)
+	c.put(vectorKey{"d", "a"}, []float32{7}, g) // a is now most recent
+	if v, ok := c.get(vectorKey{"d", "a"}); !ok || len(v) != 1 || v[0] != 7 {
+		t.Fatalf("a = %v, %v; want [7], true", v, ok)
+	}
+	if c.ll.Len() != 2 || len(c.entries) != 2 {
+		t.Fatalf("duplicate entry: %d/%d", c.ll.Len(), len(c.entries))
+	}
+	c.put(vectorKey{"d", "c"}, []float32{3}, g)
+	if _, ok := c.get(vectorKey{"d", "b"}); ok {
+		t.Fatal("expected b evicted as least recent")
+	}
+}
+
 func TestVectorCacheInvalidateDocAndStalePut(t *testing.T) {
 	c := newVectorCache(10)
 	g := c.generation()

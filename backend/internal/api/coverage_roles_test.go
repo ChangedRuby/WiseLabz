@@ -10,6 +10,7 @@ import (
 
 // Exercise the production router: handlers alone cannot enforce route middleware.
 func TestTemplateMutationRoleMatrix(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, admin := app.user(t, "operator")
 	_, viewer := app.user(t, "viewer")
@@ -42,6 +43,7 @@ func TestTemplateMutationRoleMatrix(t *testing.T) {
 }
 
 func TestConnectorGrantRouteMatrix(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	c := &store.ConnectorRecord{Name: "Private", Category: "networking", Type: "custom", URL: "https://example.com", ConfigData: "{}"}
 	if err := app.Store.CreateConnector(context.Background(), c); err != nil {

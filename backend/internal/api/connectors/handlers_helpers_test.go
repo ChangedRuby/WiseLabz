@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseScheduleUpdates(t *testing.T) {
+	t.Parallel()
 	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
 
 	// onlyField asserts errs is a single FieldError on the named field and

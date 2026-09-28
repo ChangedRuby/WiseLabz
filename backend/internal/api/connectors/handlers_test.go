@@ -29,6 +29,7 @@ func newTestHandler(t *testing.T) *Handler {
 }
 
 func TestListEmpty(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors", nil)
 	rr := httptest.NewRecorder()
@@ -42,6 +43,7 @@ func TestListEmpty(t *testing.T) {
 }
 
 func TestGetNotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors/missing", nil)
 	req.SetPathValue("id", "missing")
@@ -53,6 +55,7 @@ func TestGetNotFound(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	t.Run("invalid json", func(t *testing.T) {
@@ -85,6 +88,7 @@ func TestCreate(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/connectors",
@@ -135,6 +139,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	t.Run("missing elevation token", func(t *testing.T) {
@@ -160,6 +165,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestToggleEnabledNotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodPut, "/api/connectors/missing/enabled", strings.NewReader(`{"enabled":false}`))
 	req.SetPathValue("id", "missing")
@@ -171,6 +177,7 @@ func TestToggleEnabledNotFound(t *testing.T) {
 }
 
 func TestToggleEnabledSuccess(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	// Create a connector first
@@ -205,6 +212,7 @@ func TestToggleEnabledSuccess(t *testing.T) {
 }
 
 func TestSchema(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors/schema", nil)
 	rr := httptest.NewRecorder()
@@ -228,6 +236,7 @@ func TestSchema(t *testing.T) {
 }
 
 func TestTestSuccess(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	// Create a connector
@@ -263,6 +272,7 @@ func TestTestSuccess(t *testing.T) {
 }
 
 func TestTestNotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/connectors/missing/test", nil)
 	req.SetPathValue("id", "missing")
@@ -274,6 +284,7 @@ func TestTestNotFound(t *testing.T) {
 }
 
 func TestRemovalImpactSuccess(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	// Create a connector
@@ -308,6 +319,7 @@ func TestRemovalImpactSuccess(t *testing.T) {
 }
 
 func TestRemovalImpactNotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors/missing/removal-impact", nil)
 	req.SetPathValue("id", "missing")
@@ -319,6 +331,7 @@ func TestRemovalImpactNotFound(t *testing.T) {
 }
 
 func TestRestart(t *testing.T) {
+	t.Parallel()
 	createConnector := func(t *testing.T, h *Handler, typ, url string) string {
 		t.Helper()
 		body := `{"name":"Test","category":"virtualization","type":"` + typ + `","url":"` + url + `","config":{"token_id":"u@pam!t","token_secret":"secret"}}`
@@ -475,6 +488,7 @@ func TestRestart(t *testing.T) {
 }
 
 func TestSyncAllSuccess(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/sync", nil)
 	rr := httptest.NewRecorder()
@@ -492,6 +506,7 @@ func TestSyncAllSuccess(t *testing.T) {
 }
 
 func TestUpdateEndpointChangeRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	createRR := httptest.NewRecorder()

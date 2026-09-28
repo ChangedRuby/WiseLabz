@@ -1,0 +1,81 @@
+name: Test profile
+
+# On-demand backend test profile (#401): where test time goes, per package,
+# test and subtest, in the three modes CI runs. Each mode runs three times so
+# the summary can report medians; see docs/TESTING.md for how to read it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    name: Profile (${{ matrix.mode }}, run ${{ matrix.run }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, race, cover]
+        run: [1, 2, 3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Restores the cache the matching CI job saves on main (normal mode has
+      # no CI counterpart, so it builds cold). Nothing is saved from here.
+      - name: Setup Go
+        uses: ./.github/actions/go-cache-restore
+        with:
+          kind: ${{ matrix.mode == 'normal' && 'profile' || matrix.mode }}
+
+      - name: Profile
+        env:
+          MODE: ${{ matrix.mode }}
+          PROFILE_TOP: "40"
+        run: |
+          case "$MODE" in
+          normal) args=(./...) ;;
+          # The packages the race CI job runs, not ./...: that is what it costs.
+          race) mapfile -t args < <(jq -r '[.race[].packages[]] | unique | .[]' scripts/ci/test-shards.json)
+                args=(-race "${args[@]}") ;;
+          cover) args=("-coverpkg=$(scripts/ci/coverpkg.sh)" -coverprofile=/dev/null ./...) ;;
+          esac
+          scripts/ci/test-shards.sh profile "$PWD/profile-$MODE.json" "${args[@]}" | tee "profile-$MODE.txt"
+          { echo '```'; cat "profile-$MODE.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload profile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: profile-${{ matrix.mode }}-${{ matrix.run }}
+          path: profile-${{ matrix.mode }}.*
+          retention-days: 14
+
+  summary:
+    name: Median wall clock
+    needs: profile
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download profiles
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: profile-*
+          path: profiles
+
+      - name: Summarize
+        run: |
+          {
+            echo '| mode | runs (s) | median (s) |'
+            echo '|---|---|---|'
+            for mode in normal race cover; do
+              mapfile -t secs < <(cat profiles/profile-"$mode"-*/profile-"$mode".txt 2>/dev/null |
+                sed -n 's/^== wall clock: \([0-9]*\)s.*/\1/p' | sort -n)
+              ((${#secs[@]})) || continue
+              echo "| $mode | ${secs[*]} | ${secs[$(( ${#secs[@]} / 2 ))]} |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"

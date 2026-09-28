@@ -27,6 +27,7 @@ func seedRunbook(t *testing.T, app *testApp, targetType, targetValue string) *st
 }
 
 func TestRunbooksListSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	seedRunbook(t, app, "change_type", "vm.created")
@@ -38,6 +39,7 @@ func TestRunbooksListSuccess(t *testing.T) {
 }
 
 func TestRunbooksListFilterByChangeType(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 	seedRunbook(t, app, "change_type", "vm.created")
@@ -64,6 +66,7 @@ func TestRunbooksListFilterByChangeType(t *testing.T) {
 }
 
 func TestRunbooksListRejectsBothFilters(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -74,6 +77,7 @@ func TestRunbooksListRejectsBothFilters(t *testing.T) {
 }
 
 func TestRunbooksCreateRoleBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -85,6 +89,7 @@ func TestRunbooksCreateRoleBoundary(t *testing.T) {
 }
 
 func TestRunbooksCreateSuccess(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -96,6 +101,7 @@ func TestRunbooksCreateSuccess(t *testing.T) {
 }
 
 func TestRunbooksGetNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -106,6 +112,7 @@ func TestRunbooksGetNotFound(t *testing.T) {
 }
 
 func TestRunbooksUpdateNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -116,6 +123,7 @@ func TestRunbooksUpdateNotFound(t *testing.T) {
 }
 
 func TestRunbooksDeleteNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -177,6 +185,7 @@ func createRunbookWithStep(t *testing.T, app *testApp, opToken, targetValue, con
 }
 
 func TestRunbookExecuteStepForbiddenWithoutOperatorGrant(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	viewerID, viewerToken := app.user(t, "viewer")
@@ -192,6 +201,7 @@ func TestRunbookExecuteStepForbiddenWithoutOperatorGrant(t *testing.T) {
 }
 
 func TestRunbookExecuteStepMissingElevationToken(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	userID, userToken := app.user(t, "viewer")
@@ -207,6 +217,7 @@ func TestRunbookExecuteStepMissingElevationToken(t *testing.T) {
 }
 
 func TestRunbookExecuteStepWrongActionTokenRejected(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	userID, userToken := app.user(t, "viewer")
@@ -226,6 +237,7 @@ func TestRunbookExecuteStepWrongActionTokenRejected(t *testing.T) {
 }
 
 func TestRunbookExecuteStepDryRunWithoutTokenWorks(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	userID, userToken := app.user(t, "viewer")
@@ -243,6 +255,7 @@ func TestRunbookExecuteStepDryRunWithoutTokenWorks(t *testing.T) {
 }
 
 func TestRunbookExecuteStepSuccessWritesConnectorAuditWithRunbookContext(t *testing.T) {
+	t.Parallel()
 	connector.AllowLoopbackForTest(t)
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
@@ -293,6 +306,7 @@ func TestRunbookExecuteStepSuccessWritesConnectorAuditWithRunbookContext(t *test
 }
 
 func TestRunbookExecuteStepFailureCreatesAlert(t *testing.T) {
+	t.Parallel()
 	connector.AllowLoopbackForTest(t)
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
@@ -332,6 +346,7 @@ func TestRunbookExecuteStepFailureCreatesAlert(t *testing.T) {
 }
 
 func TestRunbookStepsCanExecuteReflectsOperatorGrant(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	userID, userToken := app.user(t, "viewer")
@@ -366,6 +381,7 @@ func TestRunbookStepsCanExecuteReflectsOperatorGrant(t *testing.T) {
 }
 
 func TestRunbooksCreateStepValidationErrors(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	connID := seedProxmoxConnector(t, app, "https://example.com")
@@ -390,6 +406,7 @@ func TestRunbooksCreateStepValidationErrors(t *testing.T) {
 }
 
 func TestRunbooksAuditRows(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	connID := seedProxmoxConnector(t, app, "https://example.com")
@@ -439,6 +456,7 @@ func TestRunbooksAuditRows(t *testing.T) {
 }
 
 func TestRunbooksFindingCheckTypeAccepted(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	_, viewerToken := app.user(t, "viewer")

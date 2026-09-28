@@ -42,6 +42,7 @@ func fieldMsgs(e errorEnvelope) map[string]string {
 }
 
 func TestCreateValidationDetails(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/connectors", strings.NewReader(`{"name":"svc"}`))
@@ -70,6 +71,7 @@ func TestCreateValidationDetails(t *testing.T) {
 }
 
 func TestCreateRotationValidationDetails(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	body := `{"name":"svc","category":"virtualization","type":"custom","url":"https://svc.example.com",` +
@@ -90,6 +92,7 @@ func TestCreateRotationValidationDetails(t *testing.T) {
 }
 
 func TestUpdateValidationDetails(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	createRR := httptest.NewRecorder()
@@ -123,6 +126,7 @@ func TestUpdateValidationDetails(t *testing.T) {
 // TestGetNotFoundMatchesSpec covers a non-validation response through the same
 // helper, so the 404 envelope is held to the spec too.
 func TestGetNotFoundMatchesSpec(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/connectors/missing", nil)
@@ -169,6 +173,7 @@ func createForSpec(t *testing.T, h *Handler, body string) string {
 // The fresh connector exercises the empty-string case and the second one, with
 // an operator-set expiry, the populated case.
 func TestConnectorSuccessPayloadsMatchSpec(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(t)
 
 	id := createForSpec(t, h, `{"name":"Spec","category":"virtualization","type":"custom","url":"https://spec.example.com"}`)

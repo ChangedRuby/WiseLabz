@@ -20,6 +20,10 @@
 #   test-shards.sh run <suite> <shard> [go test flags...] [-- test binary args...]
 #   test-shards.sh check                              validate the definition file
 #   test-shards.sh timings <suite> [go test flags...] per-test durations, slowest first
+#   test-shards.sh profile <out.json> [go test flags...] [packages...]
+#                                                     ranked packages, tests and
+#                                                     subtests; raw go test -json
+#                                                     saved to <out.json>
 #
 # Re-balancing: run `timings` (with the same flags CI uses, e.g. -race), then
 # greedily assign the slowest tests to the currently lightest shard and update
@@ -132,10 +136,38 @@ cmd_timings() {
 		sort -rn
 }
 
+# jq over a go test -json stream: "<elapsed>\t<package>\t<test>" per finished
+# package (test "-") or test, slowest first is left to sort.
+profile_rows='select(.Action == "pass" or .Action == "fail") | select(.Elapsed != null) | "\(.Elapsed)\t\(.Package)\t\(.Test // "-")"'
+
+cmd_profile() {
+	local out=$1 flags=() pkgs=() top=${PROFILE_TOP:-25}
+	shift
+	while (($#)); do
+		if [[ $1 == -* ]]; then flags+=("$1"); else pkgs+=("$1"); fi
+		shift
+	done
+	((${#pkgs[@]})) || pkgs=(./...)
+	local start=$SECONDS status=0
+	go test -json -count=1 "${flags[@]}" "${pkgs[@]}" >"$out" || status=$?
+	local rows
+	rows="$(jq -r "$profile_rows" "$out" | sort -t$'\t' -k1,1 -rn)"
+	echo "== wall clock: $((SECONDS - start))s  flags: ${flags[*]:-none}"
+	echo "== slowest packages"
+	# awk counts itself: piping into head would SIGPIPE under pipefail.
+	awk -F'\t' -v n="$top" '$3 == "-" && n-- > 0' <<<"$rows"
+	echo "== slowest tests"
+	awk -F'\t' -v n="$top" '$3 != "-" && $3 !~ /\// && n-- > 0' <<<"$rows"
+	echo "== slowest subtests"
+	awk -F'\t' -v n="$top" '$3 ~ /\// && n-- > 0' <<<"$rows"
+	return "$status"
+}
+
 case "${1:-}" in
 matrix) (($# == 2)) || die "usage: matrix <suite>"; cmd_matrix "$2" ;;
 run) (($# >= 3)) || die "usage: run <suite> <shard> [flags...]"; shift; cmd_run "$@" ;;
 check) cmd_check ;;
 timings) (($# >= 2)) || die "usage: timings <suite> [flags...]"; shift; cmd_timings "$@" ;;
-*) die "usage: test-shards.sh matrix|run|check|timings ..." ;;
+profile) (($# >= 2)) || die "usage: profile <out.json> [flags...] [packages...]"; shift; cmd_profile "$@" ;;
+*) die "usage: test-shards.sh matrix|run|check|timings|profile ..." ;;
 esac

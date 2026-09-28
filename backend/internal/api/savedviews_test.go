@@ -9,6 +9,7 @@ import (
 )
 
 func TestSavedViewsCreateListDelete(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
 
@@ -56,6 +57,7 @@ func TestSavedViewsCreateListDelete(t *testing.T) {
 }
 
 func TestSavedViewsRequireValidSurface(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 
@@ -76,6 +78,7 @@ func TestSavedViewsRequireValidSurface(t *testing.T) {
 // TestSavedViewsOwnershipBoundary ensures a user can never delete another
 // user's saved view — same spirit as the audit trail's role-boundary test.
 func TestSavedViewsOwnershipBoundary(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, ownerToken := app.user(t, "viewer")
 	_, otherToken := app.user(t, "operator")
@@ -109,6 +112,7 @@ func TestSavedViewsOwnershipBoundary(t *testing.T) {
 }
 
 func TestSavedViewsDeleteMissingIsNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "viewer")
 

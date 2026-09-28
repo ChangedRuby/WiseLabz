@@ -34,6 +34,7 @@ func newConnector(t *testing.T, app *testApp, name string) string {
 }
 
 func TestAPIKeyDefaultsToFullScope(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, token := app.user(t, "operator")
 
@@ -51,6 +52,7 @@ func TestAPIKeyDefaultsToFullScope(t *testing.T) {
 }
 
 func TestReadOnlyAPIKey(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	connID := newConnector(t, app, "pve")
@@ -73,6 +75,7 @@ func TestReadOnlyAPIKey(t *testing.T) {
 }
 
 func TestReadOnlyAPIKeyCapsConnectorRoleAtViewer(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	connID := newConnector(t, app, "pve")
@@ -93,6 +96,7 @@ func TestReadOnlyAPIKeyCapsConnectorRoleAtViewer(t *testing.T) {
 }
 
 func TestConnectorRestrictedAPIKey(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	allowed := newConnector(t, app, "allowed")
@@ -144,6 +148,7 @@ func TestConnectorRestrictedAPIKey(t *testing.T) {
 }
 
 func TestAPIKeyCreateValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	granted := newConnector(t, app, "granted")

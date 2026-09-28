@@ -273,7 +273,7 @@ func GuardedDialer(timeout time.Duration) *net.Dialer {
 			if ip == nil {
 				return fmt.Errorf("unresolvable address %q", host)
 			}
-			if IsDangerousIP(ip) && (!allowLoopbackForTest.Load() || !ip.IsLoopback()) {
+			if IsDangerousIP(ip) && (allowLoopbackForTest.Load() == 0 || !ip.IsLoopback()) {
 				return fmt.Errorf("connection to blocked address %s denied", ip)
 			}
 			return nil
@@ -281,14 +281,17 @@ func GuardedDialer(timeout time.Duration) *net.Dialer {
 	}
 }
 
-var allowLoopbackForTest atomic.Bool
+// allowLoopbackForTest counts tests currently holding AllowLoopbackForTest; a
+// count rather than a flag so one parallel test's cleanup can't revoke it for
+// another that is still running.
+var allowLoopbackForTest atomic.Int32
 
 // AllowLoopbackForTest lets GuardedDialer reach loopback addresses until the
 // test ends, so handler tests can point real connectors at httptest servers.
 // Only tests should call it.
 func AllowLoopbackForTest(t interface{ Cleanup(func()) }) {
-	allowLoopbackForTest.Store(true)
-	t.Cleanup(func() { allowLoopbackForTest.Store(false) })
+	allowLoopbackForTest.Add(1)
+	t.Cleanup(func() { allowLoopbackForTest.Add(-1) })
 }
 
 // IsDangerousIP returns true for loopback, link-local, unspecified

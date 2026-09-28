@@ -73,6 +73,7 @@ func walkCursorPages(t *testing.T, app *testApp, token, path string, pageSize in
 // checks the pages tile the full result set exactly: no duplicates, no gaps,
 // including across runs of records that share created_at.
 func TestAuditCursorPaginationTraversal(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	ctx := context.Background()
@@ -114,6 +115,7 @@ func TestAuditCursorPaginationTraversal(t *testing.T) {
 // contract: a request that does not send cursor gets the historical envelope,
 // with no nextCursor key at all.
 func TestAuditOffsetPaginationUnchanged(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 	ctx := context.Background()
@@ -150,6 +152,7 @@ func TestAuditOffsetPaginationUnchanged(t *testing.T) {
 }
 
 func TestAuditRejectsMalformedCursor(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
 
@@ -164,6 +167,7 @@ func TestAuditRejectsMalformedCursor(t *testing.T) {
 // also pins that the cursor advances past the whole DB page rather than the
 // filtered remainder.
 func TestChangesCursorPaginationTraversal(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	userID, token := app.user(t, "operator")
 	ctx := context.Background()
@@ -195,6 +199,7 @@ func TestChangesCursorPaginationTraversal(t *testing.T) {
 // body is a bare array: the cursor rides on X-Next-Cursor and the JSON stays a
 // plain array.
 func TestSyncsCursorPaginationUsesHeader(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	ctx := context.Background()

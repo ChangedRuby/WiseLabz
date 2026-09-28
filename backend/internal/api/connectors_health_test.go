@@ -18,10 +18,14 @@ import (
 type healthFakeConnector struct {
 	err   error
 	delay time.Duration
+	// degradedAfterMs, if set, becomes the fake type's
+	// TypeSchema.DegradedLatencyThresholdMs.
+	degradedAfterMs int
+	typ             string
 }
 
 func (f *healthFakeConnector) Name() string     { return "health fake" }
-func (f *healthFakeConnector) Type() string     { return "health_test_fake" }
+func (f *healthFakeConnector) Type() string     { return f.typ }
 func (f *healthFakeConnector) Category() string { return "test" }
 func (f *healthFakeConnector) Fetch(_ context.Context, _ map[string]any) (*connector.ServiceSnapshot, error) {
 	return nil, errors.New("not used by health checks")
@@ -33,24 +37,26 @@ func (f *healthFakeConnector) Validate(_ context.Context, _ map[string]any) erro
 	return f.err
 }
 
-// registerHealthFakeType (re-)registers the "health_test_fake" connector type
-// with the given Validate outcome. Tests in this file run sequentially, so
-// re-registration between them is safe: each call only affects the next
-// connector.Get("health_test_fake", ...) lookup.
-func registerHealthFakeType(t *testing.T, behavior *healthFakeConnector) {
+// registerHealthFakeType registers a connector type with the given Validate
+// outcome in the process-wide registry and returns its name. The name is
+// unique to the test, so tests running in parallel never overwrite each
+// other's registration.
+func registerHealthFakeType(t *testing.T, behavior *healthFakeConnector) string {
 	t.Helper()
+	behavior.typ = "health_test_fake/" + t.Name()
 	connector.Register(
-		connector.TypeSchema{Type: "health_test_fake", Category: "test", Name: "Health Fake"},
+		connector.TypeSchema{Type: behavior.typ, Category: "test", Name: "Health Fake", DegradedLatencyThresholdMs: behavior.degradedAfterMs},
 		func(_ map[string]any) (connector.Connector, error) {
 			return behavior, nil
 		},
 	)
+	return behavior.typ
 }
 
-func seedHealthTestConnector(t *testing.T, app *testApp) *store.ConnectorRecord {
+func seedHealthTestConnector(t *testing.T, app *testApp, typ string) *store.ConnectorRecord {
 	t.Helper()
 	conn := &store.ConnectorRecord{
-		Name: "svc", Category: "networking", Type: "health_test_fake", URL: "https://example.com", Enabled: true,
+		Name: "svc", Category: "networking", Type: typ, URL: "https://example.com", Enabled: true,
 	}
 	if err := app.Store.CreateConnector(context.Background(), conn); err != nil {
 		t.Fatalf("seed connector: %v", err)
@@ -59,11 +65,12 @@ func seedHealthTestConnector(t *testing.T, app *testApp) *store.ConnectorRecord 
 }
 
 func TestConnectorsHealthOnline(t *testing.T) {
-	registerHealthFakeType(t, &healthFakeConnector{err: nil})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
@@ -93,15 +100,12 @@ func TestConnectorsHealthOnline(t *testing.T) {
 }
 
 func TestConnectorsHealthDegraded(t *testing.T) {
-	orig := connector.DegradedLatencyThreshold
-	connector.DegradedLatencyThreshold = time.Millisecond
-	t.Cleanup(func() { connector.DegradedLatencyThreshold = orig })
-
-	registerHealthFakeType(t, &healthFakeConnector{err: nil, delay: 5 * time.Millisecond})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: nil, delay: 5 * time.Millisecond, degradedAfterMs: 1})
 
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
@@ -121,11 +125,12 @@ func TestConnectorsHealthDegraded(t *testing.T) {
 }
 
 func TestConnectorsHealthOffline(t *testing.T) {
-	registerHealthFakeType(t, &healthFakeConnector{err: errors.New("connection refused")})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: errors.New("connection refused")})
 
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
@@ -157,11 +162,12 @@ func TestConnectorsHealthOffline(t *testing.T) {
 }
 
 func TestConnectorsHealthDoesNotCreateSnapshot(t *testing.T) {
-	registerHealthFakeType(t, &healthFakeConnector{err: nil})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
@@ -175,11 +181,12 @@ func TestConnectorsHealthDoesNotCreateSnapshot(t *testing.T) {
 }
 
 func TestConnectorsHealthRoleBoundary(t *testing.T) {
-	registerHealthFakeType(t, &healthFakeConnector{err: nil})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
 	_, viewerToken := app.user(t, "viewer")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, viewerToken)
 	if rec.Code != http.StatusForbidden {
@@ -191,11 +198,12 @@ func TestConnectorsHealthRoleBoundary(t *testing.T) {
 // a health_checks row (in addition to updating the connector's latest
 // status), so GetConnectorUptime has data to compute over.
 func TestConnectorsHealthRecordsTimeSeriesRow(t *testing.T) {
-	registerHealthFakeType(t, &healthFakeConnector{err: nil})
+	t.Parallel()
+	typ := registerHealthFakeType(t, &healthFakeConnector{err: nil})
 
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, typ)
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	rec := app.req(t, http.MethodPost, "/api/connectors/"+conn.ID+"/health", nil, opToken)
@@ -216,9 +224,10 @@ func TestConnectorsHealthRecordsTimeSeriesRow(t *testing.T) {
 // two health checks, one online and one offline an hour apart, followed by
 // a request that should show partial (50%) availability in the 24h window.
 func TestConnectorsUptime(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
-	conn := seedHealthTestConnector(t, app)
+	conn := seedHealthTestConnector(t, app, "health_test_fake")
 	app.connectorGrant(t, opUserID, conn.ID, "operator")
 
 	now := time.Now().UTC()
@@ -264,6 +273,7 @@ func TestConnectorsUptime(t *testing.T) {
 }
 
 func TestConnectorsUptimeUnknownConnector404s(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	app.connectorGrant(t, opUserID, "does-not-exist", "operator")
@@ -280,6 +290,7 @@ func TestConnectorsUptimeUnknownConnector404s(t *testing.T) {
 // correct in production (no grant can exist on an ID that was never a real
 // connector) but isn't what this test is exercising.
 func TestConnectorsHealthUnknownConnector404s(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	opUserID, opToken := app.user(t, "operator")
 	app.connectorGrant(t, opUserID, "does-not-exist", "operator")

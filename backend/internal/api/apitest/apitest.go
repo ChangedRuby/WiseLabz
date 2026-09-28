@@ -8,9 +8,7 @@ package apitest
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -19,24 +17,19 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 )
 
 // NewStore builds a fresh, migrated, initialized SQLite-backed store for a test.
 func NewStore(t *testing.T) *store.Store {
 	t.Helper()
 
-	dir := t.TempDir()
-	db, err := sql.Open("sqlite", "file:"+dir+"/test.db?cache=shared")
+	db, err := sql.Open("sqlite", "file:"+storetest.MigratedSQLite(t)+"?cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 
 	s := store.New(db, "sqlite")
 	if err := s.Init(context.Background(), "admin-seed-pw-1234"); err != nil {
