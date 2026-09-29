@@ -32,21 +32,22 @@ func TestAddJobRegistersAndFires(t *testing.T) {
 			t.Fatalf("AddJob() error: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		r.Start(ctx)
+		synctest.Wait()
 
-		// Wait for at least one execution (the job should fire within 1 second)
-		deadline := time.Now().Add(2 * time.Second)
-		for execCount.Load() == 0 && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
-		}
+		synctest.Sleep(time.Second)
 
 		r.Stop()
 
-		if execCount.Load() == 0 {
-			t.Fatalf("job did not execute within 2 seconds")
+		if count := execCount.Load(); count != 1 {
+			t.Fatalf("execution count = %d, want 1 after the first cron tick", count)
 		}
 	})
 }
@@ -77,26 +78,28 @@ func TestRemoveJobDeregisters(t *testing.T) {
 			t.Fatalf("AddJob() error: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		r.Start(ctx)
+		synctest.Wait()
 
-		// Wait for first execution
-		deadline := time.Now().Add(2 * time.Second)
-		for execCount.Load() == 0 && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
-		}
+		synctest.Sleep(time.Second)
 
-		if execCount.Load() == 0 {
-			t.Fatalf("job did not execute before removal")
+		if count := execCount.Load(); count != 1 {
+			t.Fatalf("execution count before removal = %d, want 1", count)
 		}
 
 		firstCount := execCount.Load()
 		r.RemoveJob(entryID)
 
-		// Wait a bit and verify the job doesn't execute again
-		time.Sleep(1500 * time.Millisecond)
+		// Cross two more cron ticks to prove removal prevents execution.
+		synctest.Wait()
+		synctest.Sleep(2 * time.Second)
 		r.Stop()
 
 		if finalCount := execCount.Load(); finalCount != firstCount {
@@ -122,21 +125,22 @@ func TestPanicRecovery(t *testing.T) {
 			t.Fatalf("AddJob() error: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		r.Start(ctx)
+		synctest.Wait()
 
-		// Wait for the panic to happen and the job to run again
-		deadline := time.Now().Add(3 * time.Second)
-		for executionCount.Load() < 2 && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
-		}
+		synctest.Sleep(2 * time.Second)
 
 		r.Stop()
 
 		// If we get here without the process exiting, panic recovery works
-		if count := executionCount.Load(); count < 2 {
+		if count := executionCount.Load(); count != 2 {
 			t.Fatalf("job did not recover from panic and run again, execution count=%d", count)
 		}
 	})
@@ -148,33 +152,32 @@ func TestStopViaContextCancellation(t *testing.T) {
 		logger := testLogger()
 		r := New(logger)
 
-		var started atomic.Bool
-
+		var count atomic.Int32
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 		_, err := r.AddJob("test", "*/1 * * * * *", func(_ context.Context) error {
-			started.Store(true)
+			count.Add(1)
 			return nil
 		})
 		if err != nil {
 			t.Fatalf("AddJob() error: %v", err)
 		}
-
-		ctx, cancel := context.WithCancel(context.Background())
 		r.Start(ctx)
-
-		// Give the job a moment to start (up to 2 seconds)
-		deadline := time.Now().Add(2 * time.Second)
-		for !started.Load() && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		synctest.Sleep(time.Second)
+		if got := count.Load(); got != 1 {
+			t.Fatalf("execution count = %d, want 1 before cancellation", got)
 		}
 
-		// Cancel context
 		cancel()
-
-		// Give a moment for the stop goroutine to execute
-		time.Sleep(500 * time.Millisecond)
-
-		if !started.Load() {
-			t.Fatalf("job did not start within timeout")
+		synctest.Wait()
+		synctest.Sleep(2 * time.Second)
+		if got := count.Load(); got != 1 {
+			t.Fatalf("job executed after cancellation: count = %d, want 1", got)
 		}
 	})
 }
@@ -203,27 +206,22 @@ func TestMultipleJobsSchedule(t *testing.T) {
 			t.Fatalf("AddJob(job2) error: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		r.Start(ctx)
+		synctest.Wait()
 
-		// Wait for both jobs to execute
-		deadline := time.Now().Add(2 * time.Second)
-		for (count1.Load() == 0 || count2.Load() == 0) && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
-		}
+		synctest.Sleep(time.Second)
 
 		r.Stop()
 
-		if count1.Load() == 0 {
-			t.Fatalf("job1 did not execute")
-		}
-		if count2.Load() == 0 {
-			t.Fatalf("job2 did not execute")
-		}
-		if first, second := count1.Load(), count2.Load(); first != second {
-			t.Logf("job counts differ (job1=%d, job2=%d) but both executed, which is acceptable", first, second)
+		if first, second := count1.Load(), count2.Load(); first != 1 || second != 1 {
+			t.Fatalf("job execution counts = (%d, %d), want (1, 1)", first, second)
 		}
 	})
 }
@@ -257,50 +255,48 @@ func TestJobContextDerivedFromStart(t *testing.T) {
 		type ctxKey string
 		const key ctxKey = "test-key"
 		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), key, "test-value"))
-		defer cancel()
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		sawValue := make(chan bool, 1)
-		sawCancelPropagated := make(chan bool, 1)
-		var once sync.Once
+		sawCancelPropagated := make(chan struct{}, 1)
+		var count atomic.Int32
 		_, err := r.AddJob("test", "*/1 * * * * *", func(jobCtx context.Context) error {
-			once.Do(func() {
-				sawValue <- (jobCtx.Value(key) == "test-value")
-			})
-			// Block within the job body (as a long-running job would) so it is
-			// still in-flight when the test cancels Start's context, proving the
-			// cancellation reaches the running job rather than only stopping the
-			// cron scheduler itself.
-			select {
-			case <-jobCtx.Done():
-				select {
-				case sawCancelPropagated <- true:
-				default:
-				}
-			case <-time.After(4 * time.Second):
-			}
+			count.Add(1)
+			sawValue <- (jobCtx.Value(key) == "test-value")
+			// Remain in flight until Start's context is cancelled.
+			<-jobCtx.Done()
+			sawCancelPropagated <- struct{}{}
 			return nil
 		})
 		if err != nil {
 			t.Fatalf("AddJob() error: %v", err)
 		}
-
 		r.Start(ctx)
-
+		synctest.Wait()
+		synctest.Sleep(time.Second)
 		select {
 		case ok := <-sawValue:
 			if !ok {
-				t.Fatalf("job context did not carry the value from Start's context")
+				t.Fatal("job context did not carry the value from Start's context")
 			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("job did not execute within 2 seconds")
+		default:
+			t.Fatal("job did not execute on the first cron tick")
 		}
 
 		cancel()
-
+		synctest.Wait()
 		select {
 		case <-sawCancelPropagated:
-		case <-time.After(4 * time.Second):
-			t.Fatalf("job context was never observed as Done() after Start's context was cancelled")
+		default:
+			t.Fatal("job did not observe Start's context cancellation")
+		}
+		synctest.Sleep(2 * time.Second)
+		if got := count.Load(); got != 1 {
+			t.Fatalf("job executed after cancellation: count = %d, want 1", got)
 		}
 	})
 }
@@ -322,21 +318,82 @@ func TestContextGivenToJobFunction(t *testing.T) {
 			t.Fatalf("AddJob() error: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
 		r.Start(ctx)
+		synctest.Wait()
 
-		// Wait for the job to execute
-		deadline := time.Now().Add(2 * time.Second)
-		for !receivedCtx.Load() && time.Now().Before(deadline) {
-			time.Sleep(100 * time.Millisecond)
-		}
+		synctest.Sleep(time.Second)
 
 		r.Stop()
 
 		if !receivedCtx.Load() {
 			t.Fatalf("job function did not receive a context")
+		}
+	})
+}
+
+// TestStopWaitsForInFlightJob proves Stop joins work before returning.
+func TestStopWaitsForInFlightJob(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := New(testLogger())
+		ctx, cancel := context.WithCancel(context.Background())
+		entered := make(chan struct{}, 1)
+		release := make(chan struct{})
+		finished := make(chan struct{})
+		stopped := make(chan struct{})
+		var releaseOnce sync.Once
+		// Release first, including on assertion failure, so cleanup can join.
+		t.Cleanup(func() {
+			releaseOnce.Do(func() { close(release) })
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
+		_, err := r.AddJob("blocking", "*/1 * * * * *", func(context.Context) error {
+			entered <- struct{}{}
+			<-release
+			close(finished)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("AddJob() error: %v", err)
+		}
+		r.Start(ctx)
+		synctest.Wait()
+		synctest.Sleep(time.Second)
+		select {
+		case <-entered:
+		default:
+			t.Fatal("job did not enter on the first cron tick")
+		}
+
+		go func() {
+			r.Stop()
+			close(stopped)
+		}()
+		synctest.Wait()
+		select {
+		case <-stopped:
+			t.Fatal("Stop returned while the job was still in flight")
+		default:
+		}
+		releaseOnce.Do(func() { close(release) })
+		synctest.Wait()
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("Stop did not return after the job was released")
+		}
+		select {
+		case <-finished:
+		default:
+			t.Fatal("Stop returned before the job finished")
 		}
 	})
 }

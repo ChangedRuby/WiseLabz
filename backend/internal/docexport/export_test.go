@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -182,42 +183,58 @@ func TestDocExportDefaultCronExprIsValid(t *testing.T) {
 // cron cadence (mirroring how cmd/server/main.go wires it against
 // cfg.DocExport.CronExpr) and confirms it actually fires and exports.
 func TestScheduledExportRunsAndFires(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "steps"}); err != nil {
-		t.Fatalf("create doc: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		s := newTestStore(t)
+		dir := t.TempDir()
+		e := docexport.NewExporter(s)
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		r := scheduler.New(logger)
+		runCtx, cancel := context.WithCancel(ctx)
+		// Registered last so the runner and its cancellation watcher finish
+		// before the database closes or either temporary directory is removed.
+		t.Cleanup(func() {
+			cancel()
+			r.Stop()
+			synctest.Wait()
+		})
 
-	dir := t.TempDir()
-	e := docexport.NewExporter(s)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r := scheduler.New(logger)
-
-	if _, err := r.AddJob("docexport", "*/1 * * * * *", func(jobCtx context.Context) error {
-		return docexport.RunExportOnce(jobCtx, e, dir, logger)
-	}); err != nil {
-		t.Fatalf("AddJob() error: %v", err)
-	}
-
-	runCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	r.Start(runCtx)
-
-	deadline := time.Now().Add(2 * time.Second)
-	var entries []os.DirEntry
-	for time.Now().Before(deadline) {
-		var err error
-		entries, err = os.ReadDir(dir)
-		if err == nil && len(entries) == 1 {
-			break
+		if err := s.CreateDoc(ctx, &store.DocRecord{ID: id1, Title: "Runbook", Content: "steps"}); err != nil {
+			t.Fatalf("create doc: %v", err)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	r.Stop()
+		completed := make(chan error, 1)
+		if _, err := r.AddJob("docexport", "*/1 * * * * *", func(jobCtx context.Context) error {
+			err := docexport.RunExportOnce(jobCtx, e, dir, logger)
+			completed <- err
+			return err
+		}); err != nil {
+			t.Fatalf("AddJob() error: %v", err)
+		}
 
-	if len(entries) != 1 {
-		t.Fatalf("dir has %d entries after scheduled run, want 1", len(entries))
-	}
+		r.Start(runCtx)
+		synctest.Wait()
+		synctest.Sleep(time.Second)
+		select {
+		case err := <-completed:
+			if err != nil {
+				t.Fatalf("scheduled RunExportOnce() error: %v", err)
+			}
+		default:
+			t.Fatal("scheduled export did not complete on the first cron tick")
+		}
+		r.Stop()
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read dir: %v", err)
+		}
+		if len(entries) != 1 || entries[0].Name() != "runbook-0000000a.md" {
+			t.Fatalf("dir entries = %v, want [runbook-0000000a.md]", entries)
+		}
+		if got := readFile(t, filepath.Join(dir, entries[0].Name())); got != "steps" {
+			t.Fatalf("export content = %q, want steps", got)
+		}
+	})
 }
 
 func TestIsGeneratedName(t *testing.T) {

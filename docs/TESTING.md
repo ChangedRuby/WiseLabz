@@ -1,6 +1,6 @@
 # Backend test performance
 
-This file records where backend Go test time went, what #401 and #405–#407 changed, what they
+This file records where backend Go test time went, what #401 and #405–#408 changed, what they
 rejected and why, and the rules that keep the suite fast without weakening
 determinism, race detection or coverage. Read it before adding a slow test,
 a `time.Sleep`, a `t.Parallel()` or a new CI shard.
@@ -166,9 +166,13 @@ blockers:
 
 - No fixed sleeps to "let something happen". Wait on the event: a channel,
   `r.Context().Done()`, or `synctest.Wait` inside a bubble.
-- Code on a clock (cron, tickers, timeouts) runs under `testing/synctest`
-  when it does no real I/O. Otherwise inject the clock (`now func()`, as in
-  `internal/quality/checker.go`).
+- Code on a clock (cron, tickers, timeouts) runs under `testing/synctest`.
+  Settle startup with `synctest.Wait()`, then use `synctest.Sleep` for bounded
+  clock advances and assert completion immediately using channels or
+  synchronized counts. Self-contained SQLite and filesystem work can run
+  inside a bubble when all associated goroutines and resources finish there;
+  real network I/O stays outside. Otherwise inject the clock (`now func()`,
+  as in `internal/quality/checker.go`).
 - Deadlines in polling loops are hang guards only, and generous: they must
   hold with `-race` on a slow runner. `waitForSyncRuns` uses 30s; it returns
   as soon as the condition is met.
@@ -360,9 +364,118 @@ On memory-limited machines, run checks sequentially with disk-backed
 `GOMEMLIMIT=384MiB`. These limit verification processes; production and CI
 configuration are unchanged.
 
+## Deterministic scheduled exports (#408)
+
+This change also uses the agreed **reliability exception to the 5% / 10s
+adoption threshold**. Timing evidence is still required; saving less than
+that threshold does not block deterministic tests or the added race coverage.
+
+`TestScheduledExportRunsAndFires` creates its migrated SQLite fixture,
+exporter, real cron runner, context and channels inside one `synctest.Test`
+bubble, using the bubble's `t`. Its `AddJob` callback calls the real
+`RunExportOnce` and sends its returned error through a buffered channel.
+After startup settles, one fake second advances the actual cron trigger.
+A nonblocking receive fails immediately if execution is missing. The runner
+stops before the test checks exactly `runbook-0000000a.md` containing `steps`.
+Cleanup cancels the context, calls blocking `Stop()` and settles the
+cancellation watcher before database closure or temporary-directory removal,
+including assertion failures. The migrated-template fixture is unchanged.
+
+Scheduler tests use exact fake-time advances and settled counts/signals
+instead of virtual polling or settling sleeps. Removal and cancellation
+cross two subsequent cron ticks and prove no additional callbacks run.
+A gated callback proves `Stop()` remains blocked until work is released;
+cleanup releases the gate even on failure. Existing health and overlap tests
+remain unchanged. `race/all` now includes `internal/scheduler`, with its
+existing ten-minute CI timeout as the wall-clock hang guard. No production
+APIs, clock seams, dependencies, configuration or parallel-test changes are
+included.
+
+### Measurements and validation
+
+The planning baseline for the scheduled export test was **0.85, 1.01, 1.01s**
+(median **1.01s**). Fresh local and three-run CI measurements follow. Local profiles use `-count=1`
+with Go 1.27.1, warm build caches, disabled test-result caching, `GOFLAGS=-p=1`,
+`GOMAXPROCS=2` and `GOMEMLIMIT=384MiB`. Each package process starts with a cold
+in-memory migration template.
+
+| Local measurement | Baseline runs → median (s) | Candidate runs → median (s) | Median change |
+|---|---|---|---|
+| Scheduled export, normal | 0.10, 0.70, 0.90 → **0.70** | <0.01, <0.01, <0.01 → **<0.01** | >0.69s saved (>98.6%) |
+| Scheduled export, race | 0.83, 0.13, 0.43 → **0.43** | 0.03, 0.03, 0.03 → **0.03** | 0.40s saved (93.0%) |
+| `internal/docexport`, normal | 0.304, 0.911, 1.110 → **0.911** | 0.208, 0.209, 0.209 → **0.209** | 0.702s saved (77.1%) |
+| `internal/docexport`, race | 3.718, 3.017, 3.297 → **3.297** | 2.813, 2.797, 2.850 → **2.813** | 0.484s saved (14.7%) |
+| `internal/scheduler`, normal | 0.004, 0.004, 0.004 → **0.004** | 0.004, 0.004, 0.004 → **0.004** | 0.000s (0%) |
+| `internal/scheduler`, race | 1.014, 1.015, 1.016 → **1.015** | 1.014, 1.015, 1.014 → **1.014** | 0.001s saved (0.1%) |
+
+The normal scheduled-test JSON rounds elapsed time to hundredths; zero is
+reported as <0.01s here. Wall-clock alignment of the baseline cron tick
+explains its spread. Race package times retain the standard one-second exit
+sleep. Package savings do not establish a 5% whole-job saving.
+
+Both affected packages pass normally, with `-race`, and with
+`-race -count=20 -shuffle=on`.
+
+Full backend tests and the expanded `race/all` shard pass with `-count=1`.
+Full `-coverpkg` coverage stays **80.4% → 80.4%**;
+`coverage-parity.sh` reports **zero packages outside the existing tolerances**.
+Formatting, shard-definition validation, golangci-lint, `go vet ./...` and
+staticcheck v0.8.1 pass. The export test passes alone with race detection,
+and first in the entire shuffled package (`-race -count=1 -shuffle=10`),
+proving cold template initialization works inside the bubble. Isolated
+negative controls remove the export registration or fail while the callback
+gate is held: each exits at the intended assertion and completes cleanup,
+without a timeout or bubble deadlock. Raw local JSON, profiles and logs are
+retained under `/tmp/issue408-evidence/` on the verification machine.
+
+### Three-run CI comparison
+
+The existing Test profile workflow ran three uncached test executions per
+mode, with `-count=1`, Go 1.27.1 and `ubuntu-latest`. Baseline and candidate
+coverage/race runs restore the **same** main build-cache snapshot
+(`36507104776`, dependency hash `aa226528…`). Modified test binaries and the
+new scheduler race binary still require compilation. Normal mode has no
+profile cache in either configuration and builds cold. Workflow timings
+below measure the test command including compilation; setup/cache download
+time is outside that measurement. Raw JSON/text artifacts remain attached
+to each linked run for the workflow's usual 14-day retention.
+
+| Profile / source | Normal runs → median (s) | Race runs → median (s) | Coverage runs → median (s) |
+|---|---|---|---|
+| [Baseline](https://github.com/WiseLabz/WiseLabz/actions/runs/36507943499) (`91d073a`) | 101, 106, 78 → **101** | 95, 94, 154 → **95** | 38, 24, 30 → **30** |
+| [Candidate](https://github.com/WiseLabz/WiseLabz/actions/runs/36508418726) (`329d208`) | 102, 105, 127 → **105** | 171, 83, 96 → **96** | 29, 37, 25 → **29** |
+
+Coverage saves **1s (3.3%)**; race costs **1s more (1.1%)**, with
+`internal/scheduler` newly included; normal costs **4s more (4.0%)**.
+Neither affected CI job meets the **5% / 10s** savings threshold. Adoption
+therefore uses the explicitly agreed reliability exception. These noisy
+whole-job timings do not establish a whole-suite speedup. The race scope
+changes intentionally; its candidate scheduler package median is **1.019s**
+(including the unchanged one-second race exit sleep), versus no scheduler
+coverage in the baseline shard.
+
+| CI package/test median | Baseline (s) | Candidate (s) | Change |
+|---|---|---|---|
+| `docexport`, normal | 1.464 | 1.144 | 0.320s saved (21.9%) |
+| `docexport`, coverage | 2.124 | 1.117 | 1.007s saved (47.4%) |
+| `docexport`, race | 8.351 | 6.567 | 1.784s saved (21.4%) |
+| Scheduled export, normal | 0.41 | 0.01 | 0.40s saved (97.6%) |
+| Scheduled export, coverage | 0.92 | 0.01 | 0.91s saved (98.9%) |
+| Scheduled export, race | 0.58 | 0.08 | 0.50s saved (86.2%) |
+| `scheduler`, normal | 0.008 | 0.009 | 0.001s more (12.5%) |
+| `scheduler`, coverage | 0.044 | 0.040 | 0.004s saved (9.1%) |
+
+[Regular CI](https://github.com/WiseLabz/WiseLabz/actions/runs/36508410636)
+passes on the implementation revision, including the expanded race shard,
+coverage, PostgreSQL shards, static/lint/vulnerability checks, build and
+compose smoke. The initial attempt failed in the unchanged
+`TestConnectorsSyncAcceptsFieldsHint/fields` during `TempDir` removal
+(`directory not empty`); the same-revision confirmation passed. A separate
+100-run baseline check did not reproduce that cleanup failure. The initial
+failure is retained in the run's first attempt and local evidence; this
+patch does not modify the API fixture or sync cleanup.
+
 ## Follow-ups
 
-- `docexport` `TestScheduledExportRunsAndFires` still waits for a real cron
-  tick. That deferred timing work remains outside this change.
 - Further parallel test rollout still needs its own stress validation and
   adoption decision; this change adds no `t.Parallel()` calls.
