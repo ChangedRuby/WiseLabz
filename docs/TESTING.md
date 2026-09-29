@@ -18,12 +18,41 @@ The **Test profile** workflow (Actions → Test profile → Run workflow) runs t
 profile in normal, race and cover mode three times each on `ubuntu-latest`,
 uploads the JSON, and reports the median wall clock. CI is the source of
 truth: local runs guide the work, CI medians decide what is adopted.
-`workflow_dispatch` workflows only run from the default branch, so compare a
-branch through its regular CI job times.
+`workflow_dispatch` workflows must be available on the default branch before
+they can be dispatched; then select the branch to measure when running them.
 
 A change is adopted when it saves at least 5% of the affected CI job, or at
 least 10s (median of 3 runs), and does not weaken determinism, race detection
 or coverage (see the parity check below).
+
+### Shuffled race stress gate
+
+Before extending `t.Parallel()` to any new package, add its explicit package
+path to the maintained allowlist in `.github/workflows/test-stress.yml` and
+require a passing **Test stress** run on the rollout commit. The allowlist
+currently contains `./internal/api` and `./internal/api/connectors`; it takes
+no user-supplied package expressions. Keep fixtures isolated per test and
+use local servers; the gate needs no public test services or shared fixtures.
+
+After the workflow is available on the default branch, run it from Actions
+→ Test stress → Run workflow, selecting the rollout branch, or use:
+
+```bash
+gh workflow run test-stress.yml --ref <rollout-branch>
+```
+
+Each package runs `go test -race -count=20 -shuffle=on -timeout=10m -v` in
+its own job, with a 20-minute job timeout. This manual gate stays out of
+routine PR CI. Failed tests fail the job; other package jobs still finish.
+The `stress-*` artifacts are retained for 14 days, including on failure:
+`metadata.txt` records the checked-out commit, package, flags, run URL and Go
+version, and `tests.log` contains stdout/stderr and the `-test.shuffle` seed.
+To reproduce, check out that commit and run from `backend/` with the recorded
+package and Go version, replacing `-shuffle=on` with `-shuffle=<seed>`.
+
+PR #404 already passed the temporary shuffled race stress runs for the two
+current parallel packages (288s for `internal/api`, 155s for
+`internal/api/connectors`). This retained gate supports future rollouts.
 
 ## Where the time went
 

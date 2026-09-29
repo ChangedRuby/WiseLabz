@@ -1,0 +1,57 @@
+name: Test stress
+
+# Required before extending t.Parallel() to new packages; see docs/TESTING.md.
+# Manual only: keep repeated race runs out of routine PR CI.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: Stress (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Maintained allowlist: add future rollout packages here in their PR.
+        package: [./internal/api, ./internal/api/connectors]
+    env:
+      PACKAGE: ${{ matrix.package }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Record reproduction metadata
+        run: |
+          mkdir -p stress
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "package=$PACKAGE"
+            echo 'flags=-race -count=20 -shuffle=on -timeout=10m -v'
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } | tee stress/metadata.txt
+          cat stress/metadata.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Go
+        uses: ./.github/actions/go-cache-restore
+        with:
+          kind: race
+
+      - name: Shuffled race stress
+        working-directory: backend
+        shell: bash
+        run: |
+          go version | tee -a ../stress/metadata.txt
+          go test -race -count=20 -shuffle=on -timeout=10m -v "$PACKAGE" 2>&1 | tee ../stress/tests.log
+
+      - name: Upload stress evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stress-${{ strategy.job-index }}
+          path: stress/
+          retention-days: 14
