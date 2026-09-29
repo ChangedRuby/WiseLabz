@@ -6,7 +6,7 @@ info:
     Contract-first OpenAPI spec for the WiseLabz frontend. This is the source of
     truth the frontend generates against (orval) and mocks against (MSW) BEFORE the
     Go backend exists. The backend implements *to* this spec. Keep this file and
-    docs/WS_CONTRACT.md in sync with docs/FRONTEND_PLAN.md (§1 endpoints, §4 WS).
+    docs/WS_CONTRACT.md in sync with each other.
 servers:
   - url: /api
     description: Same-origin API (Vite proxies /api to the Go backend in dev)

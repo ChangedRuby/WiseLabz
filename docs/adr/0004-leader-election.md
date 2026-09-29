@@ -31,4 +31,5 @@ before the database pool.
 Failover latency is about one poll interval plus any process restart and
 readiness time. WebSocket connections reconnect to the newly ready leader.
 Backups written to local disk need durable/shared storage for continuity.
-LISTEN/NOTIFY fan-out for active/active WebSocket operation is deferred.
+LISTEN/NOTIFY fan-out for active/active WebSocket operation is deferred; see
+[ADR 0005](0005-cross-replica-websocket-relay.md).

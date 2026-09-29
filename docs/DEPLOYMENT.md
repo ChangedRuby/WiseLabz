@@ -20,7 +20,7 @@ restart time.
 | Scheduler jobs (sync, digest, quality, reports, doc export, backups, retention) | Leader only |
 | Notification delivery retrier | Leader only |
 | Document lock sweep | Leader only |
-| WebSocket hub and tickets | Process-local; route clients only to the ready leader |
+| WebSocket hub and tickets | Process-local; route clients only to the ready leader (see [ADR 0005](adr/0005-cross-replica-websocket-relay.md)) |
 | Rate limiter and TTL caches | Process-local; reset on failover |
 | Backups on local disk | Leader only, but store backup files on shared or durable storage |
 | Migrations | Safe to start concurrently; golang-migrate locks PostgreSQL migrations |
@@ -30,8 +30,14 @@ Tune connector fan-out with `sync.max_concurrency` (default 4),
 `sync.due_batch_size` (default 50 per tick), and `sync.timeout` (default 5m
 per connector). The claim lease lasts one minute beyond the timeout.
 
-Active/passive routing keeps WebSocket events on one process. Active/active
-WebSocket pub/sub is deferred; see [ADR 0004](adr/0004-leader-election.md).
+Active/passive is the only supported multi-replica mode. Routing every client
+to the ready leader keeps WebSocket events, tickets, and per-process state on
+one process. Do not mark standbys ready or load-balance across replicas.
+Active/active is deferred:
+[ADR 0005](adr/0005-cross-replica-websocket-relay.md) records the planned
+PostgreSQL LISTEN/NOTIFY event relay and the process-local state (tickets, user
+cache invalidation, in-process locks, rate limits) that must be addressed
+first. A relay alone would not make active/active safe.
 
 ## PostgreSQL support
 

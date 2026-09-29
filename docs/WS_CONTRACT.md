@@ -2,7 +2,7 @@
 
 The single source of truth for the live-update channel. The Go backend implements
 this; the frontend consumes it (and mocks it via a local emitter before the backend
-exists). Mirrors `docs/FRONTEND_PLAN.md` §4 — keep them in sync.
+exists). Keep it in sync with `docs/openapi.yaml`.
 
 **Scope:** live updates only. **No mutations over WS** (per `ARCHITECTURE.md`). Every
 state change still goes through REST (`docs/openapi.yaml`); WS only pushes notifications.
@@ -11,13 +11,19 @@ state change still goes through REST (`docs/openapi.yaml`); WS only pushes notif
 
 ## Transport
 
-- Endpoint: `GET /ws` (same origin; Vite proxies in dev).
+- Endpoint: `GET /api/ws` (same origin; Vite proxies in dev).
 - Protocol: WebSocket, text frames, one JSON object per frame.
-- Auth: the connection is opened by an authenticated session. The access token is
-  passed at connect time (query param `?access_token=` or `Sec-WebSocket-Protocol`
-  — backend's choice; frontend `useWebSocket` adapts). The server closes with code
-  `4401` if the token is missing/expired, prompting the client to refresh then
-  reconnect.
+- Auth: a one-time ticket, not the access token. The client first calls
+  `POST /api/ws/ticket` with its normal authenticated session and receives
+  `{ "ticket": "..." }`, then connects to `/api/ws?ticket=<ticket>`. A ticket is
+  valid for 30 seconds, works once, and is held in the memory of the process
+  that issued it (so it must be redeemed on the same replica; see
+  [ADR 0005](adr/0005-cross-replica-websocket-relay.md)). A missing, expired, or
+  reused ticket fails the upgrade with HTTP 401. Restricted API keys are refused
+  a ticket because the stream is not filtered per connector.
+- Open connections are re-validated on every ping (about every 25 seconds). If
+  the user is disabled, their role changed, or the bound refresh session ended,
+  the server closes with code `1008` (policy violation).
 - Direction: server → client only for the events below. The client sends nothing
   except WS-level pong frames.
 
@@ -28,11 +34,15 @@ Every frame uses this envelope:
 ```ts
 interface WsEnvelope<T = unknown> {
   type: string;   // "domain.action", see naming below
-  ts: string;     // ISO-8601 server timestamp
   payload: T;     // event-specific, typed below
-  id?: string;    // optional unique event id, used for client-side dedupe
+  ts?: string;    // planned: ISO-8601 server timestamp (not sent today)
+  id?: string;    // planned: unique event id for dedupe (not sent today)
 }
 ```
+
+The server currently sends only `type` and `payload`. The frontend makes up a
+local id when `id` is missing. ADR 0005 adds `id` and `ts` to every event as a
+prerequisite for cross-replica delivery.
 
 ## Naming convention
 
@@ -43,10 +53,11 @@ interface WsEnvelope<T = unknown> {
 
 ## Client dispatch model
 
-`useWebSocket` parses the envelope, updates `wsStore` liveness on every frame, and
-hands the event to `WebSocketProvider`, which owns the `type → handler` map. Handlers
+`WebSocketProvider` (`web/src/ws/WebSocketProvider.tsx`) owns the socket, tracks
+its status in the `useLive` store, parses each frame, and dispatches it through its
+`type → handler` map. Handlers
 do exactly one of: write a Zustand store, push a toast, `setQueryData`, or
-`invalidateQueries`. Store/query names below reference `FRONTEND_PLAN.md` §3.
+`invalidateQueries`. Query keys below are the frontend's React Query keys.
 
 ---
 
@@ -334,15 +345,18 @@ interface SystemNoticePayload {
 
 ## Reconnect behavior
 
-`useWebSocket` auto-reconnects with exponential backoff and updates `wsStore.status`
-(`connecting` → `open` → `closed` → `reconnecting`). On a `4401` close it triggers a
-silent token refresh (see `openapi.yaml` `/auth/refresh`) before reconnecting.
+`WebSocketProvider` auto-reconnects: on any close it fetches a new ticket and
+reconnects with exponential backoff (`min(1000·2^n, 15000)` ms, reset after a
+successful open). It tracks `connecting` → `open` → `closed` in the `useLive`
+store. Close codes are not distinguished.
 
-On every successful **reconnect**, `WebSocketProvider` invalidates the volatile
-queries to recover anything missed while disconnected:
-`['alerts']`, `['changes']`, `['connectors']`, `['dashboard','overview']`.
+It does **not** yet invalidate queries after a reconnect, so events sent while
+disconnected are missed until the next refetch. The server never replays. ADR 0005
+requires the client, on every reconnect and on a `system.resync` event, to
+invalidate the volatile queries
+(`['alerts']`, `['changes']`, `['connectors']`, `['dashboard','overview']`).
 
-WS failure is never fatal: it degrades to `wsStore.status='closed'`, shows a
+WS failure is never fatal: it degrades to a `closed` socket status in `useLive`, shows a
 reconnecting indicator, and the UI falls back to React Query's normal
 refetch-on-focus/interval for freshness.
 
