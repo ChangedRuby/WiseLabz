@@ -33,16 +33,18 @@ Every frame uses this envelope:
 
 ```ts
 interface WsEnvelope<T = unknown> {
+  id: string;     // UUID v4, unique per emitted event
+  ts: string;     // server emit time, UTC, millisecond RFC 3339 (2026-09-06T12:00:00.000Z)
   type: string;   // "domain.action", see naming below
   payload: T;     // event-specific, typed below
-  ts?: string;    // planned: ISO-8601 server timestamp (not sent today)
-  id?: string;    // planned: unique event id for dedupe (not sent today)
 }
 ```
 
-The server currently sends only `type` and `payload`. The frontend makes up a
-local id when `id` is missing. ADR 0005 adds `id` and `ts` to every event as a
-prerequisite for cross-replica delivery.
+`id` and `ts` are always present, including on the `system.health` heartbeat. The
+`id` is unique per emitted event, and clients use it to drop duplicate deliveries
+(`WebSocketProvider` keeps a bounded set of recently seen ids). For compatibility
+with older servers the client keeps a local fallback: a frame missing `id` or `ts`
+gets a locally generated value and is never treated as a duplicate.
 
 ## Naming convention
 

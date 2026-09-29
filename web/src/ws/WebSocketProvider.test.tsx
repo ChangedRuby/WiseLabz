@@ -146,6 +146,62 @@ describe('WebSocketProvider', () => {
     });
   });
 
+  const renderProvider = async (queryClient = new QueryClient()) => {
+    window.WebSocket = TestWebSocket as unknown as typeof WebSocket;
+    useAuth.setState({ status: 'authenticated' });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WebSocketProvider>
+          <div />
+        </WebSocketProvider>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(TestWebSocket.last).toBeDefined());
+  };
+
+  const send = (frame: Record<string, unknown>) =>
+    act(() =>
+      TestWebSocket.last?.onmessage?.(
+        new MessageEvent('message', { data: JSON.stringify(frame) })
+      )
+    );
+
+  const alertFrame = (extra: Record<string, unknown>, alertId: string) => ({
+    type: 'alert.created',
+    payload: { alertId, serviceId: 'svc-1', severity: 'warning', title: 'Disk space low' },
+    ...extra,
+  });
+
+  it('handles a frame with a repeated id only once', async () => {
+    await renderProvider();
+    const frame = alertFrame({ id: 'evt-1', ts: '2026-09-06T12:00:00Z' }, 'alert-1');
+
+    send(frame);
+    send(frame);
+
+    expect(useLive.getState().pendingAlerts).toBe(1);
+    expect(useLive.getState().activity).toHaveLength(1);
+  });
+
+  it('still handles frames without an id, each one', async () => {
+    await renderProvider();
+
+    send(alertFrame({ ts: '2026-09-06T12:00:00Z' }, 'alert-1'));
+    send(alertFrame({ ts: '2026-09-06T12:00:00Z' }, 'alert-2'));
+
+    expect(useLive.getState().pendingAlerts).toBe(2);
+  });
+
+  it('fills a missing ts with a valid ISO timestamp', async () => {
+    await renderProvider();
+
+    send(alertFrame({ id: 'evt-2' }, 'alert-1'));
+
+    const at = useLive.getState().activity[0]?.at;
+    expect(at).toBeDefined();
+    expect(new Date(at as string).toISOString()).toBe(at);
+  });
+
   it('never puts the access token in the WebSocket URL', async () => {
     window.WebSocket = TestWebSocket as unknown as typeof WebSocket;
     useAuth.setState({ status: 'authenticated' });

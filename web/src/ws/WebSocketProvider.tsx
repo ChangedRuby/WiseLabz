@@ -34,10 +34,25 @@ const wsUrl = (ticket: string) => {
 const fetchTicket = () =>
   customInstance<{ ticket: string }>({ url: '/ws/ticket', method: 'POST' }).then((r) => r.ticket);
 
+// Recent event ids remembered for dedupe. Bounded so a long session can't grow it.
+const SEEN_CAP = 500;
+
+// Older servers may omit id/ts; fill them locally. A fallback id is never seen
+// twice, so it is never deduped.
+function normalize(raw: WsEvent): WsEvent {
+  return {
+    ...raw,
+    id: raw.id || crypto.randomUUID(),
+    ts: raw.ts || new Date().toISOString(),
+  } as WsEvent;
+}
+
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const live = useRef(useLive.getState()).current; // stable store handle
   const reconnects = useRef(0);
+  // Provider-level so dedupe survives reconnects: Set for lookup, array for FIFO eviction.
+  const seen = useRef({ ids: new Set<string>(), order: [] as string[] }).current;
   const status = useAuth((s) => s.status);
 
   useEffect(() => {
@@ -79,10 +94,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       socket.onmessage = (ev) => {
         let frame: WsEvent;
         try {
-          frame = JSON.parse(ev.data as string) as WsEvent;
+          frame = normalize(JSON.parse(ev.data as string) as WsEvent);
         } catch {
           return;
         }
+        if (seen.ids.has(frame.id)) return;
+        seen.ids.add(frame.id);
+        seen.order.push(frame.id);
+        if (seen.order.length > SEEN_CAP) seen.ids.delete(seen.order.shift()!);
         handle(frame, qc);
       };
     };
@@ -126,7 +145,7 @@ function handle(frame: WsEvent, qc: ReturnType<typeof useQueryClient>) {
       const p = frame.payload;
       s.clearJob(p.serviceId ?? 'global');
       s.pushActivity({
-        id: frame.id ?? crypto.randomUUID(),
+        id: frame.id,
         kind: 'sync',
         label: i18n.t('notify.syncCompleteTitle'),
         detail: i18n.t('notify.syncCompleteDetail', {
@@ -211,7 +230,7 @@ function handle(frame: WsEvent, qc: ReturnType<typeof useQueryClient>) {
     }
     case 'doc.generated': {
       s.pushActivity({
-        id: frame.id ?? crypto.randomUUID(),
+        id: frame.id,
         kind: 'doc',
         label: i18n.t('notify.documentationRegenerated'),
         detail: i18n.t('notify.documentationRegeneratedDetail', {

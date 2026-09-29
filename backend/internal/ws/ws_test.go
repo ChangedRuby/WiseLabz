@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -58,6 +59,65 @@ func TestHubBroadcastRouting(t *testing.T) {
 		t.Fatalf("second user received %s", data)
 	case <-time.After(25 * time.Millisecond):
 	}
+}
+
+func TestEnvelopeHasIDAndTS(t *testing.T) {
+	hub := NewHub()
+	hub.pingInterval = time.Hour
+	go hub.Run(context.Background())
+
+	client := &Client{hub: hub, send: make(chan []byte, 4), userID: "u"}
+	hub.register <- client
+	t.Cleanup(func() { hub.unregister <- client })
+	deadline := time.Now().Add(time.Second)
+	for hub.ClientCount() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+
+	hub.Broadcast(EventSyncComplete, map[string]string{"job": "a"})
+	hub.Broadcast(EventSyncComplete, map[string]string{"job": "a"})
+	hub.BroadcastToUser("u", EventSystemNotice, map[string]string{"job": "b"})
+
+	ids := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		env := decodeEnvelope(t, <-client.send)
+		ids[env.ID] = true
+	}
+	if len(ids) != 3 {
+		t.Fatalf("expected 3 distinct ids, got %d", len(ids))
+	}
+}
+
+func TestHeartbeatEnvelopeHasIDAndTS(t *testing.T) {
+	env := decodeEnvelope(t, mustMarshalEnvelope(t, newHeartbeat()))
+	if env.Type != EventSystemHealth {
+		t.Fatalf("type = %q", env.Type)
+	}
+}
+
+func mustMarshalEnvelope(t *testing.T, env Envelope) []byte {
+	t.Helper()
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	return data
+}
+
+// decodeEnvelope unmarshals a frame and checks that id is a UUID and ts is RFC 3339.
+func decodeEnvelope(t *testing.T, data []byte) Envelope {
+	t.Helper()
+	var env Envelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if _, err := uuid.Parse(env.ID); err != nil {
+		t.Fatalf("id %q is not a UUID: %v", env.ID, err)
+	}
+	if _, err := time.Parse(time.RFC3339, env.TS); err != nil {
+		t.Fatalf("ts %q is not RFC 3339: %v", env.TS, err)
+	}
+	return env
 }
 
 func assertEnvelope(t *testing.T, data []byte, wantType, wantJob string) {

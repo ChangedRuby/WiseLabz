@@ -30,9 +30,11 @@ export type WsEventType =
 /** Uniform envelope wrapping every frame. */
 export interface WsEnvelope<T = unknown> {
   type: WsEventType;
-  ts: string; // ISO-8601
+  /** Unique per emitted event; used for client dedupe. Normalized on parse. */
+  id: string;
+  /** ISO-8601 server timestamp. Normalized on parse. */
+  ts: string;
   payload: T;
-  id?: string;
 }
 
 // ─── payloads (1:1 with WS_CONTRACT.md) ─────────────────────────────────────

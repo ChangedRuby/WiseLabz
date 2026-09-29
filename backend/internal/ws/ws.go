@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/WiseLabz/wiselabz/internal/logsafe"
@@ -37,10 +38,30 @@ const (
 	EventSystemNotice           = "system.notice"
 )
 
-// Envelope wraps all WebSocket messages.
+// Envelope wraps all WebSocket messages. ID is unique per emitted event (clients
+// use it to drop duplicates); TS is the emit time, UTC, millisecond RFC 3339.
 type Envelope struct {
+	ID      string `json:"id"`
+	TS      string `json:"ts"`
 	Type    string `json:"type"`
 	Payload any    `json:"payload"`
+}
+
+// newEnvelope stamps a fresh id and timestamp on an event.
+func newEnvelope(eventType string, payload any) Envelope {
+	return Envelope{
+		ID:      uuid.NewString(),
+		TS:      time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+		Type:    eventType,
+		Payload: payload,
+	}
+}
+
+// newHeartbeat builds the periodic system.health frame.
+func newHeartbeat() Envelope {
+	return newEnvelope(EventSystemHealth, map[string]any{
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // Client represents a single WebSocket connection.
@@ -264,7 +285,7 @@ func (h *Hub) deliver(msg broadcastMsg) {
 
 // Broadcast queues a message for all clients, dropping it if the hub queue is full.
 func (h *Hub) Broadcast(eventType string, payload any) {
-	data, err := json.Marshal(Envelope{Type: eventType, Payload: payload})
+	data, err := json.Marshal(newEnvelope(eventType, payload))
 	if err != nil {
 		slog.Error("failed to marshal WS broadcast", "error", err)
 		return
@@ -278,7 +299,7 @@ func (h *Hub) Broadcast(eventType string, payload any) {
 
 // BroadcastToUser queues a message for a user's connections, dropping it if the hub queue is full.
 func (h *Hub) BroadcastToUser(userID, eventType string, payload any) {
-	data, err := json.Marshal(Envelope{Type: eventType, Payload: payload})
+	data, err := json.Marshal(newEnvelope(eventType, payload))
 	if err != nil {
 		slog.Error("failed to marshal WS broadcast", "error", err)
 		return
