@@ -35,6 +35,8 @@ interface LiveState {
   jobs: Record<string, SyncJob>;
   upsertJob: (j: SyncJob) => void;
   clearJob: (key: string) => void;
+  /** drop all jobs, e.g. after a reconnect where sync.complete may have been missed */
+  resetJobs: () => void;
 
   /** transient per-service status overrides from service.status frames */
   statusOverrides: Record<string, ServiceStatus>;
@@ -67,6 +69,7 @@ export const useLive = create<LiveState>((set) => ({
       delete next[key];
       return { jobs: next };
     }),
+  resetJobs: () => set({ jobs: {} }),
 
   statusOverrides: {},
   setStatus: (serviceId, status) =>

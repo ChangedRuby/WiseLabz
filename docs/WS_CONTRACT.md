@@ -51,7 +51,7 @@ gets a locally generated value and is never treated as a duplicate.
 `domain.action`, lowercase, dot-separated. Domains: `service`, `sync`, `change`,
 `alert`, `quality`, `doc`, `system`. Actions are past-tense/state nouns (`status`, `progress`,
 `complete`, `detected`, `created`, `resolved`, `generated`, `ai_suggestion`,
-`health`, `notice`).
+`health`, `notice`, `resync`).
 
 ## Client dispatch model
 
@@ -343,6 +343,17 @@ interface SystemNoticePayload {
 - **Reaction:** toast; `action: 'reauth'` → clear `authStore` + redirect `/login`;
   `'reload'` → prompt refresh. Covers an admin toggling auth/AI config mid-session.
 
+### 15. `system.resync`
+Broadcast by a replica after its cross-replica relay listener reconnects following a
+gap (ADR 0005), meaning frames may have been missed. Not emitted yet; the relay adds it.
+
+```ts
+type SystemResyncPayload = {};
+```
+- **Consumers:** `WebSocketProvider`.
+- **Reaction:** invalidate `['/alerts']`, `['/changes']`, `['/connectors']`,
+  `['/dashboard/overview']` and clear the sync-job store (`useLive.jobs`).
+
 ---
 
 ## Reconnect behavior
@@ -352,11 +363,12 @@ reconnects with exponential backoff (`min(1000·2^n, 15000)` ms, reset after a
 successful open). It tracks `connecting` → `open` → `closed` in the `useLive`
 store. Close codes are not distinguished.
 
-It does **not** yet invalidate queries after a reconnect, so events sent while
-disconnected are missed until the next refetch. The server never replays. ADR 0005
-requires the client, on every reconnect and on a `system.resync` event, to
-invalidate the volatile queries
-(`['alerts']`, `['changes']`, `['connectors']`, `['dashboard','overview']`).
+The server never replays frames, so recovery is by REST refetch. On every reconnect
+(not the first connect after mount or login) the client invalidates the volatile
+queries `['/alerts']`, `['/changes']`, `['/connectors']` and `['/dashboard/overview']`
+(prefix match, so filtered variants are covered) and clears the sync-job store; a
+running sync re-adds itself on its next `sync.progress`. The same happens on a
+`system.resync` event (ADR 0005).
 
 WS failure is never fatal: it degrades to a `closed` socket status in `useLive`, shows a
 reconnecting indicator, and the UI falls back to React Query's normal

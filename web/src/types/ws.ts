@@ -25,7 +25,8 @@ export type WsEventType =
   | 'doc.lock.released'
   | 'doc.lock.expired'
   | 'system.health'
-  | 'system.notice';
+  | 'system.notice'
+  | 'system.resync';
 
 /** Uniform envelope wrapping every frame. */
 export interface WsEnvelope<T = unknown> {
@@ -159,6 +160,9 @@ export interface SystemNoticePayload {
   action?: 'reauth' | 'reload' | 'none';
 }
 
+/** Empty payload: the frame itself is the signal to refetch volatile state. */
+export type SystemResyncPayload = Record<string, never>;
+
 /** Maps each event type to its payload — lets consumers switch exhaustively. */
 export interface WsEventMap {
   'service.status': ServiceStatusPayload;
@@ -178,6 +182,7 @@ export interface WsEventMap {
   'doc.lock.expired': DocLockExpiredPayload;
   'system.health': SystemHealthPayload;
   'system.notice': SystemNoticePayload;
+  'system.resync': SystemResyncPayload;
 }
 
 /** Discriminated union of all possible frames. */

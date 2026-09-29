@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getGetDashboardOverviewQueryKey } from '../api/generated/dashboard/dashboard';
 import { getGetChangesQueryKey } from '../api/generated/changes/changes';
 import { getGetAlertsQueryKey } from '../api/generated/alerts/alerts';
+import { getGetConnectorsQueryKey } from '../api/generated/connectors/connectors';
 import { getGetFindingsQueryKey } from '../api/generated/findings/findings';
 import { getGetNotificationsQueryKey } from '../api/generated/notifications/notifications';
 import { getGetDocsTreeQueryKey } from '../api/generated/docs/docs';
@@ -47,6 +48,18 @@ function normalize(raw: WsEvent): WsEvent {
   } as WsEvent;
 }
 
+// The server never replays missed frames, so after a reconnect (or a server
+// system.resync) recover by refetching the volatile queries over REST. Sync jobs
+// are cleared too: a running one re-adds itself on its next sync.progress, so a
+// missed sync.complete can't leave a stuck progress bar.
+function resync(qc: ReturnType<typeof useQueryClient>) {
+  useLive.getState().resetJobs();
+  qc.invalidateQueries({ queryKey: getGetAlertsQueryKey() });
+  qc.invalidateQueries({ queryKey: getGetChangesQueryKey() });
+  qc.invalidateQueries({ queryKey: getGetConnectorsQueryKey() });
+  qc.invalidateQueries({ queryKey: getGetDashboardOverviewQueryKey() });
+}
+
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const live = useRef(useLive.getState()).current; // stable store handle
@@ -64,6 +77,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     let socket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
+    let hasOpened = false; // first open is a fresh load; later opens are reconnects
 
     const connect = async () => {
       useLive.getState().setWs('connecting');
@@ -82,6 +96,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       socket.onopen = () => {
         reconnects.current = 0;
         useLive.getState().setWs('open');
+        if (hasOpened) resync(qc);
+        hasOpened = true;
       };
 
       socket.onclose = () => {
@@ -256,6 +272,10 @@ function handle(frame: WsEvent, qc: ReturnType<typeof useQueryClient>) {
     case 'doc.lock.expired': {
       const p = frame.payload;
       s.setDocLock(p.docId, undefined);
+      break;
+    }
+    case 'system.resync': {
+      resync(qc);
       break;
     }
     default:

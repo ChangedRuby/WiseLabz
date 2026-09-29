@@ -36,6 +36,9 @@ const (
 	EventDocLockExpired         = "doc.lock.expired"
 	EventSystemHealth           = "system.health"
 	EventSystemNotice           = "system.notice"
+	// EventSystemResync tells clients to refetch volatile state. The relay emits
+	// it after its listener reconnects following a gap (ADR 0005).
+	EventSystemResync = "system.resync"
 )
 
 // Envelope wraps all WebSocket messages. ID is unique per emitted event (clients

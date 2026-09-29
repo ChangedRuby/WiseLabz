@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getGetAlertsQueryKey } from '../api/generated/alerts/alerts';
 import { getGetChangesQueryKey } from '../api/generated/changes/changes';
+import { getGetConnectorsQueryKey } from '../api/generated/connectors/connectors';
 import { getGetDashboardOverviewQueryKey } from '../api/generated/dashboard/dashboard';
 import i18n from '../i18n';
 import { useAuth } from '../store/auth';
@@ -352,5 +354,105 @@ describe('WebSocketProvider', () => {
     expect(TestWebSocket.urls.length).toBe(initialUrlCount + 1);
 
     unmount();
+  });
+
+  const volatileKeys = () => [
+    getGetAlertsQueryKey(),
+    getGetChangesQueryKey(),
+    getGetConnectorsQueryKey(),
+    getGetDashboardOverviewQueryKey(),
+  ];
+
+  const invalidatedKeys = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.map((c) => (c[0] as { queryKey: unknown }).queryKey);
+
+  it('does not resync on the first open', async () => {
+    window.WebSocket = TestWebSocket as unknown as typeof WebSocket;
+    useAuth.setState({ status: 'authenticated' });
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WebSocketProvider>
+          <div />
+        </WebSocketProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => expect(useLive.getState().ws).toBe('open'));
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('refetches volatile queries and clears sync jobs after a reconnect', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    window.WebSocket = TestWebSocket as unknown as typeof WebSocket;
+    useAuth.setState({ status: 'authenticated' });
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <WebSocketProvider>
+          <div />
+        </WebSocketProvider>
+      </QueryClientProvider>
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useLive.getState().ws).toBe('open');
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    useLive.getState().upsertJob({
+      jobId: 'job-1',
+      serviceId: 'svc-1',
+      phase: 'fetching',
+      percent: 10,
+      startedAt: 0,
+    });
+
+    act(() => TestWebSocket.last?.onclose?.(new Event('close')));
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(useLive.getState().ws).toBe('open');
+    expect(invalidatedKeys(invalidateQueries)).toEqual(volatileKeys());
+    expect(useLive.getState().jobs).toEqual({});
+
+    unmount();
+  });
+
+  it('refetches volatile queries and clears sync jobs on system.resync', async () => {
+    window.WebSocket = TestWebSocket as unknown as typeof WebSocket;
+    useAuth.setState({ status: 'authenticated' });
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WebSocketProvider>
+          <div />
+        </WebSocketProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => expect(useLive.getState().ws).toBe('open'));
+    useLive.getState().upsertJob({
+      jobId: 'job-1',
+      serviceId: null,
+      phase: 'fetching',
+      percent: 10,
+      startedAt: 0,
+    });
+
+    act(() =>
+      TestWebSocket.last?.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({ type: 'system.resync', ts: '2026-09-06T12:00:00Z', payload: {} }),
+        })
+      )
+    );
+
+    expect(invalidatedKeys(invalidateQueries)).toEqual(volatileKeys());
+    expect(useLive.getState().jobs).toEqual({});
   });
 });
