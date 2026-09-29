@@ -1,7 +1,7 @@
 {
   "race": {
     "all": {
-      "packages": ["./internal/ws/...", "./internal/notifications/...", "./internal/sync/...", "./internal/api/..."]
+      "packages": ["./internal/ws/...", "./internal/notifications/...", "./internal/sync/...", "./internal/api/...", "./internal/store", "./internal/quality", "./internal/backup", "./internal/doc", "./internal/docexport", "./internal/chat", "./internal/mcp", "./internal/retention", "./internal/diagnostics", "./cmd/backup", "./cmd/server"]
     }
   },
   "postgres": {

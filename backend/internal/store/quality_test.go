@@ -16,16 +16,12 @@ import (
 
 func newConcurrentQualityTestStore(t *testing.T) *Store {
 	t.Helper()
-	dsn := "file:" + t.TempDir() + "/quality.db?cache=shared&_pragma=busy_timeout(5000)"
+	dsn := "file:" + migratedSQLite(t) + "?cache=shared&_pragma=busy_timeout(5000)"
 	db, err := OpenDB("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("OpenDB() error: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrations() error: %v", err)
-	}
 	db.SetMaxOpenConns(8)
 	return New(db, "sqlite")
 }

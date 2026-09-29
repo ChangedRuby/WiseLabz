@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"os"
 	"testing"
 
@@ -12,22 +11,19 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/backup"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 
 	_ "github.com/WiseLabz/wiselabz/internal/connector/all"
 )
 
-func newSeededStore(t *testing.T, dsn string) *store.Store {
+func newSeededStore(t *testing.T) *store.Store {
 	t.Helper()
+	dsn := "file:" + storetest.MigratedSQLite(t) + "?cache=shared"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 
 	s := store.New(db, "sqlite")
 	if err := s.Init(context.Background(), "admin-seed-pw-1234"); err != nil {
@@ -42,7 +38,7 @@ func newSeededStore(t *testing.T, dsn string) *store.Store {
 func TestRunVerifyPassAndFail(t *testing.T) {
 	ctx := context.Background()
 	srcDir := t.TempDir()
-	s := newSeededStore(t, "file:"+srcDir+"/src.db?cache=shared")
+	s := newSeededStore(t)
 
 	run, err := backup.ExportToFile(ctx, s, srcDir)
 	if err != nil {
@@ -70,7 +66,7 @@ func TestRunVerifyPassAndFail(t *testing.T) {
 func TestRunVerifyDefaultsToLatestInDir(t *testing.T) {
 	ctx := context.Background()
 	srcDir := t.TempDir()
-	s := newSeededStore(t, "file:"+srcDir+"/src.db?cache=shared")
+	s := newSeededStore(t)
 
 	if _, err := backup.ExportToFile(ctx, s, srcDir); err != nil {
 		t.Fatalf("ExportToFile: %v", err)
@@ -90,7 +86,7 @@ func TestRunVerifyRequiresABundle(t *testing.T) {
 func TestRunRestoreImportsIntoConfiguredDatabase(t *testing.T) {
 	ctx := context.Background()
 	srcDir := t.TempDir()
-	s := newSeededStore(t, "file:"+srcDir+"/src.db?cache=shared")
+	s := newSeededStore(t)
 
 	run, err := backup.ExportToFile(ctx, s, srcDir)
 	if err != nil {
@@ -126,7 +122,7 @@ func TestRunRestoreImportsIntoConfiguredDatabase(t *testing.T) {
 func TestRunRestoreRejectsCorruptedBundle(t *testing.T) {
 	ctx := context.Background()
 	srcDir := t.TempDir()
-	s := newSeededStore(t, "file:"+srcDir+"/src.db?cache=shared")
+	s := newSeededStore(t)
 
 	run, err := backup.ExportToFile(ctx, s, srcDir)
 	if err != nil {

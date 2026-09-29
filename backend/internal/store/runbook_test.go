@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"testing"
 )
 
@@ -14,15 +12,11 @@ import (
 // TestDeleteUserCascadesMFAFactorsAndRecoveryCodes in mfa_test.go.
 func newCascadeTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := OpenDB("sqlite", "file:"+t.TempDir()+"/cascade.db")
+	db, err := OpenDB("sqlite", "file:"+migratedSQLite(t))
 	if err != nil {
 		t.Fatalf("OpenDB() error: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrations() error: %v", err)
-	}
 	return New(db, "sqlite")
 }
 

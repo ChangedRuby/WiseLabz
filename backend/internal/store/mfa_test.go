@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"testing"
 )
 
@@ -164,15 +162,11 @@ func TestRecoveryCodesSingleUse(t *testing.T) {
 func TestDeleteUserCascadesMFAFactorsAndRecoveryCodes(t *testing.T) {
 	// newDocTestStore opens SQLite without the foreign_keys pragma; use
 	// OpenDB (production's own path) so ON DELETE CASCADE actually fires.
-	db, err := OpenDB("sqlite", "file:"+t.TempDir()+"/cascade.db")
+	db, err := OpenDB("sqlite", "file:"+migratedSQLite(t))
 	if err != nil {
 		t.Fatalf("OpenDB() error: %v", err)
 	}
 	defer db.Close() //nolint:errcheck
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrations() error: %v", err)
-	}
 	s := New(db, "sqlite")
 	ctx := context.Background()
 	u := mfaTestUser(t, s)

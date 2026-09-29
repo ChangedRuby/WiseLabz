@@ -12,6 +12,7 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/connector"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 
 	_ "modernc.org/sqlite"
 )
@@ -48,16 +49,12 @@ func createComplianceSnapshot(t *testing.T, s *store.Store, connectorID string, 
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+t.TempDir()+"/quality.db?cache=shared")
+	db, err := sql.Open("sqlite", "file:"+storetest.MigratedSQLite(t)+"?cache=shared")
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 	return store.New(db, "sqlite")
 }
 

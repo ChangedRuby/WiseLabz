@@ -13,10 +13,14 @@ import (
 	syshandler "github.com/WiseLabz/wiselabz/internal/api/system"
 	"github.com/WiseLabz/wiselabz/internal/leader"
 	"github.com/WiseLabz/wiselabz/internal/notifications"
-	"github.com/WiseLabz/wiselabz/internal/scheduler"
 	"github.com/WiseLabz/wiselabz/internal/store"
 	"github.com/WiseLabz/wiselabz/internal/ws"
 )
+
+type lifecycleScheduler interface {
+	Start(context.Context)
+	Stop()
+}
 
 // lifecycleDeps holds everything the lifecycle manager needs to start and
 // stop the server's long-running goroutines.
@@ -24,7 +28,7 @@ type lifecycleDeps struct {
 	Logger          *slog.Logger
 	HTTPServer      *http.Server
 	WSHub           *ws.Hub
-	Scheduler       *scheduler.Runner
+	Scheduler       lifecycleScheduler
 	Dispatcher      *notifications.Dispatcher
 	Store           *store.Store
 	Ready           *syshandler.ReadyState

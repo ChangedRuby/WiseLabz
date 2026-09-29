@@ -1,6 +1,6 @@
 # Backend test performance
 
-This file records where backend Go test time went, what #401 changed, what it
+This file records where backend Go test time went, what #401 and #405–#407 changed, what they
 rejected and why, and the rules that keep the suite fast without weakening
 determinism, race detection or coverage. Read it before adding a slow test,
 a `time.Sleep`, a `t.Parallel()` or a new CI shard.
@@ -65,7 +65,9 @@ The race-suite cost broke down as follows:
 - **Migrated database template.** `storetest.MigratedSQLite(t)` runs the
   migrations once per test binary and gives each test its own copy of the
   file. It is used by the `internal/api`, `api/auth`, `api/notifications`,
-  `apitest`, `notifications` and `sync` harnesses. Tests stay fully isolated:
+  `apitest`, `notifications` and `sync` harnesses, plus the #406 fixtures
+  listed below. `internal/store` uses its own `_test.go` template to avoid
+  an import cycle. Tests stay fully isolated:
   each gets its own file.
 - **Parallel tests.** Every top-level test in `internal/api` and
   `internal/api/connectors` calls `t.Parallel()` (see the rules below).
@@ -86,7 +88,8 @@ The race-suite cost broke down as follows:
     closed local port.
 - **CI layout.**
   - Coverage is one unsharded job.
-  - The race suite is one shard that now also covers `internal/api/...`.
+  - The race suite is one shard covering `internal/api/...` and all eleven
+    #405–#407 packages listed below.
   - The Postgres shards are unchanged: they need a Postgres service, so they
     are measured in CI only.
 
@@ -207,22 +210,159 @@ Results after #401 (PR #404, median of 3 CI runs):
 - **Postgres:** these shards did not change; their 137s → 178s is runner
   variance.
 
+## Fixture reuse and lifecycle tests (#405–#407)
+
+These changes are adopted **regardless of the 5% / 10s threshold**. This is
+an explicitly chosen exception: schema reuse and deterministic lifecycle
+checks make regular race coverage affordable. Correctness, isolation, race
+detection and coverage remain acceptance gates. No parallel tests,
+dependencies, public APIs or configuration knobs were added.
+
+The fifteen ordinary fixture sites converted in this change are:
+
+| Package | Fixture sites |
+|---|---|
+| `internal/store` | `newDocTestStore`, `newConcurrentQualityTestStore`, `newCascadeTestStore`, MFA cascade test, external `newBackupTestStore` |
+| `internal/quality` | `newTestStore` |
+| `internal/backup` | `newTestStore` |
+| `internal/doc` | `newEngineTestStore` |
+| `internal/docexport` | `newTestStore` (also used by Git export tests) |
+| `internal/chat` | embedding failure test and retrieval/cache test |
+| `internal/mcp` | `newTestHarness` |
+| `internal/retention` | `newTestStore` |
+| `internal/diagnostics` | `newTestStore` |
+| `cmd/backup` | `newSeededStore`; export directories remain independently supplied |
+
+The store package builds its template with `sync.Once`, closes the migrated
+database before reading immutable bytes, and writes a separate `0600` file
+under each test's temporary directory. `MigratedSQLiteForTest` exists only
+in test binaries and lets external `store_test` fixtures share this cache.
+Other packages use `storetest.MigratedSQLite`. Templates contain only the
+migration result (including migration-defined defaults), with no `Store.Init`
+or test seeding. Both helpers are checked for concurrent copy creation,
+permissions and current migration status; seeding one copy must leave both
+an existing copy and a later copy free of its users and docs.
+
+Callers retain their own DSN options, pool sizes, foreign-key enforcement,
+WAL and busy timeouts, per-test initialization, seeding and cleanup. Real
+migrations remain in migration/upgrade/rollback tests, restore verification,
+production restore paths, and isolated PostgreSQL schemas.
+
+The lifecycle's unexported scheduler dependency now accepts `Start` and
+`Stop`; production still supplies the real runner. The standby test advances
+a scheduler double by two one-second intervals and checks zero starts and
+callbacks, HTTP `/readyz` 503 and `WaitingForLeader` both before and after.
+The acquired-leader positive control advances one second and executes its
+callback with the live work context. Startup waits for a buffered
+`http.Server.BaseContext` listener signal and a successful local HTTP
+request. Real HTTP and SQLite stay outside fake-time bubbles.
+
+The two real-runner shutdown tests remain. A gated `Stop` additionally
+proves shutdown marks readiness false while the database is usable and the
+work context is live, then checks cancellation, goroutine completion and
+database closure after releasing the gate. Cleanup is registered before
+assertions; bounded 30-second waits serve only as hang guards.
+
+`race/all` now also runs `internal/store`, `quality`, `backup`, `doc`,
+`docexport`, `chat`, `mcp`, `retention`, `diagnostics`, `cmd/backup` and
+`cmd/server`. The single shard and its ten-minute CI timeout are unchanged.
+
+### Local measurements
+
+Fresh uncached runs on the same machine, before resource-limited verification:
+
+| Package | Normal before / after (s) | Race before / after (s) |
+|---|---|---|
+| `internal/store` | 6.877 / 0.860 | 161.894 / 15.657 |
+| `internal/quality` | 1.772 / 0.152 | 41.656 / 3.675 |
+| `internal/backup` | 1.143 / 0.306 | 27.506 / 6.575 |
+| `internal/doc` | 0.854 / 0.083 | 22.046 / 2.693 |
+| `internal/docexport` | 1.303 / 0.952 | 16.831 / 3.593 |
+| `internal/chat` | 0.099 / 0.053 | 3.265 / 2.116 |
+| `internal/mcp` | 0.279 / 0.077 | 6.827 / 2.415 |
+| `internal/retention` | 0.233 / 0.062 | 6.601 / 2.186 |
+| `internal/diagnostics` | 0.190 / 0.057 | 5.512 / 2.185 |
+| `cmd/backup` | 0.323 / 0.191 | 9.838 / 6.244 |
+| `cmd/server` | 1.241 / 0.072 | 3.593 / 2.392 |
+
+Wall clock for those eleven packages: **8s → 3s normal**, **165s → 18s race**.
+Both profiles use `-count=1`; the candidate race run also uses `-shuffle=on`.
+These are local observations, not CI medians or a claim about the unchanged
+race job: previously those eleven packages were absent from that job.
+
+### Validation and coverage
+
+All eleven packages pass normally and with `-race -count=1 -shuffle=on`.
+Lifecycle tests also pass `-race -count=20 -shuffle=on`, and the existing
+real-cron scheduler suite passes with race detection. All three existing
+PostgreSQL shards pass locally on PostgreSQL 17.11, with `migrate up` and
+`migrate verify` reporting schema version 45, clean and current; CI continues
+to use PostgreSQL 16.
+
+Full backend coverage uses the unchanged `-coverpkg` strategy and helper
+exclusions. The baseline and candidate both round to **80.4%** overall.
+`coverage-parity.sh` keeps its 0.1pp package tolerance and 1pp `internal/ws`
+tolerance unchanged. Its raw comparison exits nonzero for intentional gains:
+`cmd/server` **20.8% → 22.5%** and `internal/api/system` **77.2% → 78.0%**,
+from the acquired-leader and draining-readiness tests. No package loses
+coverage beyond the existing tolerances in the confirmation run. The first comparison also observed one
+uncovered `internal/sync` connector-list error statement (about 0.14pp);
+the confirmation covered it without any source change. Raw profiles and both
+comparison outputs are retained so this variation is visible.
+
+### CI measurements
+
+The existing Test profile workflow ran normal, race and cover modes three
+times per configuration on `ubuntu-latest`, with `-count=1`, the same Go
+version and each mode's usual restored cache kind. Each run links to raw
+JSON/text artifacts (retained by the workflow for 14 days). Normal and cover
+use all backend packages; race uses the shard scope at that commit.
+The expanded-scope baseline changes only `test-shards.json`, separating
+fixture/timing improvements from the extra race coverage.
+
+| Configuration / source | Normal runs → median (s) | Race runs → median (s) | Cover runs → median (s) |
+|---|---|---|---|
+| [Unchanged baseline](https://github.com/WiseLabz/WiseLabz/actions/runs/36496216327) (`fb615e3`) | 143, 140, 139 → **140** | 50, 48, 49 → **49** | 61, 62, 61 → **61** |
+| [Expanded-scope baseline](https://github.com/WiseLabz/WiseLabz/actions/runs/36496761938) (`b067e81`) | 139, 140, 146 → **140** | 424, 448, 439 → **439** | 53, 59, 67 → **59** |
+| [Implementation](https://github.com/WiseLabz/WiseLabz/actions/runs/36497384852) (`2aeb6cc`) | 106, 107, 99 → **106** | 95, 106, 89 → **95** | 29, 40, 65 → **40** |
+
+At the same expanded race scope, the median falls **439s → 95s**: **344s
+(78%)** saved. Against the former smaller scope, the final race run costs
+**46s more** (49s → 95s) while covering eleven additional packages. Normal
+falls 140s → 106s and cover 61s → 40s. These wall clocks include compilation;
+cache restoration, cold builds of newly included race binaries and runner
+variance are distinct from package execution. The package medians below
+show the test-time effect directly; the normal baseline has a cold profile
+build cache while race/cover restore their regular CI cache kinds.
+
+| Package | Normal baseline / implementation median (s) | Race expanded baseline / implementation median (s) |
+|---|---|---|
+| `internal/store` | 33.851 / 3.548 | 304.379 / 26.538 |
+| `internal/quality` | 10.620 / 0.937 | 88.422 / 7.468 |
+| `internal/backup` | 9.260 / 2.538 | 73.753 / 14.930 |
+| `internal/doc` | 6.455 / 0.575 | 58.286 / 4.582 |
+| `internal/docexport` | 5.961 / 1.240 | 43.799 / 6.626 |
+| `internal/chat` | 0.736 / 0.361 | 7.272 / 3.676 |
+| `internal/mcp` | 1.797 / 0.492 | 17.545 / 4.860 |
+| `internal/retention` | 2.264 / 0.406 | 16.584 / 4.267 |
+| `internal/diagnostics` | 1.469 / 0.428 | 13.940 / 3.880 |
+| `cmd/backup` | 2.375 / 1.055 | 34.649 / 17.875 |
+| `cmd/server` | 1.654 / 0.533 | 6.277 / 8.123 |
+
+[Regular backend CI](https://github.com/WiseLabz/WiseLabz/actions/runs/36497434502)
+passes on the implementation commit, including PostgreSQL 16, coverage,
+the expanded race shard, lint/static/vulnerability checks, build and compose
+smoke. Local checks were completed sequentially with bounded Go build
+concurrency after a resource-heavy verification attempt; their logs and
+baseline/candidate coverage profiles are retained with the local evidence.
+On memory-limited machines, run checks sequentially with disk-backed
+`GOTMPDIR` and `TMPDIR`, `GOFLAGS=-p=1`, `GOMAXPROCS=2` and
+`GOMEMLIMIT=384MiB`. These limit verification processes; production and CI
+configuration are unchanged.
+
 ## Follow-ups
 
-- **`internal/store`** still migrates per test (6.6s normal, about 160s with
-  `-race`). It cannot use `storetest`, which imports `store`: that would be an
-  import cycle. It needs an in-package template helper. It is not in the race
-  suite today.
-- **Other packages that still migrate per test:** `quality`, `backup`, `doc`,
-  `docexport`, `chat`, `mcp`, `retention`, `diagnostics`, `cmd/backup`. Each
-  takes 1-2s normally, so the gain is small until they join a race job.
-- **Two remaining one-tick waits:**
-  - `cmd/server` `TestStandbyIsUnreadyAndRunsNoScheduler` sleeps 1.1s to
-    prove a standby never runs a job.
-  - `docexport` `TestScheduledExportRunsAndFires` waits up to one cron tick.
-  - Making either instant means running the server lifecycle or the
-    exporter's store inside a synctest bubble. Both are under the adoption
-    bar.
-- **Stress validation:** `go test -race -count=20 -shuffle=on` on the
-  parallelized packages should run in CI (not on small dev machines) before
-  the parallel rollout is extended to more packages.
+- `docexport` `TestScheduledExportRunsAndFires` still waits for a real cron
+  tick. That deferred timing work remains outside this change.
+- Further parallel test rollout still needs its own stress validation and
+  adoption decision; this change adds no `t.Parallel()` calls.

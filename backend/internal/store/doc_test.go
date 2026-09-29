@@ -30,8 +30,7 @@ func newDocTestStore(t *testing.T) *Store {
 		return newPostgresTestStore(t, pgDSN, logger)
 	}
 
-	dir := t.TempDir()
-	dsn := "file:" + dir + "/test.db?cache=shared"
+	dsn := "file:" + migratedSQLite(t) + "?cache=shared"
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -39,9 +38,6 @@ func newDocTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("RunMigrations() error: %v", err)
-	}
 	db.SetMaxOpenConns(1)
 
 	return New(db, "sqlite")

@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 )
 
 type stubEmbedder struct {
@@ -68,15 +67,12 @@ func TestPackUnpackVectorRoundTrips(t *testing.T) {
 
 func TestSyncDocEmbeddingsKeepsOldRowsWhenEmbedFails(t *testing.T) {
 	ctx := context.Background()
-	db, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db?cache=shared")
+	db, err := sql.Open("sqlite", "file:"+storetest.MigratedSQLite(t)+"?cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	if err := store.RunMigrations(db, "sqlite", slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 	s := store.New(db, "sqlite")
 	if err := s.CreateDoc(ctx, &store.DocRecord{ID: "d1", Title: "d1", Kind: "lab", Content: "x"}); err != nil {
 		t.Fatalf("CreateDoc: %v", err)

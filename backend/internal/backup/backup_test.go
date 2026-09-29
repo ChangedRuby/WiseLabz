@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/WiseLabz/wiselabz/internal/backup"
 	"github.com/WiseLabz/wiselabz/internal/store"
+	"github.com/WiseLabz/wiselabz/internal/store/storetest"
 
 	// Register connector implementations (proxmox, opnsense, ...) so
 	// GetTypeSchema resolves their secret fields the same way it does in
@@ -23,19 +23,13 @@ import (
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	dir := t.TempDir()
-	dsn := "file:" + dir + "/test.db?cache=shared"
+	dsn := "file:" + storetest.MigratedSQLite(t) + "?cache=shared"
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := store.RunMigrations(db, "sqlite", logger); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
 
 	s := store.New(db, "sqlite")
 	if err := s.Init(context.Background(), "admin-seed-pw-1234"); err != nil {
