@@ -3,7 +3,8 @@
 This file records where backend Go test time went, what #401 and #405–#408 changed, what they
 rejected and why, and the rules that keep the suite fast without weakening
 determinism, race detection or coverage. Read it before adding a slow test,
-a `time.Sleep`, a `t.Parallel()` or a new CI shard.
+a `time.Sleep`, a `t.Parallel()` or a new CI shard. [What CI runs](#what-ci-runs)
+explains which jobs a change starts.
 
 ## Measuring
 
@@ -189,7 +190,9 @@ blockers:
   loopback is blocked.
 - The connector packages mix `AllowLoopbackForTest` with blocked-loopback
   tests.
-- The `store` Postgres job runs with `-p 1` and one schema per test.
+- The `store` Postgres job runs with `-p 1` and one schema per test. It runs
+  only when a change reaches the store's Go dependency closure (see
+  [What CI runs](#what-ci-runs)).
 
 **Time:**
 
@@ -212,6 +215,89 @@ blockers:
 `httptest` server (with `connector.AllowLoopbackForTest(t)` where the
 guarded dialer applies), or at a closed local port such as
 `http://127.0.0.1:1` when the test only needs the call to fail.
+
+## What CI runs
+
+`CI Status` is the only required check, and it reports on every PR and every
+push to `main`. The workflow always starts: a `paths-ignore` trigger would
+leave the required check pending forever on a docs-only PR. The `changes` job
+decides what else runs, using `scripts/ci/changes.sh`, and every other job is
+gated on its outputs.
+
+**Areas.** Each changed path is matched against the ordered rule table at the
+top of `scripts/ci/changes.sh`. The first match wins.
+
+| Output | Selected by | Jobs |
+|---|---|---|
+| `backend` | `backend/**`, `go.work*`, `.golangci.yml`, `scripts/ci/**`, the Go cache actions | lint, staticcheck, unit, race, build |
+| `frontend` | `web/**`, `docs/openapi.yaml`, the Bun setup action | lint, test, build |
+| `compose` | backend or frontend, plus `Dockerfile`, `.dockerignore`, `docker-compose*.yml`, `.env.example`, `scripts/compose-smoke.*` | compose-smoke |
+| `workflows` | `.github/workflows/**`, `.github/actions/**`, `.github/codeql/**` | `Lint (Workflows)` (actionlint + shellcheck) |
+| `gomod` | `backend/go.mod`, `backend/go.sum`, `go.work*` | govulncheck |
+| `postgres` | a backend change inside the Postgres tests' Go dependency closure (below) | Postgres shards |
+
+Changing `.github/workflows/ci.yml` selects everything.
+
+**Ignored.** These paths never start a job: `*.md` anywhere, `docs/**` (except
+`openapi.yaml`), `graphify-out/**`, `openspec/**`, `.claude/**`, `.agents/**`,
+`.codex/**`, `deploy/**`, `prototypes/**`, release metadata (`CHANGELOG.md`,
+release-please config and manifest), local tooling (`Makefile`,
+`lefthook.yml`, `.air.toml`) and repository metadata (`LICENSE`,
+`CODEOWNERS`, issue and PR templates). A docs-only PR finishes in about 15
+seconds.
+
+**Fail-safe.** A path that matches no rule is `unclassified` and selects
+backend, frontend, compose and gomod. Unknown files never cause a skip; they
+cost a full run until someone classifies them.
+
+**Release PRs.** On pull requests, a `web/package.json` change that only bumps
+`version` is ignored, so the release-please PR skips the heavy jobs. The push
+to `main` after a release still runs them.
+
+**Postgres closure.** When backend changed, `changes` sets up Go and runs
+`changes.sh go-closure`. It lists the dependencies of the Postgres test
+packages (from `test-shards.json`) and `./cmd/migrate` with
+`go list -deps -test`. It then maps each changed file to its nearest enclosing
+Go package, so migrations, `testdata/` and deleted files count too. The shards
+run when that package is in the closure. They also run for Go module files,
+`scripts/ci/**`, the Go cache actions, `ci.yml`, unclassified paths, a path
+with no enclosing package, or a `go list` failure.
+
+**govulncheck.** PR CI runs it only when `gomod` is selected. The
+`Govulncheck nightly` workflow scans `main` every day at 06:17 UTC (it can
+also be run by hand). It catches new advisories against unchanged
+dependencies, and code changes that made a known-vulnerable function
+reachable. A red nightly run needs an owner: treat it like a failing `main`.
+
+**Drafts.** On a draft PR only `changes`, the rule check and
+`Lint (Workflows)` run. `CI Status` stays green, and the summary says heavy
+jobs are deferred. Marking the PR ready for review re-runs CI on the same
+commit with the full selection. CodeQL also skips drafts.
+
+**CodeQL – Code Quality.** GitHub's Code Quality scan (runs named
+`CodeQL - Code Quality`, event `dynamic`) is configured in repository
+settings, not in a workflow file. It runs on every PR, docs-only ones
+included, for about 2.5 minutes. It is not a required check. It can't be
+path-filtered: its settings (`gh api repos/WiseLabz/WiseLabz/code-quality/setup`)
+cover only on/off, languages, runner and AI findings.
+
+**Reading a run.** The `Detect changes` job summary lists the selected areas.
+It has a collapsible table of every changed path with the rule it matched,
+followed by the Postgres decision and its reason.
+
+**Adding or changing a rule.** Edit the table in `scripts/ci/changes.sh`
+(order matters), then add a row to `scripts/ci/changes-fixtures.txt` for the
+path. `changes` runs the fixtures on every run, and a mismatch fails CI.
+Suppose a `.md` file under `backend/` or `web/` ever becomes embedded or
+imported. The `*.md` rule would then hide changes to it, so add an exception
+for it above that rule. To check locally:
+
+```sh
+scripts/ci/changes.sh check          # classification fixtures
+scripts/ci/changes.sh check --go     # plus Postgres closure fixtures (needs Go)
+git diff --name-only origin/main... | scripts/ci/changes.sh classify
+git diff --name-only origin/main... | scripts/ci/changes.sh go-closure
+```
 
 ## CI job times
 

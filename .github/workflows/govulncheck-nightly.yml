@@ -1,0 +1,35 @@
+name: Govulncheck nightly
+
+# PR CI runs govulncheck only when Go modules change (see "What CI runs" in
+# docs/TESTING.md). This catches advisories published against unchanged
+# dependencies, and code changes that made a known-vulnerable function
+# reachable, within a day. A failure marks the run red and notifies by email.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: Govulncheck (Backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      # Restore-only: CI on main saves the vuln cache when Go modules change.
+      - name: Setup Go
+        uses: ./.github/actions/go-cache-restore
+        with:
+          kind: vuln
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        working-directory: backend

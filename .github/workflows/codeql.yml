@@ -8,19 +8,35 @@ on:
       - "go.work"
       - "go.work.sum"
       - ".github/workflows/codeql.yml"
+      - ".github/codeql/**"
+      # Last: a later negation excludes paths matched above.
+      - "!backend/**/*.md"
   pull_request:
     branches: [main]
+    # Drafts skip the scan; marking a PR ready runs it.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "backend/**"
       - "go.work"
       - "go.work.sum"
       - ".github/workflows/codeql.yml"
+      - ".github/codeql/**"
+      # Last: a later negation excludes paths matched above.
+      - "!backend/**/*.md"
   schedule:
     - cron: "0 8 * * 1"
+
+# A newer push to the same PR cancels the running scan. Main and scheduled
+# runs get a group of their own (run id): a shared group would drop queued
+# runs, and every main commit must keep its SARIF upload.
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:
     name: Analyze (Go)
+    if: github.event.pull_request.draft != true
     # Scheduled scans can run on the self-hosted runner named by the
     # CODEQL_RUNNER repository variable (unset = GitHub-hosted). PR and push
     # scans always stay GitHub-hosted: fork PR code must never reach a

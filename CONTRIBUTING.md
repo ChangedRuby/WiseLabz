@@ -157,7 +157,10 @@ handling), add regression tests for it rather than relying on the floor alone.
    will pass by running `make test` before opening the PR.
 4. **Open the PR** — use the pull request template. Link any related issues.
 5. **One approval required** — a maintainer must approve before merge.
-6. **CI must pass** — all checks (lint, test, build) must be green.
+6. **CI must pass** — all checks (lint, test, build) must be green. CI runs
+   only the jobs your changed paths need, and skips them entirely for docs-only
+   changes. Draft PRs defer the heavy jobs; marking the PR **ready for review**
+   starts the full suite. See [What CI runs](docs/TESTING.md#what-ci-runs).
 7. **Rebase, don't merge** — update your branch with `git rebase main`. Maintainers
    squash-and-rebase when merging. No merge commits land on `main`.
 

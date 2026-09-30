@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # ready_for_review: drafts defer the heavy jobs, so marking a PR ready
+    # re-runs CI on the same commit with the full job selection.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -17,44 +20,75 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # Go is set up only when backend changed, to compute the Postgres closure.
+    timeout-minutes: 5
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      compose: ${{ steps.filter.outputs.compose }}
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      compose: ${{ steps.classify.outputs.compose }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      gomod: ${{ steps.classify.outputs.gomod }}
+      postgres: ${{ steps.closure.outputs.postgres || 'false' }}
+      draft: ${{ github.event.pull_request.draft == true }}
       race_shards: ${{ steps.shards.outputs.race }}
       postgres_shards: ${{ steps.shards.outputs.postgres }}
 
     steps:
+      # Depth 2: on pull_request HEAD is the merge commit and HEAD^1 the base,
+      # which the web/package.json version-only rule compares against.
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
 
-      - name: Filter paths
+      # Only lists the changed files; scripts/ci/changes.sh decides what they
+      # mean (see "What CI runs" in docs/TESTING.md).
+      - name: List changed files
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          list-files: json
           filters: |
-            backend:
-              - 'backend/**'
-              - 'go.work'
-              - 'go.work.sum'
-              - 'scripts/ci/**'
-              - '.github/actions/**'
-              - '.github/workflows/ci.yml'
-            frontend:
-              - 'web/**'
-              - 'docs/openapi.yaml'
-              - '.github/workflows/ci.yml'
-            compose:
-              - 'backend/**'
-              - 'web/**'
-              - 'docs/openapi.yaml'
-              - 'Dockerfile'
-              - 'docker-compose*.yml'
-              - '.env.example'
-              - 'scripts/compose-smoke.sh'
-              - 'scripts/compose-smoke.yml'
-              - '.github/workflows/ci.yml'
+            all:
+              - '**'
+
+      - name: Check classification rules
+        run: scripts/ci/changes.sh check
+
+      - name: Classify changes
+        id: classify
+        env:
+          FILES: ${{ steps.filter.outputs.all_files }}
+          CI_EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
+        run: |
+          # An empty list would select nothing, so treat it as an error.
+          if [[ -z $FILES ]]; then
+            echo "::error::paths-filter returned no file list"
+            exit 1
+          fi
+          jq -r '.[]' <<<"$FILES" |
+            CHANGES_SUMMARY="$GITHUB_STEP_SUMMARY" scripts/ci/changes.sh classify >> "$GITHUB_OUTPUT"
+          if [[ $DRAFT == true ]]; then
+            echo "**Draft: heavy jobs deferred** until the PR is marked ready for review." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Restore-only: nothing is saved from this job.
+      - name: Setup Go
+        if: steps.classify.outputs.backend == 'true' && github.event.pull_request.draft != true
+        uses: ./.github/actions/go-cache-restore
+        with:
+          kind: lint
+
+      - name: Postgres test closure
+        id: closure
+        if: steps.classify.outputs.backend == 'true' && github.event.pull_request.draft != true
+        env:
+          FILES: ${{ steps.filter.outputs.all_files }}
+        run: |
+          scripts/ci/changes.sh check --go
+          jq -r '.[]' <<<"$FILES" |
+            CHANGES_SUMMARY="$GITHUB_STEP_SUMMARY" scripts/ci/changes.sh go-closure >> "$GITHUB_OUTPUT"
 
       # Shard names come from scripts/ci/test-shards.json, the single place
       # shards are defined; see scripts/ci/test-shards.sh.
@@ -65,11 +99,30 @@ jobs:
             echo "$suite=$(scripts/ci/test-shards.sh matrix "$suite")" >> "$GITHUB_OUTPUT"
           done
 
+  actionlint:
+    name: Lint (Workflows)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ubuntu-latest ships shellcheck, which actionlint runs on run: blocks.
+      - name: Download actionlint
+        id: actionlint
+        run: bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+
+      - name: Run actionlint
+        run: ${{ steps.actionlint.outputs.executable }} -color
+
   lint-backend:
     name: Lint (Backend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' && needs.changes.outputs.draft != 'true'
     # The shard check compiles test packages to list their tests.
     timeout-minutes: 10
     permissions:
@@ -115,7 +168,7 @@ jobs:
     name: Staticcheck (Backend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -151,7 +204,9 @@ jobs:
     name: Govulncheck (Backend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    # Only when Go modules change; govulncheck-nightly.yml covers new advisories
+    # against unchanged dependencies.
+    if: needs.changes.outputs.gomod == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -181,7 +236,7 @@ jobs:
     name: Lint (Frontend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 5
 
     steps:
@@ -189,21 +244,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: web/package.json
-
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: web/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
-
-      - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
-        working-directory: web
+        uses: ./.github/actions/bun-setup
 
       - name: Regenerate API client and mocks
         run: bun run gen:api
@@ -227,7 +268,7 @@ jobs:
     name: Test (Frontend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 5
 
     steps:
@@ -235,21 +276,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: web/package.json
-
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: web/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
-
-      - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
-        working-directory: web
+        uses: ./.github/actions/bun-setup
 
       - name: Run tests with coverage
         run: bun run test:coverage
@@ -266,7 +293,7 @@ jobs:
     name: Test (Backend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -318,7 +345,7 @@ jobs:
     name: Test (Backend, race, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -355,7 +382,9 @@ jobs:
     name: Test (Backend, Postgres, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    # Only when the change touches the Go dependency closure of the Postgres
+    # test packages (scripts/ci/changes.sh go-closure).
+    if: needs.changes.outputs.postgres == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -420,7 +449,7 @@ jobs:
     timeout-minutes: 10
     # Independent of lint/tests: CI Status aggregates every result.
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    if: (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') && needs.changes.outputs.draft != 'true'
     permissions:
       contents: read
       actions: write
@@ -430,27 +459,13 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: web/package.json
-
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: web/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+        uses: ./.github/actions/bun-setup
 
       - name: Setup Go
         id: go
         uses: ./.github/actions/go-cache-restore
         with:
           kind: build
-
-      - name: Install frontend dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
-        working-directory: web
 
       - name: Build frontend
         run: bun run build
@@ -477,7 +492,7 @@ jobs:
     name: Compose smoke
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.compose == 'true'
+    if: needs.changes.outputs.compose == 'true' && needs.changes.outputs.draft != 'true'
     timeout-minutes: 15
 
     steps:
@@ -508,6 +523,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
+      - actionlint
       - lint-backend
       - staticcheck
       - govulncheck

@@ -1,0 +1,25 @@
+name: Setup Bun with node_modules cache
+description: >
+  Installs Bun (version from web/package.json) and restores web/node_modules,
+  running a frozen install only on a cache miss.
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: web/package.json
+
+    - name: Cache node_modules
+      id: cache-node-modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: web/node_modules
+        key: node-modules-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+
+    - name: Install dependencies
+      if: steps.cache-node-modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: bun install --frozen-lockfile
+      working-directory: web

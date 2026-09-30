@@ -95,6 +95,17 @@ func (e *Engine) BaseContext() context.Context {
 	return e.baseCtx
 }
 
+// Idle reports whether no sync is running. A run counts until its outcome and
+// follow-up writes (schedule state, quality check, doc regeneration) are done.
+func (e *Engine) Idle() bool {
+	idle := true
+	e.inFlight.Range(func(any, any) bool {
+		idle = false
+		return false
+	})
+	return idle
+}
+
 // RunResult holds the outcome of a sync run.
 type RunResult struct {
 	ConnectorID  string `json:"connectorId"`

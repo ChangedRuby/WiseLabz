@@ -98,13 +98,28 @@ func newTestAppWithBackupDir(t *testing.T, backupDir string) *testApp {
 	wsHub := ws.NewHub(cfg.Server.Origin)
 	go wsHub.Run(t.Context()) // stops when the test ends
 
+	// Detached syncs (POST .../sync) keep writing after their sync_runs row
+	// lands. Registered after the DB and its temp dir, so it runs before
+	// they are torn down; the deadline is only a hang guard.
+	syncEngine := sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key)
+	t.Cleanup(func() {
+		deadline := time.Now().Add(30 * time.Second)
+		for !syncEngine.Idle() {
+			if time.Now().After(deadline) {
+				t.Error("sync still running 30s after the test ended")
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
+
 	router := api.NewRouter(api.Config{
 		WSHub:         wsHub,
 		Store:         s,
 		JWT:           jwtSvc,
 		Config:        cfg,
 		DocEngine:     doc.NewEngine(s),
-		SyncEngine:    sync.NewEngine(s, nil, nil, nil, cfg.Encryption.Key),
+		SyncEngine:    syncEngine,
 		Scheduler:     jobRunner,
 		BackupDir:     backupDir,
 		AIRegistry:    aiRegistry,

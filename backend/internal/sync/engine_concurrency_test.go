@@ -37,6 +37,9 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewEngine(s, nil, nil, nil, "")
+	if !e.Idle() {
+		t.Fatal("new engine must be idle")
+	}
 	done := make(chan struct{})
 	go func() { defer close(done); _ = e.RunDueSyncs(context.Background(), slog.Default()) }()
 	select {
@@ -47,6 +50,9 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("scheduled fetch did not start")
+	}
+	if e.Idle() {
+		t.Error("engine must not be idle while a sync is running")
 	}
 	for _, partial := range []bool{false, true} {
 		var err error
@@ -77,6 +83,9 @@ func TestSyncExcludesConcurrentRuns(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("sync did not finish")
+	}
+	if !e.Idle() {
+		t.Error("engine must be idle once every sync has returned")
 	}
 	if _, err := e.RunSync(context.Background(), rec.ID, "after"); err != nil {
 		t.Fatal(err)

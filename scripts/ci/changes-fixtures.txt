@@ -1,0 +1,79 @@
+# Fixtures for scripts/ci/changes.sh check. Each path is classified alone.
+#   <path><TAB><true outputs, comma-separated, or -><TAB>[version-only]
+#   @postgres<TAB><path><TAB><true|false>   (check --go only)
+# Add a row whenever you add or change a rule.
+
+# Ignored: no CI value
+README.md	-
+docs/ARCHITECTURE.md	-
+docs/adr/0001-example.md	-
+graphify-out/GRAPH_REPORT.md	-
+graphify-out/graph.json	-
+.graphifyignore	-
+openspec/changes/x/proposal.md	-
+.claude/settings.json	-
+.agents/skills/x/SKILL.md	-
+.codex/hooks.json	-
+prototypes/sketch.html	-
+deploy/wiselabz.service	-
+LICENSE	-
+.github/CODEOWNERS	-
+.github/ISSUE_TEMPLATE/bug_report.yml	-
+.github/PULL_REQUEST_TEMPLATE.md	-
+.gitignore	-
+cliff.toml	-
+skills-lock.json	-
+.air.toml	-
+lefthook.yml	-
+Makefile	-
+CHANGELOG.md	-
+release-please-config.json	-
+.release-please-manifest.json	-
+web/README.md	-
+backend/README.md	-
+
+# Code exceptions and guards
+docs/openapi.yaml	frontend,compose
+backend/internal/report/templates/report.md.tmpl	backend,compose
+web/package.json	frontend,compose
+web/package.json	-	version-only
+.github/workflows/ci.yml	backend,frontend,compose,workflows,gomod
+
+# Areas
+backend/internal/api/router.go	backend,compose
+backend/go.mod	backend,compose,gomod
+backend/go.sum	backend,compose,gomod
+go.work	backend,compose,gomod
+go.work.sum	backend,compose,gomod
+.golangci.yml	backend,compose
+scripts/ci/test-shards.json	backend,compose
+.github/actions/go-cache-restore/action.yml	backend,compose,workflows
+web/src/App.tsx	frontend,compose
+web/bun.lock	frontend,compose
+.github/actions/bun-setup/action.yml	frontend,compose,workflows
+Dockerfile	compose
+.dockerignore	compose
+docker-compose.yml	compose
+docker-compose.sqlite.yml	compose
+.env.example	compose
+scripts/compose-smoke.sh	compose
+.github/workflows/release.yml	workflows
+.github/workflows/codeql.yml	workflows
+.github/codeql/codeql-config.yml	workflows
+
+# Unclassified: fail safe
+renovate.json	backend,frontend,compose,gomod
+.github/dependabot.yml	backend,frontend,compose,gomod
+
+# Postgres closure (check --go)
+@postgres	backend/internal/store/doc.go	true
+@postgres	backend/internal/store/migrations/postgres/0001_example.sql	true
+@postgres	backend/internal/crypto/crypto.go	true
+@postgres	backend/cmd/migrate/main.go	true
+@postgres	backend/internal/api/router.go	false
+@postgres	backend/internal/chat/chat.go	false
+@postgres	backend/internal/report/templates/report.md.tmpl	false
+@postgres	backend/go.sum	true
+@postgres	.github/workflows/ci.yml	true
+@postgres	renovate.json	true
+@postgres	backend/internal/removed-package/x.go	true
