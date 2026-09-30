@@ -307,6 +307,7 @@ coverage
 
 # AI generated files
 skills-lock.json
+/openspec/
 .agents/
 .claude/
 .codex/
