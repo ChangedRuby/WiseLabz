@@ -3,8 +3,10 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,8 +34,8 @@ func TestHubBroadcastRouting(t *testing.T) {
 	hub := NewHub()
 	go hub.Run(context.Background())
 
-	first := &Client{hub: hub, send: make(chan []byte, 1), userID: "first"}
-	second := &Client{hub: hub, send: make(chan []byte, 1), userID: "second"}
+	first := &Client{hub: hub, send: make(chan []byte, 1), id: Identity{UserID: "first"}}
+	second := &Client{hub: hub, send: make(chan []byte, 1), id: Identity{UserID: "second"}}
 	hub.register <- first
 	hub.register <- second
 	t.Cleanup(func() {
@@ -66,7 +68,7 @@ func TestEnvelopeHasIDAndTS(t *testing.T) {
 	hub.pingInterval = time.Hour
 	go hub.Run(context.Background())
 
-	client := &Client{hub: hub, send: make(chan []byte, 4), userID: "u"}
+	client := &Client{hub: hub, send: make(chan []byte, 4), id: Identity{UserID: "u"}}
 	hub.register <- client
 	t.Cleanup(func() { hub.unregister <- client })
 	deadline := time.Now().Add(time.Second)
@@ -138,7 +140,7 @@ func TestDocLockEventBroadcast(t *testing.T) {
 	hub := NewHub()
 	go hub.Run(context.Background())
 
-	client := &Client{hub: hub, send: make(chan []byte, 3), userID: "test"}
+	client := &Client{hub: hub, send: make(chan []byte, 3), id: Identity{UserID: "test"}}
 	hub.register <- client
 	t.Cleanup(func() {
 		hub.unregister <- client
@@ -192,7 +194,7 @@ func TestUpgradeHandlerAndWritePump(t *testing.T) {
 	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-test-123", "admin", "")
+		err := hub.UpgradeHandler(w, r, Identity{UserID: "user-test-123", Role: "admin"})
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -253,7 +255,7 @@ func TestReadPumpGarbageInput(t *testing.T) {
 	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-garbage-456", "viewer", "")
+		err := hub.UpgradeHandler(w, r, Identity{UserID: "user-garbage-456", Role: "viewer"})
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -306,7 +308,7 @@ func TestClientCloseDisconnect(t *testing.T) {
 	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, "user-close-789", "operator", "")
+		err := hub.UpgradeHandler(w, r, Identity{UserID: "user-close-789", Role: "operator"})
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -396,7 +398,7 @@ func setupWSConnection(t *testing.T, hub *Hub, userID string) *websocket.Conn {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := hub.UpgradeHandler(w, r, userID, "user", "")
+		err := hub.UpgradeHandler(w, r, Identity{UserID: userID, Role: "user"})
 		if err != nil {
 			t.Logf("UpgradeHandler error: %v", err)
 		}
@@ -448,28 +450,28 @@ func TestHubMalformedOriginsFailClosed(t *testing.T) {
 
 func TestTicketsAreSingleUseAndExpire(t *testing.T) {
 	hub := NewHub()
-	id, err := hub.IssueTicket("u1", "admin", "sess")
+	id, err := hub.IssueTicket(Identity{UserID: "u1", Role: "admin", SessionHash: "sess", ConnectorIDs: []string{"c1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	uid, role, sess, ok := hub.RedeemTicket(id)
-	if !ok || uid != "u1" || role != "admin" || sess != "sess" {
-		t.Fatalf("redeem = %q %q %q %v", uid, role, sess, ok)
+	ident, ok := hub.RedeemTicket(id)
+	if !ok || ident.UserID != "u1" || ident.Role != "admin" || ident.SessionHash != "sess" || !slices.Equal(ident.ConnectorIDs, []string{"c1"}) {
+		t.Fatalf("redeem = %+v %v", ident, ok)
 	}
-	if _, _, _, ok := hub.RedeemTicket(id); ok {
+	if _, ok := hub.RedeemTicket(id); ok {
 		t.Error("ticket redeemed twice")
 	}
-	if _, _, _, ok := hub.RedeemTicket("bogus"); ok {
+	if _, ok := hub.RedeemTicket("bogus"); ok {
 		t.Error("unknown ticket accepted")
 	}
 
-	id, _ = hub.IssueTicket("u1", "admin", "")
+	id, _ = hub.IssueTicket(Identity{UserID: "u1", Role: "admin"})
 	hub.ticketMu.Lock()
 	tk := hub.tickets[id]
 	tk.expires = time.Now().Add(-time.Second)
 	hub.tickets[id] = tk
 	hub.ticketMu.Unlock()
-	if _, _, _, ok := hub.RedeemTicket(id); ok {
+	if _, ok := hub.RedeemTicket(id); ok {
 		t.Error("expired ticket accepted")
 	}
 }
@@ -481,13 +483,13 @@ func TestRevalidationClosesConnection(t *testing.T) {
 	hub.pingInterval = 20 * time.Millisecond
 	var valid atomic.Bool
 	valid.Store(true)
-	hub.SetRevalidator(func(_ context.Context, userID, _, _ string) bool {
-		return userID == "u1" && valid.Load()
+	hub.SetRevalidator(func(_ context.Context, id Identity) bool {
+		return id.UserID == "u1" && valid.Load()
 	})
 	go hub.Run(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = hub.UpgradeHandler(w, r, "u1", "viewer", "sess")
+		_ = hub.UpgradeHandler(w, r, Identity{UserID: "u1", Role: "viewer", SessionHash: "sess"})
 	}))
 	defer server.Close()
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
@@ -567,8 +569,8 @@ func TestSlowClientEviction(t *testing.T) {
 	conn := <-connections
 	defer conn.Close() //nolint:errcheck
 	// No write pump: deterministically model a client whose queue cannot drain.
-	slow := &Client{conn: conn, send: make(chan []byte, 1), userID: "slow"}
-	healthy := &Client{send: make(chan []byte, 1), userID: "healthy"}
+	slow := &Client{conn: conn, send: make(chan []byte, 1), id: Identity{UserID: "slow"}}
+	healthy := &Client{send: make(chan []byte, 1), id: Identity{UserID: "healthy"}}
 	hub.clients[slow] = true
 	hub.clients[healthy] = true
 	slow.send <- []byte("queued")
@@ -592,7 +594,7 @@ func TestSlowClientEviction(t *testing.T) {
 		t.Fatal("successful send did not reset drop streak")
 	}
 	// Traffic for another user neither increments nor resets the streak.
-	hub.deliver(broadcastMsg{data: msg.data, userID: "healthy"})
+	hub.deliver(broadcastMsg{data: msg.data, aud: Audience{Kind: AudienceUser, UserID: "healthy"}})
 	<-healthy.send
 	hub.deliver(msg)
 	<-healthy.send
@@ -619,4 +621,136 @@ func TestSlowClientEviction(t *testing.T) {
 		t.Fatal("hub stopped delivering after eviction and unregister")
 	}
 	hub.unregister <- healthy
+}
+
+func TestRunHeartbeatHasIDAndTS(t *testing.T) {
+	hub := NewHub()
+	hub.heartbeatInterval = 10 * time.Millisecond
+	go hub.Run(context.Background())
+
+	client := &Client{hub: hub, send: make(chan []byte, 4), id: Identity{UserID: "u"}}
+	hub.register <- client
+	t.Cleanup(func() { hub.unregister <- client })
+
+	select {
+	case data := <-client.send:
+		if env := decodeEnvelope(t, data); env.Type != EventSystemHealth {
+			t.Fatalf("type = %q", env.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no heartbeat")
+	}
+}
+
+// connectorHub starts a hub with one client per identity and a stub audience
+// lookup returning readers (or err).
+func connectorHub(t *testing.T, readers func(string) ([]string, error), ids ...Identity) (*Hub, []*Client) {
+	t.Helper()
+	hub := NewHub()
+	hub.pingInterval = time.Hour
+	if readers != nil {
+		hub.SetConnectorAudience(func(_ context.Context, connectorID string) ([]string, error) {
+			return readers(connectorID)
+		})
+	}
+	go hub.Run(context.Background())
+	clients := make([]*Client, len(ids))
+	for i, id := range ids {
+		clients[i] = &Client{hub: hub, send: make(chan []byte, 4), id: id}
+		hub.register <- clients[i]
+	}
+	t.Cleanup(func() {
+		for _, c := range clients {
+			hub.unregister <- c
+		}
+	})
+	deadline := time.Now().Add(time.Second)
+	for hub.ClientCount() != len(ids) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	return hub, clients
+}
+
+func assertNoFrame(t *testing.T, c *Client) {
+	t.Helper()
+	select {
+	case data := <-c.send:
+		t.Fatalf("unexpected frame %s", data)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func TestBroadcastConnectorFiltersByGrant(t *testing.T) {
+	hub, cs := connectorHub(t, func(string) ([]string, error) { return []string{"granted"}, nil },
+		Identity{UserID: "granted"}, Identity{UserID: "ungranted"})
+	granted, ungranted := cs[0], cs[1]
+
+	hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "a"})
+	data := <-granted.send
+	assertEnvelope(t, data, EventSyncProgress, "a")
+	if env := decodeEnvelope(t, data); env.ConnectorID != "c1" {
+		t.Fatalf("connectorId = %q, want c1", env.ConnectorID)
+	}
+	assertNoFrame(t, ungranted)
+
+	// Broadcast stays global.
+	hub.Broadcast(EventSystemNotice, map[string]string{"job": "g"})
+	assertEnvelope(t, <-granted.send, EventSystemNotice, "g")
+	assertEnvelope(t, <-ungranted.send, EventSystemNotice, "g")
+}
+
+func TestBroadcastConnectorRestrictedKey(t *testing.T) {
+	hub, cs := connectorHub(t, func(string) ([]string, error) { return []string{"u1", "u2", "u3"}, nil },
+		Identity{UserID: "u1", ConnectorIDs: []string{"c2"}},
+		Identity{UserID: "u2", ConnectorIDs: []string{"c1", "c2"}},
+		Identity{UserID: "u3"})
+
+	hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "a"})
+	assertNoFrame(t, cs[0])
+	assertEnvelope(t, <-cs[1].send, EventSyncProgress, "a")
+	assertEnvelope(t, <-cs[2].send, EventSyncProgress, "a")
+}
+
+func TestBroadcastConnectorFailsClosed(t *testing.T) {
+	t.Run("resolver error", func(t *testing.T) {
+		hub, cs := connectorHub(t, func(string) ([]string, error) { return nil, errors.New("db down") }, Identity{UserID: "u"})
+		hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "a"})
+		assertNoFrame(t, cs[0])
+	})
+	t.Run("no resolver", func(t *testing.T) {
+		hub, cs := connectorHub(t, nil, Identity{UserID: "u"})
+		hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "a"})
+		assertNoFrame(t, cs[0])
+	})
+	t.Run("empty connector id", func(t *testing.T) {
+		hub, cs := connectorHub(t, func(string) ([]string, error) { return []string{"u"}, nil }, Identity{UserID: "u"})
+		hub.BroadcastConnector("", EventSyncProgress, map[string]string{"job": "a"})
+		assertNoFrame(t, cs[0])
+	})
+}
+
+func TestBroadcastConnectorResolvesPerEvent(t *testing.T) {
+	var granted atomic.Bool
+	hub, cs := connectorHub(t, func(string) ([]string, error) {
+		if granted.Load() {
+			return []string{"u"}, nil
+		}
+		return nil, nil
+	}, Identity{UserID: "u"})
+
+	hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "a"})
+	assertNoFrame(t, cs[0])
+	granted.Store(true)
+	hub.BroadcastConnector("c1", EventSyncProgress, map[string]string{"job": "b"})
+	assertEnvelope(t, <-cs[0].send, EventSyncProgress, "b")
+}
+
+func TestAudienceJSONShape(t *testing.T) {
+	data, err := json.Marshal(Audience{Kind: AudienceConnector, ConnectorID: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), `{"kind":"connector","connectorID":"c1"}`; got != want {
+		t.Fatalf("audience JSON = %s, want %s", got, want)
+	}
 }

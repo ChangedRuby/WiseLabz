@@ -21,7 +21,8 @@ Events are produced in two places:
   expiry, notification delivery retries).
 
 Today's envelope is `{type, payload}` with no id or timestamp. The server keeps
-no history and never replays. Broadcasts go to every authenticated user, and
+no history and never replays. Global broadcasts go to every authenticated user,
+connector events to that connector's readers, and
 user-targeted events go to every connection that user has open.
 
 Active/active means several replicas return 200 from `/readyz` behind a plain,
@@ -68,8 +69,13 @@ PostgreSQL being healthy.
  "audience":{"kind":"all"},"payload":{...}}
 ```
 
-`audience` is `{"kind":"all"}` for `Broadcast` and
-`{"kind":"user","userID":"..."}` for `BroadcastToUser`. PostgreSQL limits
+`audience` is `{"kind":"all"}` for `Broadcast`,
+`{"kind":"user","userID":"..."}` for `BroadcastToUser`, and
+`{"kind":"connector","connectorID":"..."}` for `BroadcastConnector`. A connector
+audience carries only the connector ID, never the reader list: each replica
+resolves the readers locally through `Hub.publish` when it delivers, so a grant
+change is honored per replica and per event. `payload` and the envelope's
+top-level `connectorId` are unchanged. PostgreSQL limits
 NOTIFY payloads to 8000 bytes. A message larger than about 7.5 KB once encoded
 is written to a short-lived `ws_relay` table, and the notification carries only
 `{"v":1,"origin":..,"id":..,"ref":..}`. A periodic sweep deletes rows older
@@ -97,18 +103,17 @@ events are recovered by refetching over REST, not by replay. A failed
 ### Authorization and secrets
 
 The relay preserves each event's audience exactly: a user-targeted event is
-delivered only to that user's connections on every replica, and a broadcast is
-never narrowed or widened. Relay payloads contain only what the event already
+delivered only to that user's connections on every replica, a connector event
+only to that connector's readers, and a broadcast is never narrowed or widened. Relay payloads contain only what the event already
 sends to browsers, never credentials, tokens or connector secrets.
 PostgreSQL statement logging can record NOTIFY payloads, so this rule applies
 to the relay too.
 
-An existing gap is recorded here, not created: broadcasts reach every
-authenticated user without per-connector filtering (`wsRoleLabel` in
-`backend/internal/api/router.go`), and restricted API keys are refused tickets
-for that reason. Per-connector filtering should be added before broadcasts
-carry anything more sensitive than they do today, but it does not block the
-relay.
+Per-connector filtering is implemented (#421): connector-scoped events are
+delivered only to users holding a grant on the connector and to restricted API
+keys covering it. The relay receiver delivers through the same `Hub.publish`
+path, so it applies the same filter with that replica's database. It fails
+closed: an event whose readers cannot be resolved is dropped.
 
 ## Prerequisites
 
@@ -117,13 +122,13 @@ be done before `ha.mode: active_active` ships.
 
 | Process-local state | Location | Decision |
 |---|---|---|
-| WebSocket tickets | `backend/internal/ws/ws.go` (`IssueTicket`, `RedeemTicket`) | Move to a `ws_tickets` table that stores the ticket hash, identity and a 30s expiry. Redeem once with `DELETE … RETURNING`, and sweep expired rows. A ticket issued on one replica must be redeemable on another. |
+| WebSocket tickets | `backend/internal/ws/ws.go` (`IssueTicket`, `RedeemTicket`) | Move to a `ws_tickets` table that stores the ticket hash, the full identity (user, role, session, API key and its connector restriction) and a 30s expiry. Redeem once with `DELETE … RETURNING`, and sweep expired rows. A ticket issued on one replica must be redeemable on another. |
 | User role/disabled cache (30s TTL) | `backend/internal/store/user.go` | Publish invalidations on the same NOTIFY channel so a disable or role change applies to every replica immediately, not up to 30s later. |
 | HTTP-triggered sync de-duplication | `backend/internal/sync/engine.go` (`inFlight`) | Use the existing database sync claim lease for manual triggers as well, not just the in-process `sync.Map`. |
 | Doc export, template version and backup/retention job serialization | `backend/internal/docexport/export.go`, `backend/internal/api/templates/handlers.go`, `backend/internal/api/system/handlers.go` | Replace the in-process mutexes with a database lease or PostgreSQL advisory lock. |
 | Auth rate limiter | `backend/internal/api/middleware/ratelimit.go` | Accepted as per-replica. The effective limit is N times the configured limit. Documented in DEPLOYMENT.md. |
 | Dashboard and attention TTL caches (5s), chat vector cache, OIDC provider cache | `backend/internal/ttlcache`, `backend/internal/chat/vectorcache.go`, `backend/internal/api/auth/handlers.go` | Accepted as per-replica. Data may be up to 5s stale; the other caches only affect performance. |
-| Per-connector WebSocket event filtering | `backend/internal/api/router.go` | Existing gap, not a blocker (see above). |
+| Per-connector WebSocket event filtering | `backend/internal/ws/ws.go` | Done (#421). |
 
 ## Consequences
 

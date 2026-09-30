@@ -55,9 +55,7 @@ func (h *Handler) AcquireLock(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	if h.WSHub != nil {
-		h.WSHub.Broadcast(ws.EventDocLockAcquired, lock)
-	}
+	h.broadcastDocEvent(existing.ServiceID, ws.EventDocLockAcquired, lock)
 	httputil.JSON(w, http.StatusOK, lock)
 }
 
@@ -83,8 +81,19 @@ func (h *Handler) ReleaseLock(w http.ResponseWriter, r *http.Request) {
 		httputil.Errorf(w, err)
 		return
 	}
-	if h.WSHub != nil {
-		h.WSHub.Broadcast(ws.EventDocLockReleased, map[string]any{"docId": id, "userId": userID})
-	}
+	h.broadcastDocEvent(existing.ServiceID, ws.EventDocLockReleased, map[string]any{"docId": id, "userId": userID})
 	httputil.JSON(w, http.StatusOK, map[string]any{})
+}
+
+// broadcastDocEvent emits a doc-lock event scoped to the doc's connector; a
+// lab-wide doc (no connector) is global.
+func (h *Handler) broadcastDocEvent(connectorID, eventType string, payload any) {
+	if h.WSHub == nil {
+		return
+	}
+	if connectorID == "" {
+		h.WSHub.Broadcast(eventType, payload)
+		return
+	}
+	h.WSHub.BroadcastConnector(connectorID, eventType, payload)
 }

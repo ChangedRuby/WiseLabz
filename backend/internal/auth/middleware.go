@@ -45,6 +45,16 @@ func InstanceAdminFromContext(ctx context.Context) bool {
 	return admin
 }
 
+// APIKeyIDFromContext returns the ID of the API key that authenticated the
+// request, or "" for a JWT session.
+func APIKeyIDFromContext(ctx context.Context) string {
+	claims, _ := ctx.Value(ctxClaims).(*APIKeyClaims)
+	if claims == nil {
+		return ""
+	}
+	return claims.KeyID
+}
+
 // MFAEnrollOnlyFromContext reports whether the current request's access
 // token carries the enrollment-only claim (see Claims.MFAEnrollOnly). Used
 // by /me/mfa/totp/{id}/confirm to know whether completing enrollment should
@@ -114,7 +124,7 @@ func AuthMiddleware(jwtSvc *Service, checkers ...APIKeyChecker) func(http.Handle
 
 			if checker != nil {
 				keyClaims, lookupErr := checker.LookupAPIKey(r.Context(), hashToken(token))
-				if lookupErr == nil && validAPIKey(keyClaims) {
+				if lookupErr == nil && ValidAPIKey(keyClaims) {
 					lastUsed, _ := time.Parse(time.RFC3339, keyClaims.LastUsedAt)
 					if time.Since(lastUsed) >= time.Minute {
 						if touchErr := checker.TouchAPIKeyLastUsed(r.Context(), keyClaims.KeyID); touchErr != nil {
@@ -184,7 +194,8 @@ func hashToken(token string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func validAPIKey(claims *APIKeyClaims) bool {
+// ValidAPIKey reports whether an API key is present, unrevoked and unexpired.
+func ValidAPIKey(claims *APIKeyClaims) bool {
 	if claims == nil || claims.KeyID == "" || claims.UserID == "" || claims.RevokedAt != "" {
 		return false
 	}

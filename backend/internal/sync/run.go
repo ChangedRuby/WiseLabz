@@ -40,7 +40,7 @@ func (e *Engine) RunSyncFields(ctx context.Context, connectorID string, jobID st
 func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, fields []string, scheduled bool) (*RunResult, error) {
 	if _, loaded := e.inFlight.LoadOrStore(connectorID, struct{}{}); loaded {
 		if e.hub != nil {
-			e.hub.Broadcast(ws.EventSyncComplete, map[string]any{
+			e.hub.BroadcastConnector(connectorID, ws.EventSyncComplete, map[string]any{
 				"serviceId": connectorID, "jobId": jobID, "error": ErrAlreadyRunning.Error(),
 			})
 		}
@@ -64,7 +64,7 @@ func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, f
 
 	broadcast := func(phase string, percent int) {
 		if e.hub != nil {
-			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
+			e.hub.BroadcastConnector(connectorID, ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
 				"jobId":     jobID,
 				"phase":     phase,
@@ -80,7 +80,7 @@ func (e *Engine) runSyncFields(ctx context.Context, connectorID, jobID string, f
 	if err != nil {
 		slog.Error("sync get connector failed", "connector", logsafe.Sanitize(connectorID), "error", logsafe.Sanitize(err.Error()))
 		if e.hub != nil {
-			e.hub.Broadcast(ws.EventSyncProgress, map[string]any{
+			e.hub.BroadcastConnector(connectorID, ws.EventSyncProgress, map[string]any{
 				"serviceId": connectorID,
 				"jobId":     jobID,
 				"phase":     "error",
@@ -189,7 +189,7 @@ func (e *Engine) finishSync(ctx context.Context, connectorID, jobID string, rec 
 		if runErr != nil {
 			payload["error"] = runErr.Error()
 		}
-		e.hub.Broadcast(ws.EventSyncComplete, payload)
+		e.hub.BroadcastConnector(connectorID, ws.EventSyncComplete, payload)
 	}
 	durationMs := int(time.Since(start).Milliseconds())
 	errMsg := ""
@@ -378,7 +378,7 @@ func (e *Engine) createSyncChanges(ctx context.Context, tx *store.Store, connect
 
 func (e *Engine) broadcastSyncError(connectorID, jobID string, err error) {
 	if e.hub != nil {
-		e.hub.Broadcast(ws.EventSyncProgress, map[string]any{"serviceId": connectorID, "jobId": jobID, "phase": "error", "percent": 0, "message": err.Error()})
+		e.hub.BroadcastConnector(connectorID, ws.EventSyncProgress, map[string]any{"serviceId": connectorID, "jobId": jobID, "phase": "error", "percent": 0, "message": err.Error()})
 	}
 }
 
@@ -387,10 +387,10 @@ func (e *Engine) broadcastSyncResults(connectorID string, changes []*store.Chang
 		return
 	}
 	for _, change := range changes {
-		e.hub.Broadcast(ws.EventChangeDetected, map[string]any{"changeId": change.ID, "serviceId": connectorID, "changeType": change.ChangeType, "severity": change.Severity, "summary": change.Summary, "willTriggerAi": false})
+		e.hub.BroadcastConnector(connectorID, ws.EventChangeDetected, map[string]any{"changeId": change.ID, "serviceId": connectorID, "changeType": change.ChangeType, "severity": change.Severity, "summary": change.Summary, "willTriggerAi": false})
 	}
 	for _, alert := range alerts {
-		e.hub.Broadcast(ws.EventAlertCreated, map[string]any{"alertId": alert.ID, "serviceId": connectorID, "severity": alert.Severity, "title": alert.Title})
+		e.hub.BroadcastConnector(connectorID, ws.EventAlertCreated, map[string]any{"alertId": alert.ID, "serviceId": connectorID, "severity": alert.Severity, "title": alert.Title})
 	}
 }
 

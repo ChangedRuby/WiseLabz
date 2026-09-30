@@ -81,15 +81,26 @@ func NewRouter(cfg Config) chi.Router {
 	mountRootRoutes(r, d)
 
 	if cfg.WSHub != nil {
-		cfg.WSHub.SetRevalidator(func(ctx context.Context, userID, role, sessionHash string) bool {
-			userRole, disabled, err := cfg.Store.GetUserRoleStatus(ctx, userID)
-			if err != nil || disabled || wsRoleLabel(userRole == "admin") != role {
+		cfg.WSHub.SetConnectorAudience(cfg.Store.ConnectorReaderIDs)
+		cfg.WSHub.SetRevalidator(func(ctx context.Context, id ws.Identity) bool {
+			userRole, disabled, err := cfg.Store.GetUserRoleStatus(ctx, id.UserID)
+			// A connector-restricted key never carries instance admin (see the
+			// auth middleware), so its ticket is labelled as a plain user.
+			admin := userRole == "admin" && len(id.ConnectorIDs) == 0
+			if err != nil || disabled || wsRoleLabel(admin) != id.Role {
 				return false
 			}
-			if sessionHash == "" {
+			if id.APIKeyID != "" {
+				key, err := cfg.Store.GetAPIKeyByID(ctx, id.APIKeyID)
+				if err != nil || key.UserID != id.UserID ||
+					!auth.ValidAPIKey(&auth.APIKeyClaims{KeyID: key.ID, UserID: key.UserID, ExpiresAt: key.ExpiresAt, RevokedAt: key.RevokedAt}) {
+					return false
+				}
+			}
+			if id.SessionHash == "" {
 				return true
 			}
-			active, err := cfg.Store.HasSessionTokenHash(ctx, userID, sessionHash)
+			active, err := cfg.Store.HasSessionTokenHash(ctx, id.UserID, id.SessionHash)
 			return err == nil && active
 		})
 	}
@@ -153,8 +164,9 @@ func newRouterDeps(cfg Config) routerDeps {
 	}
 }
 
-// wsRoleLabel is a cosmetic presence/broadcast tag, not a security boundary
-// (per-connector access is never carried over the WS connection).
+// wsRoleLabel tags a WS connection as admin or user so the revalidator can
+// notice a role change. It is not an access control: connector events are
+// filtered by the hub's connector audience lookup and the key's ConnectorIDs.
 func wsRoleLabel(instanceAdmin bool) string {
 	if instanceAdmin {
 		return "admin"

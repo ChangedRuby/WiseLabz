@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -409,5 +410,52 @@ func TestListConnectorIDs(t *testing.T) {
 	}
 	if !found[c1.ID] || !found[c2.ID] {
 		t.Fatalf("ListConnectorIDs() = %v, want it to include %q and %q", ids, c1.ID, c2.ID)
+	}
+}
+
+func TestConnectorReaderIDs(t *testing.T) {
+	s := newDocTestStore(t)
+	ctx := context.Background()
+	c := newTestConnector(t, s, "readers-a")
+	other := newTestConnector(t, s, "readers-b")
+
+	both := newTestUser(t, s, "both-sources")
+	viewer := newTestUser(t, s, "viewer-only")
+	disabled := newTestUser(t, s, "disabled")
+	otherOnly := newTestUser(t, s, "other-only")
+	admin := newTestUser(t, s, "grantless-admin")
+	newTestUser(t, s, "no-grants")
+
+	if err := s.UpdateUser(ctx, admin.ID, map[string]any{"instance_admin_role": "admin"}); err != nil {
+		t.Fatalf("promote admin: %v", err)
+	}
+	if _, err := s.UpsertConnectorGrant(ctx, both.ID, c.ID, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SyncOIDCConnectorGrants(ctx, both.ID, map[string]string{c.ID: "viewer"}); err != nil {
+		t.Fatalf("oidc grant: %v", err)
+	}
+	if _, err := s.UpsertConnectorGrant(ctx, viewer.ID, c.ID, "viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertConnectorGrant(ctx, disabled.ID, c.ID, "viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateUser(ctx, disabled.ID, map[string]any{"disabled": true}); err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+	if _, err := s.UpsertConnectorGrant(ctx, otherOnly.ID, other.ID, "operator"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.ConnectorReaderIDs(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("ConnectorReaderIDs() error: %v", err)
+	}
+	slices.Sort(got)
+	want := []string{both.ID, viewer.ID}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("ConnectorReaderIDs() = %v, want %v", got, want)
 	}
 }

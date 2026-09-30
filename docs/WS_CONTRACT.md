@@ -19,8 +19,10 @@ state change still goes through REST (`docs/openapi.yaml`); WS only pushes notif
   valid for 30 seconds, works once, and is held in the memory of the process
   that issued it (so it must be redeemed on the same replica; see
   [ADR 0005](adr/0005-cross-replica-websocket-relay.md)). A missing, expired, or
-  reused ticket fails the upgrade with HTTP 401. Restricted API keys are refused
-  a ticket because the stream is not filtered per connector.
+  reused ticket fails the upgrade with HTTP 401. Read-only and connector-restricted
+  API keys may mint a ticket; the socket then only receives the connector events
+  that key can see (see [Delivery](#delivery)). A revoked or expired API key is
+  closed on the next re-validation.
 - Open connections are re-validated on every ping (about every 25 seconds). If
   the user is disabled, their role changed, or the bound refresh session ended,
   the server closes with code `1008` (policy violation).
@@ -36,6 +38,7 @@ interface WsEnvelope<T = unknown> {
   id: string;     // UUID v4, unique per emitted event
   ts: string;     // server emit time, UTC, millisecond RFC 3339 (2026-09-06T12:00:00.000Z)
   type: string;   // "domain.action", see naming below
+  connectorId?: string; // set on connector-scoped events, omitted on global ones
   payload: T;     // event-specific, typed below
 }
 ```
@@ -45,6 +48,26 @@ interface WsEnvelope<T = unknown> {
 (`WebSocketProvider` keeps a bounded set of recently seen ids). For compatibility
 with older servers the client keeps a local fallback: a frame missing `id` or `ts`
 gets a locally generated value and is never treated as a duplicate.
+
+## Delivery
+
+Each event has an audience, resolved on the server when the event is emitted:
+
+- **Connector events** (`sync.*`, `change.detected`, `alert.created`,
+  `quality.*`, and `doc.lock.*` for a doc that belongs to a connector) reach only
+  users holding a viewer or operator grant on that connector, from any source
+  (manual or OIDC). Instance admins get no bypass: without a grant they receive
+  nothing, matching the REST connector list. The frame carries the connector as a
+  top-level `connectorId`.
+- **Restricted API keys** are narrowed further: a connector-restricted key only
+  receives events for connectors in its `connectorIds`.
+- **Global events** (`system.*` and `doc.lock.*` for a lab-wide doc with no
+  connector) reach every connection.
+- **Per-user events** reach only that user's connections.
+
+The server fails closed: if the audience cannot be resolved, a connector event is
+dropped rather than broadcast. Clients recover dropped events by refetching over
+REST, as they do after a reconnect.
 
 ## Naming convention
 

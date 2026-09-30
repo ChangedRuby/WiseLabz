@@ -116,15 +116,17 @@ func RunDocLockSweep(ctx context.Context, s *Store, hub *ws.Hub, interval time.D
 
 func runDocLockSweep(ctx context.Context, s *Store, hub *ws.Hub, logger *slog.Logger) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	rows, err := s.db.QueryContext(ctx, `SELECT doc_id, user_id FROM doc_locks WHERE expires_at <= ?`, now)
+	rows, err := s.db.QueryContext(ctx, `SELECT l.doc_id, l.user_id, COALESCE(d.service_id, '')
+		FROM doc_locks l LEFT JOIN docs d ON d.id = l.doc_id WHERE l.expires_at <= ?`, now)
 	if err != nil {
 		logger.Error("doc lock sweep: list expired", "error", err)
 		return
 	}
-	var expired []DocLockRecord
+	type expiredLock struct{ docID, userID, serviceID string }
+	var expired []expiredLock
 	for rows.Next() {
-		var l DocLockRecord
-		if err := rows.Scan(&l.DocID, &l.UserID); err != nil {
+		var l expiredLock
+		if err := rows.Scan(&l.docID, &l.userID, &l.serviceID); err != nil {
 			rows.Close() //nolint:errcheck
 			logger.Error("doc lock sweep: scan", "error", err)
 			return
@@ -145,8 +147,15 @@ func runDocLockSweep(ctx context.Context, s *Store, hub *ws.Hub, logger *slog.Lo
 		return
 	}
 	for _, l := range expired {
-		if hub != nil {
-			hub.Broadcast(ws.EventDocLockExpired, map[string]any{"docId": l.DocID, "userId": l.UserID})
+		if hub == nil {
+			continue
+		}
+		payload := map[string]any{"docId": l.docID, "userId": l.userID}
+		// A lab-wide doc has no connector, so its lock event stays global.
+		if l.serviceID == "" {
+			hub.Broadcast(ws.EventDocLockExpired, payload)
+		} else {
+			hub.BroadcastConnector(l.serviceID, ws.EventDocLockExpired, payload)
 		}
 	}
 }

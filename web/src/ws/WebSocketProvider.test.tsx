@@ -185,6 +185,15 @@ describe('WebSocketProvider', () => {
     expect(useLive.getState().activity).toHaveLength(1);
   });
 
+  it('handles a connector-scoped frame carrying connectorId', async () => {
+    await renderProvider();
+
+    send(alertFrame({ id: 'evt-3', ts: '2026-09-06T12:00:00Z', connectorId: 'svc-1' }, 'alert-1'));
+
+    expect(useLive.getState().pendingAlerts).toBe(1);
+    expect(useLive.getState().activity).toHaveLength(1);
+  });
+
   it('still handles frames without an id, each one', async () => {
     await renderProvider();
 

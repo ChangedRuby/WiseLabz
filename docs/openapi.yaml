@@ -3338,7 +3338,9 @@ paths:
       tags: [system]
       summary: Mint a one-time WebSocket ticket for the authenticated caller
       description: Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md).
-        Not available to a read-only or connector-restricted API key.
+        Read-only and connector-restricted API keys may mint one; the socket then
+        receives only the connector events the key's owner can read, narrowed to
+        the key's connectors.
       responses:
         '200':
           description: OK

@@ -1997,7 +1997,7 @@ export function useGetReadyz<
 }
 
 /**
- * Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md). Not available to a read-only or connector-restricted API key.
+ * Redeem it as `?ticket=` on GET /ws (see docs/WS_CONTRACT.md). Read-only and connector-restricted API keys may mint one; the socket then receives only the connector events the key's owner can read, narrowed to the key's connectors.
  * @summary Mint a one-time WebSocket ticket for the authenticated caller
  */
 export const postWsTicket = (

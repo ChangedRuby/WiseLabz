@@ -69,8 +69,7 @@ func ClampConnectorRole(ctx context.Context, connectorID, role string) string {
 
 // RejectRestrictedAPIKey writes a 403 and returns true when the request was
 // authenticated by a restricted API key. Endpoints that would let a key
-// escape its restriction (minting new keys, opening a WebSocket that isn't
-// filtered per key) call this first.
+// escape its restriction (such as minting new keys) call this first.
 func RejectRestrictedAPIKey(w http.ResponseWriter, r *http.Request) bool {
 	if !APIKeyRestrictionFromContext(r.Context()).Restricted() {
 		return false

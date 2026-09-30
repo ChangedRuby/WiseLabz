@@ -266,7 +266,7 @@ func complianceDescription(matches []compliance.Entity) string {
 }
 
 func (c *Checker) broadcastCreated(connectorID string, finding *store.QualityFindingRecord) {
-	c.hub.Broadcast(ws.EventQualityFindingCreated, map[string]any{
+	c.hub.BroadcastConnector(connectorID, ws.EventQualityFindingCreated, map[string]any{
 		"findingId": finding.ID, "connectorId": connectorID,
 		"checkType": finding.CheckType, "severity": finding.Severity,
 	})
@@ -274,7 +274,7 @@ func (c *Checker) broadcastCreated(connectorID string, finding *store.QualityFin
 
 func (c *Checker) broadcastChanged(connectorID string) {
 	if c.hub != nil {
-		c.hub.Broadcast(ws.EventQualityFindingsChanged, map[string]any{"connectorId": connectorID})
+		c.hub.BroadcastConnector(connectorID, ws.EventQualityFindingsChanged, map[string]any{"connectorId": connectorID})
 	}
 }
 

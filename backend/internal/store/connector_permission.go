@@ -75,6 +75,32 @@ func (s *Store) GetUserConnectorRole(ctx context.Context, userID, connectorID st
 	return auth.ClampConnectorRole(ctx, connectorID, role), nil
 }
 
+// ConnectorReaderIDs returns the IDs of the enabled users holding any grant
+// (manual or oidc, viewer or operator) on connectorID. Instance admins get no
+// implicit access, matching the REST list filter.
+func (s *Store) ConnectorReaderIDs(ctx context.Context, connectorID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT r.user_id
+		FROM user_connector_roles r JOIN users u ON u.id = r.user_id
+		WHERE r.connector_id = ? AND u.disabled = 0`, connectorID)
+	if err != nil {
+		return nil, fmt.Errorf("list connector readers: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan connector reader: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate connector readers: %w", err)
+	}
+	return ids, nil
+}
+
 // UserHasConnectorRole reports whether userID has at least minRole on
 // connectorID. Implements the per-connector counterpart to roleSatisfies.
 func (s *Store) UserHasConnectorRole(ctx context.Context, userID, connectorID, minRole string) (bool, error) {

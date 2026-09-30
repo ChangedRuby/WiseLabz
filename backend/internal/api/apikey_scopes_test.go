@@ -69,8 +69,8 @@ func TestReadOnlyAPIKey(t *testing.T) {
 	if rec := app.req(t, http.MethodPost, "/api/auth/api-keys", map[string]any{"name": "x"}, raw); rec.Code != http.StatusForbidden {
 		t.Errorf("read key minting a key = %d, want 403: %s", rec.Code, rec.Body)
 	}
-	if rec := app.req(t, http.MethodPost, "/api/ws/ticket", nil, raw); rec.Code != http.StatusForbidden {
-		t.Errorf("read key WS ticket = %d, want 403: %s", rec.Code, rec.Body)
+	if rec := app.req(t, http.MethodPost, "/api/ws/ticket", nil, raw); rec.Code != http.StatusOK {
+		t.Errorf("read key WS ticket = %d, want 200: %s", rec.Code, rec.Body)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestConnectorRestrictedAPIKey(t *testing.T) {
 	if rec := app.req(t, http.MethodPost, "/api/auth/api-keys", map[string]any{"name": "wider"}, raw); rec.Code != http.StatusForbidden {
 		t.Errorf("restricted key minting a key = %d, want 403: %s", rec.Code, rec.Body)
 	}
-	if rec := app.req(t, http.MethodPost, "/api/ws/ticket", nil, raw); rec.Code != http.StatusForbidden {
-		t.Errorf("restricted key WS ticket = %d, want 403: %s", rec.Code, rec.Body)
+	if rec := app.req(t, http.MethodPost, "/api/ws/ticket", nil, raw); rec.Code != http.StatusOK {
+		t.Errorf("restricted key WS ticket = %d, want 200: %s", rec.Code, rec.Body)
 	}
 }
 

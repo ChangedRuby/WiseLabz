@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,12 +44,52 @@ const (
 
 // Envelope wraps all WebSocket messages. ID is unique per emitted event (clients
 // use it to drop duplicates); TS is the emit time, UTC, millisecond RFC 3339.
+// ConnectorID is set on connector-scoped events (see BroadcastConnector).
 type Envelope struct {
-	ID      string `json:"id"`
-	TS      string `json:"ts"`
-	Type    string `json:"type"`
-	Payload any    `json:"payload"`
+	ID          string `json:"id"`
+	TS          string `json:"ts"`
+	Type        string `json:"type"`
+	ConnectorID string `json:"connectorId,omitempty"`
+	Payload     any    `json:"payload"`
 }
+
+// Audience kinds. An event goes to every client, to one user's clients, or to
+// the clients allowed to read one connector.
+const (
+	AudienceAll       = "all"
+	AudienceUser      = "user"
+	AudienceConnector = "connector"
+)
+
+// Audience is who an event is for. It is the `audience` field of the ADR 0005
+// relay payload: a connector audience travels as the connector ID, and each
+// replica resolves its readers locally when it delivers.
+type Audience struct {
+	Kind        string `json:"kind"`
+	UserID      string `json:"userID,omitempty"`
+	ConnectorID string `json:"connectorID,omitempty"`
+}
+
+// Identity is what a ticket authorizes and what a connection carries.
+type Identity struct {
+	UserID string
+	Role   string
+	// SessionHash is the hash of the refresh token the connection was ticketed
+	// under ("" when it was not issued from a cookie session, e.g. API key).
+	SessionHash string
+	// APIKeyID is the key the ticket was minted with ("" for a session).
+	APIKeyID string
+	// ConnectorIDs is the API key's connector restriction; empty means the
+	// connection may see every connector its user can read.
+	ConnectorIDs []string
+}
+
+// ConnectorAudience returns the IDs of the users allowed to read connectorID.
+type ConnectorAudience func(ctx context.Context, connectorID string) ([]string, error)
+
+// audienceTimeout bounds a connector audience lookup so a stuck query drops
+// the event instead of blocking the emitter.
+const audienceTimeout = 5 * time.Second
 
 // newEnvelope stamps a fresh id and timestamp on an event.
 func newEnvelope(eventType string, payload any) Envelope {
@@ -69,28 +110,25 @@ func newHeartbeat() Envelope {
 
 // Client represents a single WebSocket connection.
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	send   chan []byte
-	userID string
-	role   string
-	// sessionHash is the hash of the refresh token the connection was ticketed
-	// under ("" when it was not issued from a cookie session, e.g. API key).
-	sessionHash      string
+	hub              *Hub
+	conn             *websocket.Conn
+	send             chan []byte
+	id               Identity
 	consecutiveDrops int // Protected by hub.mu.
 }
 
 // Revalidator reports whether a connection's identity is still acceptable:
-// the user still exists, is enabled, still holds the same role, and (when
-// sessionHash is non-empty) the session is still active.
-type Revalidator func(ctx context.Context, userID, role, sessionHash string) bool
+// the user still exists, is enabled, still holds the same role, (when
+// SessionHash is set) the session is still active, and (when APIKeyID is set)
+// the key is still valid.
+type Revalidator func(ctx context.Context, id Identity) bool
 
 // ticketTTL bounds how long an issued ticket can wait to be redeemed.
 const ticketTTL = 30 * time.Second
 
 type ticket struct {
-	userID, role, sessionHash string
-	expires                   time.Time
+	id      Identity
+	expires time.Time
 }
 
 // Hub maintains the set of active clients and broadcasts messages.
@@ -103,15 +141,34 @@ type Hub struct {
 	unregister chan *Client
 
 	revalidate   Revalidator
+	audience     ConnectorAudience
 	pingInterval time.Duration
+	// heartbeatInterval paces the system.health broadcast.
+	heartbeatInterval time.Duration
 
 	ticketMu sync.Mutex
 	tickets  map[string]ticket
 }
 
 type broadcastMsg struct {
-	data   []byte
-	userID string // empty = all clients
+	data []byte
+	aud  Audience // zero value = all clients
+	// readers is the resolved user set of a connector audience.
+	readers map[string]struct{}
+}
+
+// reaches reports whether c is in the message's audience. A connector event
+// needs the user to be a reader and, for a connector-restricted API key, the
+// connector to be in the key's list.
+func (m broadcastMsg) reaches(c *Client) bool {
+	switch m.aud.Kind {
+	case AudienceUser:
+		return c.id.UserID == m.aud.UserID
+	case AudienceConnector:
+		_, ok := m.readers[c.id.UserID]
+		return ok && (len(c.id.ConnectorIDs) == 0 || slices.Contains(c.id.ConnectorIDs, m.aud.ConnectorID))
+	}
+	return true
 }
 
 // NewHub creates a new WebSocket hub and starts its run loop.
@@ -123,8 +180,9 @@ func NewHub(origins ...string) *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 
-		pingInterval: 25 * time.Second,
-		tickets:      make(map[string]ticket),
+		pingInterval:      25 * time.Second,
+		heartbeatInterval: 30 * time.Second,
+		tickets:           make(map[string]ticket),
 	}
 	// Each argument may itself be a comma-separated list. With none configured
 	// gorilla's default same-origin check applies; if some were configured but
@@ -175,14 +233,19 @@ func normalizeOrigin(o string) string {
 func (h *Hub) SetRevalidator(fn Revalidator) { h.revalidate = fn }
 
 // Revalidate runs the installed Revalidator (true when none is installed).
-func (h *Hub) Revalidate(ctx context.Context, userID, role, sessionHash string) bool {
-	return h.revalidate == nil || h.revalidate(ctx, userID, role, sessionHash)
+func (h *Hub) Revalidate(ctx context.Context, id Identity) bool {
+	return h.revalidate == nil || h.revalidate(ctx, id)
 }
+
+// SetConnectorAudience installs the lookup that resolves a connector-scoped
+// event to the users allowed to read it. Without one, connector events are
+// dropped. Call before serving connections.
+func (h *Hub) SetConnectorAudience(fn ConnectorAudience) { h.audience = fn }
 
 // IssueTicket mints a one-time, short-lived ticket that authorizes a single
 // WebSocket upgrade for the given identity. The caller must have authenticated
 // the user with a normal access token.
-func (h *Hub) IssueTicket(userID, role, sessionHash string) (string, error) {
+func (h *Hub) IssueTicket(ident Identity) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -197,26 +260,26 @@ func (h *Hub) IssueTicket(userID, role, sessionHash string) (string, error) {
 			delete(h.tickets, k)
 		}
 	}
-	h.tickets[id] = ticket{userID: userID, role: role, sessionHash: sessionHash, expires: now.Add(ticketTTL)}
+	h.tickets[id] = ticket{id: ident, expires: now.Add(ticketTTL)}
 	return id, nil
 }
 
 // RedeemTicket consumes a ticket, returning its identity. A ticket works once.
-func (h *Hub) RedeemTicket(id string) (userID, role, sessionHash string, ok bool) {
+func (h *Hub) RedeemTicket(id string) (Identity, bool) {
 	h.ticketMu.Lock()
 	t, found := h.tickets[id]
 	delete(h.tickets, id)
 	h.ticketMu.Unlock()
 	if !found || time.Now().After(t.expires) {
-		return "", "", "", false
+		return Identity{}, false
 	}
-	return t.userID, t.role, t.sessionHash, true
+	return t.id, true
 }
 
 // Run starts the hub's event loop. Should be run in a goroutine. Returns
 // when ctx is canceled.
 func (h *Hub) Run(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(h.heartbeatInterval)
 	defer ticker.Stop()
 
 	for {
@@ -229,7 +292,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[client] = true
 			count := len(h.clients)
 			h.mu.Unlock()
-			slog.Info("WebSocket client connected", "user_id", logsafe.Sanitize(client.userID), "total_clients", count)
+			slog.Info("WebSocket client connected", "user_id", logsafe.Sanitize(client.id.UserID), "total_clients", count)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -239,19 +302,13 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 			count := len(h.clients)
 			h.mu.Unlock()
-			slog.Info("WebSocket client disconnected", "user_id", logsafe.Sanitize(client.userID), "total_clients", count)
+			slog.Info("WebSocket client disconnected", "user_id", logsafe.Sanitize(client.id.UserID), "total_clients", count)
 
 		case msg := <-h.broadcast:
 			h.deliver(msg)
 
 		case <-ticker.C:
-			// Heartbeat
-			heartbeat, _ := json.Marshal(Envelope{
-				Type: EventSystemHealth,
-				Payload: map[string]any{
-					"timestamp": time.Now().UTC().Format(time.RFC3339),
-				},
-			})
+			heartbeat, _ := json.Marshal(newHeartbeat())
 			h.deliver(broadcastMsg{data: heartbeat})
 		}
 	}
@@ -265,7 +322,7 @@ func (h *Hub) deliver(msg broadcastMsg) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for client := range h.clients {
-		if msg.userID != "" && msg.userID != client.userID {
+		if !msg.reaches(client) {
 			continue
 		}
 		select {
@@ -280,37 +337,72 @@ func (h *Hub) deliver(msg broadcastMsg) {
 				if client.conn != nil {
 					client.conn.Close() //nolint:errcheck
 				}
-				slog.Warn("disconnecting slow WebSocket client", "user_id", logsafe.Sanitize(client.userID))
+				slog.Warn("disconnecting slow WebSocket client", "user_id", logsafe.Sanitize(client.id.UserID))
 			}
 		}
 	}
 }
 
-// Broadcast queues a message for all clients, dropping it if the hub queue is full.
+// Broadcast queues a global event for all clients. Use BroadcastConnector for
+// anything tied to a connector.
 func (h *Hub) Broadcast(eventType string, payload any) {
-	data, err := json.Marshal(newEnvelope(eventType, payload))
-	if err != nil {
-		slog.Error("failed to marshal WS broadcast", "error", err)
-		return
-	}
-	select {
-	case h.broadcast <- broadcastMsg{data: data}:
-	default:
-		slog.Warn("WebSocket broadcast queue full, dropping message")
-	}
+	h.publish(newEnvelope(eventType, payload), Audience{Kind: AudienceAll})
 }
 
-// BroadcastToUser queues a message for a user's connections, dropping it if the hub queue is full.
+// BroadcastToUser queues a message for a user's connections.
 func (h *Hub) BroadcastToUser(userID, eventType string, payload any) {
-	data, err := json.Marshal(newEnvelope(eventType, payload))
+	h.publish(newEnvelope(eventType, payload), Audience{Kind: AudienceUser, UserID: userID})
+}
+
+// BroadcastConnector queues a connector-scoped event for the connections
+// allowed to read connectorID. It resolves the readers in the caller's
+// goroutine; the caller must not hold a database transaction or open rows.
+func (h *Hub) BroadcastConnector(connectorID, eventType string, payload any) {
+	env := newEnvelope(eventType, payload)
+	env.ConnectorID = connectorID
+	h.publish(env, Audience{Kind: AudienceConnector, ConnectorID: connectorID})
+}
+
+// publish resolves aud on this replica and queues env, dropping it if the hub
+// queue is full. Connector audiences fail closed: with no lookup installed, no
+// connector ID, or a failed lookup, the event is dropped. The ADR 0005 relay
+// receiver delivers through here too, so every replica filters the same way.
+func (h *Hub) publish(env Envelope, aud Audience) {
+	msg := broadcastMsg{aud: aud}
+	if aud.Kind == AudienceConnector {
+		if h.ClientCount() == 0 {
+			return
+		}
+		if aud.ConnectorID == "" || h.audience == nil {
+			slog.Warn("dropping connector WS event: no connector or audience lookup", "type", env.Type)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), audienceTimeout)
+		ids, err := h.audience(ctx, aud.ConnectorID)
+		cancel()
+		if err != nil {
+			slog.Warn("dropping connector WS event: audience lookup failed",
+				"connector_id", logsafe.Sanitize(aud.ConnectorID), "type", env.Type, "error", err)
+			return
+		}
+		if len(ids) == 0 {
+			return
+		}
+		msg.readers = make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			msg.readers[id] = struct{}{}
+		}
+	}
+	data, err := json.Marshal(env)
 	if err != nil {
 		slog.Error("failed to marshal WS broadcast", "error", err)
 		return
 	}
+	msg.data = data
 	select {
-	case h.broadcast <- broadcastMsg{data: data, userID: userID}:
+	case h.broadcast <- msg:
 	default:
-		slog.Warn("WebSocket broadcast queue full, dropping message", "user_id", logsafe.Sanitize(userID))
+		slog.Warn("WebSocket broadcast queue full, dropping message", "type", env.Type)
 	}
 }
 
@@ -323,20 +415,17 @@ func (h *Hub) ClientCount() int {
 
 // UpgradeHandler upgrades an HTTP connection to WebSocket.
 // Caller must authenticate before upgrading.
-func (h *Hub) UpgradeHandler(w http.ResponseWriter, r *http.Request, userID, role, sessionHash string) error {
+func (h *Hub) UpgradeHandler(w http.ResponseWriter, r *http.Request, id Identity) error {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return err
 	}
 
 	client := &Client{
-		hub:    h,
-		conn:   conn,
-		send:   make(chan []byte, 256),
-		userID: userID,
-		role:   role,
-
-		sessionHash: sessionHash,
+		hub:  h,
+		conn: conn,
+		send: make(chan []byte, 256),
+		id:   id,
 	}
 
 	h.register <- client
@@ -394,8 +483,8 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-			if !c.hub.Revalidate(context.Background(), c.userID, c.role, c.sessionHash) {
-				slog.Info("closing WebSocket: identity no longer valid", "user_id", logsafe.Sanitize(c.userID))
+			if !c.hub.Revalidate(context.Background(), c.id) {
+				slog.Info("closing WebSocket: identity no longer valid", "user_id", logsafe.Sanitize(c.id.UserID))
 				c.conn.WriteControl(websocket.CloseMessage, //nolint:errcheck
 					websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "session no longer valid"), time.Now().Add(time.Second))
 				return

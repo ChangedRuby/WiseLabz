@@ -194,7 +194,7 @@ func (h *Handler) lifecycleOpMutate(w http.ResponseWriter, r *http.Request, conn
 		if createErr := h.Store.CreateAlert(r.Context(), alert); createErr != nil {
 			slog.Error("failed to create "+verb+" failure alert", "error", createErr)
 		} else if h.WSHub != nil {
-			h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
+			h.WSHub.BroadcastConnector(connectorID, ws.EventAlertCreated, map[string]any{
 				"alertId":   alert.ID,
 				"serviceId": connectorID,
 				"severity":  alert.Severity,
@@ -296,7 +296,7 @@ func (h *Handler) restartConnector(ctx context.Context, rec *store.ConnectorReco
 		if createErr := h.Store.CreateAlert(ctx, alert); createErr != nil {
 			slog.Error("failed to create restart failure alert", "error", createErr)
 		} else if h.WSHub != nil {
-			h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
+			h.WSHub.BroadcastConnector(rec.ID, ws.EventAlertCreated, map[string]any{
 				"alertId":   alert.ID,
 				"serviceId": rec.ID,
 				"severity":  alert.Severity,

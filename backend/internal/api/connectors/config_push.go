@@ -190,7 +190,7 @@ func (h *Handler) revertConfigPush(w http.ResponseWriter, r *http.Request, pushe
 	if createErr := h.Store.CreateAlert(r.Context(), alert); createErr != nil {
 		slog.Error("failed to create config-push mismatch alert", "error", createErr)
 	} else if h.WSHub != nil {
-		h.WSHub.Broadcast(ws.EventAlertCreated, map[string]any{
+		h.WSHub.BroadcastConnector(id, ws.EventAlertCreated, map[string]any{
 			"alertId":   alert.ID,
 			"serviceId": id,
 			"severity":  alert.Severity,

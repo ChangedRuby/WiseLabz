@@ -35,6 +35,8 @@ export interface WsEnvelope<T = unknown> {
   id: string;
   /** ISO-8601 server timestamp. Normalized on parse. */
   ts: string;
+  /** Set on connector-scoped events; absent on global ones. */
+  connectorId?: string;
   payload: T;
 }
 
