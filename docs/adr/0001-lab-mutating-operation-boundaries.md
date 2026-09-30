@@ -1,6 +1,6 @@
 # 0001 — Lab-mutating operation boundaries
 
-Status: proposed (deferred — see issue #33)
+Status: accepted (implemented; start/stop by ADR 0002, config push by ADR 0003)
 
 ## Context
 
@@ -8,7 +8,7 @@ Status: proposed (deferred — see issue #33)
 connector, and add/remove connectors — explicitly excluding lab-mutating
 operations (service start/stop/restart, config push), gated on "the
 permission/confirmation model" (`PRODUCT.md:51-54,70-72`). `docs/MISSING.md`
-carries the same deferral. This ADR is that model: it defines which
+carried the same deferral until it shipped (#236). This ADR is that model: it defines which
 operation may go first, and how it reuses the authorization, step-up,
 audit, and rollback machinery already in the codebase, so that when the
 operation is actually implemented it has no open design questions left.

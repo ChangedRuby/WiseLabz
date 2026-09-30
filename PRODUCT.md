@@ -48,10 +48,11 @@ enforcement and build details live in `docs/ARCHITECTURE.md`.
 1. **IA spine — Docs is home; the dashboard is the entry/command surface.** The
    dashboard is a work-and-control surface (what drifted, what's stale, what needs
    review, what you can act on) that routes into docs. Never a big-number hero wall.
-2. **Manager scope (v1) is deliberately narrow.** In scope: trigger sync
-   (global + per-service), enable/disable a connector, and add/remove connectors —
-   all via the UI. Out of scope for v1: lab-mutating operations (service
-   start/stop/restart, config push). The manager grows from there, deliberately.
+2. **Manager scope is deliberately narrow, and grows deliberately.** In scope:
+   trigger sync (global + per-service), enable/disable a connector, add/remove
+   connectors, and lab-mutating operations — service start/stop/restart and
+   config push — each gated by step-up elevation and a confirmation/dry-run
+   preview per ADRs 0001–0003 (`docs/adr/`).
 3. **AI drafts are hybrid.** Minor section updates surface inline in the doc with a
    provenance marker (drafted / human-confirmed / synced-raw); structural changes
    route through the Changes accept/reject loop. Nothing implies more confidence
@@ -67,11 +68,11 @@ enforcement and build details live in `docs/ARCHITECTURE.md`.
    (a row resolving on accept/reject). Everything else is plain state feedback; no
    page-load choreography.
 
-**Resolved by ADR: how far "manager" goes past v1.** Lab-mutating control
-(lifecycle, config push) is desired but deferred. The permission/confirmation
-model for the first such operation (`service.restart`) is defined in
-`docs/adr/0001-lab-mutating-operation-boundaries.md`; config-push and
-start/stop remain open, pending their own follow-up ADRs.
+**Resolved by ADR: how far "manager" goes past v1.** Lab-mutating control is
+shipped (#236). The permission/confirmation model is defined in
+[ADR 0001](docs/adr/0001-lab-mutating-operation-boundaries.md) (restart),
+[ADR 0002](docs/adr/0002-start-stop-lab-mutating-operations.md) (start/stop) and
+[ADR 0003](docs/adr/0003-config-push-lab-mutating-operation.md) (config push).
 
 ## Locked frontend direction (planning session, 2026-06; revised 2026-09)
 

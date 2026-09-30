@@ -116,7 +116,30 @@ body. `runbook.delete` records the deleted runbook's `title`.
 
 ## Retention
 
-Audit rows are not touched by the retention policies in
-`backend/internal/store/retention.go` — they're kept indefinitely, since
-their purpose is historical accountability rather than operational data. The
-elevation request/denial rows inherit the same exemption through `audit_log`.
+Audit rows are pruned by the retention job (`DeleteOldAuditRecords` in
+`backend/internal/store/retention.go`, called from
+`backend/internal/retention/retention.go`) like other operational tables, using
+the `retention.audit_days` setting (env `WISELABZ_RETENTION_AUDIT_DAYS`,
+default `180`). Rows with `created_at` older than that many days are deleted;
+there is no "keep latest" guard. Setting `retention.audit_days` to `0` disables
+audit pruning entirely, so rows are kept indefinitely. The elevation
+request/denial rows are ordinary `audit_log` rows and follow the same policy.
+
+## Filtering and export
+
+`GET /api/system/audit` accepts these filters (all optional, combinable):
+
+- `action` — exact match.
+- `targetType` — exact match.
+- `createdAfter` — inclusive lower bound on `createdAt` (RFC 3339 date-time).
+- `createdBefore` — inclusive upper bound on `createdAt`.
+
+`GET /api/system/audit/export?format=json|csv` (instance-admin only) returns
+every record matching the same four filters, newest first. It is **not
+paginated** and has no row limit, so narrow it with filters on large logs.
+`format` defaults to `json`; any other value is a 400 (`invalid_format`).
+Both formats are served as an attachment named
+`wiselabz-audit-<UTC timestamp>.json|csv`. JSON is an array of `AuditRecord`
+objects. CSV has a header row with the columns `id`, `actorUserId`,
+`actorRole`, `action`, `targetType`, `targetId`, `detail` (the raw JSON string),
+`createdAt`.

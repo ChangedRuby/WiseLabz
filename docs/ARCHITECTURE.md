@@ -255,13 +255,14 @@ Step-up is **scoped to genuinely destructive ops**, not every mutation:
 | Connector enable/disable            | yes (reversible toggle)         | no                   |
 | Connector **add**                   | yes (creates state)             | no                   |
 | Connector **remove**                | yes (cascades, destructive)     | **yes (default on)** |
+| Service **restart / start / stop**  | yes (lab-mutating)              | **yes**              |
+| Config **push**                     | yes (lab-mutating)              | **yes**              |
 
 Gating sync or a toggle behind a password is friction with no payoff and trains
 users to disable step-up wholesale. Step-up therefore defaults **on for connector
-removal** (the one destructive op in v1) and off elsewhere. A Settings toggle lets a
-solo operator disable step-up entirely — honest default, escape hatch for the
-single-admin homelab. As lab-mutating ops (lifecycle, config push) land post-v1,
-each enters this table as `step-up: yes`.
+removal** and the lab-mutating ops (lifecycle, config push; ADRs 0001–0003), and
+off elsewhere. A Settings toggle lets a solo operator disable step-up entirely —
+honest default, escape hatch for the single-admin homelab.
 
 ### Destructive-action pattern: confirm + blast radius (decided 2026-06-27)
 
@@ -275,20 +276,23 @@ smaller than it is.
 
 ---
 
-## Manager actions (v1 scope)
+## Manager actions
 
-WiseLabz is a homelab manager, not only a doc manager (see `PRODUCT.md`). The v1
-manager layer is deliberately narrow and all of it is REST (per the API design
+WiseLabz is a homelab manager, not only a doc manager (see `PRODUCT.md`). The
+manager layer is deliberately scoped and all of it is REST (per the API design
 below — no mutations over WS):
 
 - **Sync** — trigger a sync/refresh globally or per-service.
 - **Connector enable/disable** — a persisted flag; the connector definition is
   untouched.
 - **Connector add/remove (full CRUD via UI)** — see below.
-
-**Out of scope for v1:** lab-mutating operations (service start/stop/restart,
-config push back to the service). These are desired but deferred; each will require
-its own row in the step-up table and a blast-radius definition before shipping.
+- **Lab-mutating operations** — service start/stop/restart and config push back
+  to the service (shipped, #236). Each has its own row in the step-up table and a
+  defined blast radius, and is gated by an operator grant, an elevation token and
+  a dry-run/confirmation preview; see
+  [ADR 0001](adr/0001-lab-mutating-operation-boundaries.md),
+  [ADR 0002](adr/0002-start-stop-lab-mutating-operations.md) and
+  [ADR 0003](adr/0003-config-push-lab-mutating-operation.md).
 
 ### Connector management via UI (decided 2026-06-27)
 
@@ -512,10 +516,16 @@ required evaluation of alternatives gets its own numbered ADR file (e.g. `0001-m
 This file records the _outcome_ of each decision; the ADRs record the _reasoning_.
 
 - [`0001-lab-mutating-operation-boundaries.md`](adr/0001-lab-mutating-operation-boundaries.md) —
-  permission, step-up, audit, dry-run, and rollback model for the first lab-mutating
-  operation (`service.restart`), ahead of implementation.
+  permission, step-up, audit, dry-run, and rollback model for lab-mutating
+  operations, first applied to `service.restart`.
+- [`0002-start-stop-lab-mutating-operations.md`](adr/0002-start-stop-lab-mutating-operations.md) —
+  service start/stop on the ADR 0001 model.
+- [`0003-config-push-lab-mutating-operation.md`](adr/0003-config-push-lab-mutating-operation.md) —
+  config push on the ADR 0001 model.
 - [`0004-leader-election.md`](adr/0004-leader-election.md) — PostgreSQL advisory-lock
   active/passive operation and readiness-based failover.
+- [`0005-cross-replica-websocket-relay.md`](adr/0005-cross-replica-websocket-relay.md) —
+  PostgreSQL LISTEN/NOTIFY relay for WebSocket events under active/active (deferred).
 
 ---
 
