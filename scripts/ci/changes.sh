@@ -58,6 +58,7 @@ deploy/*	-
 LICENSE	-
 .github/CODEOWNERS	-
 .github/ISSUE_TEMPLATE/*	-
+.github/dependabot.yml	-
 .gitignore	-
 cliff.toml	-
 skills-lock.json	-

@@ -20,6 +20,7 @@ LICENSE	-
 .github/CODEOWNERS	-
 .github/ISSUE_TEMPLATE/bug_report.yml	-
 .github/PULL_REQUEST_TEMPLATE.md	-
+.github/dependabot.yml	-
 .gitignore	-
 cliff.toml	-
 skills-lock.json	-
@@ -63,7 +64,7 @@ scripts/compose-smoke.sh	compose
 
 # Unclassified: fail safe
 renovate.json	backend,frontend,compose,gomod
-.github/dependabot.yml	backend,frontend,compose,gomod
+.github/FUNDING.yml	backend,frontend,compose,gomod
 
 # Postgres closure (check --go)
 @postgres	backend/internal/store/doc.go	true

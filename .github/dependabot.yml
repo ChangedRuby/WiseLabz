@@ -1,0 +1,46 @@
+# Weekly dependency updates. Grouping keeps the PR count low; the commit
+# prefixes pass the lefthook commit-msg check and stay out of the changelog
+# (release-please hides ci and chore). See "What CI runs" in docs/TESTING.md.
+version: 2
+updates:
+  # "/" only scans .github/workflows, so the composite actions are listed too.
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+    labels: ["area:platform"]
+    open-pull-requests-limit: 5
+
+  # Minor and patch bumps are grouped; each major gets its own PR.
+  - package-ecosystem: gomod
+    directory: "/backend"
+    schedule:
+      interval: weekly
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: ["area:backend"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: bun
+    directory: "/web"
+    schedule:
+      interval: weekly
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: ["area:frontend"]
+    open-pull-requests-limit: 5

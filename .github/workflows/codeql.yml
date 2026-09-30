@@ -49,17 +49,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           cache: true
           cache-dependency-path: backend/go.sum
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@8272c299f21ca24af15dfe9ac0971ba969e5e0d5 # v3.36.2
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: go
           queries: security-and-quality
@@ -70,4 +70,4 @@ jobs:
         working-directory: backend
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@8272c299f21ca24af15dfe9ac0971ba969e5e0d5 # v3.36.2
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2

@@ -243,8 +243,8 @@ Changing `.github/workflows/ci.yml` selects everything.
 `.codex/**`, `deploy/**`, `prototypes/**`, release metadata (`CHANGELOG.md`,
 release-please config and manifest), local tooling (`Makefile`,
 `lefthook.yml`, `.air.toml`) and repository metadata (`LICENSE`,
-`CODEOWNERS`, issue and PR templates). A docs-only PR finishes in about 15
-seconds.
+`CODEOWNERS`, issue and PR templates, `.github/dependabot.yml`). A docs-only
+PR finishes in about 15 seconds.
 
 **Fail-safe.** A path that matches no rule is `unclassified` and selects
 backend, frontend, compose and gomod. Unknown files never cause a skip; they
@@ -298,6 +298,37 @@ scripts/ci/changes.sh check --go     # plus Postgres closure fixtures (needs Go)
 git diff --name-only origin/main... | scripts/ci/changes.sh classify
 git diff --name-only origin/main... | scripts/ci/changes.sh go-closure
 ```
+
+### Dependency updates and action pinning
+
+**Pinning.** Every `uses:` of an action outside this repository names a full
+commit SHA followed by the release it belongs to, for example
+`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`. Pin the
+commit, not an annotated tag object: resolve it with
+`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`. The action must also
+run on a supported Node runtime (`node24` today, never `node20`). Check with
+`gh api "repos/<owner>/<repo>/contents/action.yml?ref=<sha>" --jq .content | base64 -d | grep using:`.
+This must print nothing:
+
+```sh
+grep -rnE 'uses: [^.].*@v[0-9]' .github
+```
+
+**Dependabot.** `.github/dependabot.yml` opens update PRs every week:
+
+| Ecosystem | Scope | PRs | Commit | Label |
+|---|---|---|---|---|
+| `github-actions` | workflows and `.github/actions/*` | one grouped PR | `ci: ...` | `area:platform` |
+| `gomod` | `/backend` | minor+patch grouped, one PR per major | `chore(deps): ...` | `area:backend` |
+| `bun` | `/web` | minor+patch grouped, one PR per major | `chore(deps): ...` | `area:frontend` |
+
+Both commit types pass the `commit-msg` hook and stay out of the changelog.
+Dependabot rewrites each SHA together with its `# vX.Y.Z` comment. An actions
+PR that touches `ci.yml` runs the full suite, which re-validates CI with the
+new versions; Go and web PRs run only their area.
+
+Dependabot does not update the root `go.work.sum`. If a Go update PR fails
+with a checksum error, run `go work sync` on its branch and push the result.
 
 ## CI job times
 
