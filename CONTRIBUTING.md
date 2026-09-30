@@ -161,8 +161,10 @@ handling), add regression tests for it rather than relying on the floor alone.
    only the jobs your changed paths need, and skips them entirely for docs-only
    changes. Draft PRs defer the heavy jobs; marking the PR **ready for review**
    starts the full suite. See [What CI runs](docs/TESTING.md#what-ci-runs).
-7. **Rebase, don't merge** — update your branch with `git rebase main`. Maintainers
-   squash-and-rebase when merging. No merge commits land on `main`.
+7. **Rebase, don't merge** — update your branch with `git rebase main` when it
+   conflicts. Your branch doesn't need to be up to date otherwise: maintainers add
+   approved PRs to the merge queue, which re-tests them on top of `main` and
+   squash-merges them. No merge commits land on `main`.
 
 ## Writing a connector
 

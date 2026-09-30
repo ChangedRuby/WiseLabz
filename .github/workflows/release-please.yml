@@ -8,11 +8,43 @@ permissions:
   contents: write
   pull-requests: write
 
+# release-please walks every commit since the last release, so a run gets
+# slower as unreleased commits pile up. When the merge queue lands several PRs
+# in a row, the pending run replaces older pending ones instead of each running.
+# No cancel-in-progress: a run may be creating a release.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Commits of a type release-please hides (release-please-config.json)
+      # can't change the release PR, so a push made only of them skips the run.
+      # A breaking marker ("!", "BREAKING CHANGE") counts, as does any line that
+      # reads as a visible commit (squash bodies list the PR's commits), and the
+      # release PR's own merge must run to publish the release.
+      - name: Check for release-relevant commits
+        id: gate
+        run: |
+          # Any jq failure leaves the counts empty, which runs release-please.
+          counts=$(jq -r '
+            [.commits[].message] as $msgs
+            | [$msgs[] | select(
+                (test("^(ci|chore|test)(\\([^)]*\\))?: ") | not)
+                or test("^chore\\(main\\): release ")
+                or test("BREAKING[ -]CHANGE")
+                or (split("\n") | any(test("^[*-]? ?(feat|fix|perf|refactor|docs|revert)(\\([^)]*\\))?!?: ")))
+              )] as $hits
+            | "\($msgs | length) \($hits | length)"' "$GITHUB_EVENT_PATH") || counts=""
+          read -r total relevant <<<"$counts" || true
+          if [[ -z $total || $total == 0 || $relevant != 0 ]]; then run=true; else run=false; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "${relevant:-?} of ${total:-?} pushed commits can change the release: run=$run" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: steps.gate.outputs.run == 'true'
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}

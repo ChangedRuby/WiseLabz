@@ -1,7 +1,24 @@
-# Weekly dependency updates. Grouping keeps the PR count low; the commit
+# Monthly version updates, at most two PRs per ecosystem: every PR costs a
+# CI run. The cooldown skips releases younger than a week, which are often
+# re-patched. Security updates (enabled in repository settings) ignore the
+# schedule and cooldown, and arrive as one grouped PR per ecosystem. The commit
 # prefixes pass the lefthook commit-msg check and stay out of the changelog
-# (release-please hides ci and chore). See "What CI runs" in docs/TESTING.md.
+# (release-please hides ci and chore). Minor and patch PRs merge on their own
+# once approved (dependabot-auto-merge.yml). See "What CI runs" in
+# docs/TESTING.md.
 version: 2
+
+multi-ecosystem-groups:
+  # Dockerfile base images and the compose Postgres image, in one PR.
+  # Commit message and labels belong on the group, not its updates.
+  images:
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: ["area:platform"]
+
 updates:
   # "/" only scans .github/workflows, so the composite actions are listed too.
   - package-ecosystem: github-actions
@@ -9,23 +26,36 @@ updates:
       - "/"
       - "/.github/actions/*"
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
         patterns: ["*"]
     commit-message:
       prefix: ci
     labels: ["area:platform"]
     open-pull-requests-limit: 5
 
-  # Minor and patch bumps are grouped; each major gets its own PR.
+  # Majors are grouped apart from minor and patch, so one breaking upgrade
+  # never holds back the routine bumps.
   - package-ecosystem: gomod
     directory: "/backend"
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       go-minor-patch:
         update-types: [minor, patch]
+      go-major:
+        update-types: [major]
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
     commit-message:
       prefix: chore
       include: scope
@@ -35,12 +65,42 @@ updates:
   - package-ecosystem: bun
     directory: "/web"
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       web-minor-patch:
         update-types: [minor, patch]
+      web-major:
+        update-types: [major]
+      web-security:
+        applies-to: security-updates
+        patterns: ["*"]
     commit-message:
       prefix: chore
       include: scope
     labels: ["area:frontend"]
     open-pull-requests-limit: 5
+
+  # Images are pinned as tag@digest; Dependabot moves both. The Go version
+  # follows go.mod and the CI setup-go pin, so only the golang digest moves.
+  - package-ecosystem: docker
+    directory: "/"
+    multi-ecosystem-group: images
+    patterns: ["*"]
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # A Postgres major needs a data migration, so it is never proposed.
+  - package-ecosystem: docker-compose
+    directory: "/"
+    multi-ecosystem-group: images
+    patterns: ["*"]
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]

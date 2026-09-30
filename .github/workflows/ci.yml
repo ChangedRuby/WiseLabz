@@ -6,6 +6,10 @@ on:
     # ready_for_review: drafts defer the heavy jobs, so marking a PR ready
     # re-runs CI on the same commit with the full job selection.
     types: [opened, synchronize, reopened, ready_for_review]
+  # The main ruleset merges through a merge queue, which needs CI Status on
+  # the queued commit. Changes are classified from the queue's base to head.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 

@@ -218,8 +218,8 @@ guarded dialer applies), or at a closed local port such as
 
 ## What CI runs
 
-`CI Status` is the only required check, and it reports on every PR and every
-push to `main`. The workflow always starts: a `paths-ignore` trigger would
+`CI Status` is the only required check, and it reports on every PR, every
+merge-queue entry and every push to `main`. The workflow always starts: a `paths-ignore` trigger would
 leave the required check pending forever on a docs-only PR. The `changes` job
 decides what else runs, using `scripts/ci/changes.sh`, and every other job is
 gated on its outputs.
@@ -253,6 +253,14 @@ cost a full run until someone classifies them.
 **Release PRs.** On pull requests, a `web/package.json` change that only bumps
 `version` is ignored, so the release-please PR skips the heavy jobs. The push
 to `main` after a release still runs them.
+
+**Merge queue.** PRs to `main` merge through a merge queue instead of having
+to be up to date with `main`. Merging several PRs no longer means rebasing and
+re-running CI on each one in turn: the queue tests them on top of each other
+(`merge_group` event) and merges each once its entry passes. The queue run
+classifies the changes of every PR in the entry from the queue's base to its
+head. The version-only rule above does not apply there, so a release PR runs
+the frontend jobs once in the queue.
 
 **Postgres closure.** When backend changed, `changes` sets up Go and runs
 `changes.sh go-closure`. It lists the dependencies of the Postgres test
@@ -314,21 +322,65 @@ This must print nothing:
 grep -rnE 'uses: [^.].*@v[0-9]' .github
 ```
 
-**Dependabot.** `.github/dependabot.yml` opens update PRs every week:
+Container images in `Dockerfile` and `docker-compose.yml` are pinned the same
+way, as `tag@sha256:<index digest>`, so a rebuild uses the exact same base
+image. Use the multi-arch index digest, not a single platform's, so the
+`linux/amd64,linux/arm64` release build still works:
+`docker buildx imagetools inspect <image:tag>` prints it as `Digest:`.
+
+**Dependabot.** `.github/dependabot.yml` opens version-update PRs once a
+month, at most two per ecosystem, and skips releases younger than 7 days
+(cooldown). Dependabot security updates are enabled in repository settings:
+they ignore the schedule and the cooldown, and arrive as soon as an advisory
+is published, in one grouped PR per ecosystem.
 
 | Ecosystem | Scope | PRs | Commit | Label |
 |---|---|---|---|---|
 | `github-actions` | workflows and `.github/actions/*` | one grouped PR | `ci: ...` | `area:platform` |
-| `gomod` | `/backend` | minor+patch grouped, one PR per major | `chore(deps): ...` | `area:backend` |
-| `bun` | `/web` | minor+patch grouped, one PR per major | `chore(deps): ...` | `area:frontend` |
+| `gomod` | `/backend` | minor+patch grouped, majors grouped | `chore(deps): ...` | `area:backend` |
+| `bun` | `/web` | minor+patch grouped, majors grouped | `chore(deps): ...` | `area:frontend` |
+| `docker` + `docker-compose` | `Dockerfile`, `docker-compose.yml` | one `images` PR for both | `chore(deps): ...` | `area:platform` |
+
+The `golang` image only gets digest updates: the Go version follows `go.mod`
+and the CI `setup-go` pin, so bump all three together by hand. Postgres
+majors are never proposed, because they need a data migration.
+
+**Auto-merge.** `dependabot-auto-merge.yml` enables auto-merge (squash) on a
+Dependabot PR when its largest change is a minor or patch bump. Once a code
+owner approves and `CI Status` passes, the PR goes through the merge queue on
+its own. Majors, and PRs whose update type Dependabot doesn't report (such as
+image digest-only bumps), stay manual.
+
+If one major in a majors PR breaks, fix it on the PR or skip it with an
+`ignore` entry for that dependency, so the other majors can still land. To
+merge several Dependabot PRs, add them all to the merge queue.
 
 Both commit types pass the `commit-msg` hook and stay out of the changelog.
 Dependabot rewrites each SHA together with its `# vX.Y.Z` comment. An actions
 PR that touches `ci.yml` runs the full suite, which re-validates CI with the
-new versions; Go and web PRs run only their area.
+new versions; Go and web PRs run only their area, and image PRs only
+compose-smoke.
 
 Dependabot does not update the root `go.work.sum`. If a Go update PR fails
 with a checksum error, run `go work sync` on its branch and push the result.
+
+### release-please
+
+`release-please.yml` runs on every push to `main`, and each run walks every
+commit since the last release, so it slows down as unreleased commits pile up
+(about 2 minutes at 280 commits). Two things keep that in check:
+
+- A push made only of commits whose type the changelog hides (`ci`, `chore`,
+  `test`) skips the action, because those commits can't change the release PR.
+  This covers every Dependabot merge. A breaking marker (`!` or
+  `BREAKING CHANGE`), a visible commit line inside a squash body, or the
+  release PR's own `chore(main): release` merge always runs it. The job
+  summary says which case applied.
+- One concurrency group: when the merge queue lands several PRs in a row, only
+  the newest pending run follows the one in progress. Runs are never
+  cancelled midway, because one may be creating a release.
+
+Releasing regularly is what keeps each run short.
 
 ## CI job times
 
