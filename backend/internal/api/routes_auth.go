@@ -37,11 +37,15 @@ func mountAuthRoutes(r chi.Router, d routerDeps) {
 		r.Group(func(r chi.Router) {
 			r.Use(cfg.AuthMiddleware())
 			r.Post("/logout", d.authH.Logout)
-			r.With(elevateLimit).Post("/elevate", d.authH.Elevate)
-			r.With(elevateLimit).Post("/elevate/webauthn/begin", d.authH.PostWebAuthnElevateBegin)
-			r.Get("/elevate/methods", d.authH.ElevateMethods)
-			r.With(elevateLimit).Post("/elevate/oidc/begin", d.authH.ElevateOIDCBegin)
-			r.With(elevateLimit).Post("/elevate/oidc/complete", d.authH.ElevateOIDCComplete)
+			// API keys must not mint elevation tokens.
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RejectAPIKey)
+				r.With(elevateLimit).Post("/elevate", d.authH.Elevate)
+				r.With(elevateLimit).Post("/elevate/webauthn/begin", d.authH.PostWebAuthnElevateBegin)
+				r.Get("/elevate/methods", d.authH.ElevateMethods)
+				r.With(elevateLimit).Post("/elevate/oidc/begin", d.authH.ElevateOIDCBegin)
+				r.With(elevateLimit).Post("/elevate/oidc/complete", d.authH.ElevateOIDCComplete)
+			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Get("/", d.apiKeyH.List)
 				r.Post("/", d.apiKeyH.Create)
@@ -66,15 +70,18 @@ func mountMeRoutes(r chi.Router, d routerDeps) {
 	r.Route("/me", func(r chi.Router) {
 		r.Get("/", d.authH.Me)
 		r.Patch("/", d.authH.UpdateMe)
-		r.Post("/password", d.authH.ChangePassword)
+		r.With(auth.RejectAPIKey).Post("/password", d.authH.ChangePassword)
 		r.Get("/sessions", d.authH.ListSessions)
 		r.Delete("/sessions/{id}", d.authH.DeleteSession)
 
 		r.Route("/mfa", func(r chi.Router) {
+			r.Use(auth.RejectAPIKey)
 			r.Get("/", d.authH.GetMFA)
-			r.Post("/totp", d.authH.PostMFATOTP)
+			// Starting enrollment needs step-up; confirm/finish depend on state the start step creates.
+			enrollElevation := auth.RequireElevationUnlessEnrollOnly(cfg.JWT, cfg.Store, cfg.Store, "mfa.manage")
+			r.With(enrollElevation).Post("/totp", d.authH.PostMFATOTP)
 			r.Post("/totp/{id}/confirm", d.authH.PostMFATOTPConfirm)
-			r.Post("/webauthn/register/begin", d.authH.PostWebAuthnRegisterBegin)
+			r.With(enrollElevation).Post("/webauthn/register/begin", d.authH.PostWebAuthnRegisterBegin)
 			r.Post("/webauthn/register/finish", d.authH.PostWebAuthnRegisterFinish)
 
 			r.Group(func(r chi.Router) {

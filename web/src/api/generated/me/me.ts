@@ -313,7 +313,7 @@ export const getPostMePasswordQueryKey = (passwordChange?: BodyType<PasswordChan
 
 export const getPostMePasswordQueryOptions = <
   TData = Awaited<ReturnType<typeof postMePassword>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   passwordChange: BodyType<PasswordChange>,
   options?: {
@@ -336,11 +336,11 @@ export const getPostMePasswordQueryOptions = <
 };
 
 export type PostMePasswordQueryResult = NonNullable<Awaited<ReturnType<typeof postMePassword>>>;
-export type PostMePasswordQueryError = ErrorType<BadRequestResponse>;
+export type PostMePasswordQueryError = ErrorType<BadRequestResponse | void>;
 
 export function usePostMePassword<
   TData = Awaited<ReturnType<typeof postMePassword>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   passwordChange: BodyType<PasswordChange>,
   options: {
@@ -359,7 +359,7 @@ export function usePostMePassword<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMePassword<
   TData = Awaited<ReturnType<typeof postMePassword>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   passwordChange: BodyType<PasswordChange>,
   options?: {
@@ -378,7 +378,7 @@ export function usePostMePassword<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMePassword<
   TData = Awaited<ReturnType<typeof postMePassword>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   passwordChange: BodyType<PasswordChange>,
   options?: {
@@ -393,7 +393,7 @@ export function usePostMePassword<
 
 export function usePostMePassword<
   TData = Awaited<ReturnType<typeof postMePassword>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | void>,
 >(
   passwordChange: BodyType<PasswordChange>,
   options?: {
@@ -760,7 +760,7 @@ export function useGetMeMfa<
 }
 
 /**
- * Creates a pending factor (unusable for login/step-up until confirmed). The frontend renders `otpauthUrl` as a QR code client-side.
+ * Creates a pending factor (unusable for login/step-up until confirmed). The frontend renders `otpauthUrl` as a QR code client-side. Requires step-up elevation (action `mfa.manage`; a user with no factor elevates with their password), except for sessions confined to forced MFA enrollment. 400 `elevation_required` when the token is missing, 401 when invalid, 403 for API keys.
  * @summary Begin enrolling a TOTP factor
  */
 export const postMeMfaTotp = (
@@ -786,7 +786,7 @@ export const getPostMeMfaTotpQueryKey = (postMeMfaTotpBody?: BodyType<PostMeMfaT
 
 export const getPostMeMfaTotpQueryOptions = <
   TData = Awaited<ReturnType<typeof postMeMfaTotp>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaTotpBody?: BodyType<PostMeMfaTotpBody>,
   options?: {
@@ -809,11 +809,11 @@ export const getPostMeMfaTotpQueryOptions = <
 };
 
 export type PostMeMfaTotpQueryResult = NonNullable<Awaited<ReturnType<typeof postMeMfaTotp>>>;
-export type PostMeMfaTotpQueryError = ErrorType<BadRequestResponse>;
+export type PostMeMfaTotpQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>;
 
 export function usePostMeMfaTotp<
   TData = Awaited<ReturnType<typeof postMeMfaTotp>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaTotpBody: undefined | BodyType<PostMeMfaTotpBody>,
   options: {
@@ -832,7 +832,7 @@ export function usePostMeMfaTotp<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMeMfaTotp<
   TData = Awaited<ReturnType<typeof postMeMfaTotp>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaTotpBody?: BodyType<PostMeMfaTotpBody>,
   options?: {
@@ -851,7 +851,7 @@ export function usePostMeMfaTotp<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMeMfaTotp<
   TData = Awaited<ReturnType<typeof postMeMfaTotp>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaTotpBody?: BodyType<PostMeMfaTotpBody>,
   options?: {
@@ -866,7 +866,7 @@ export function usePostMeMfaTotp<
 
 export function usePostMeMfaTotp<
   TData = Awaited<ReturnType<typeof postMeMfaTotp>>,
-  TError = ErrorType<BadRequestResponse>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaTotpBody?: BodyType<PostMeMfaTotpBody>,
   options?: {
@@ -1049,6 +1049,7 @@ export function usePostMeMfaTotpFactorIdConfirm<
 }
 
 /**
+ * Requires step-up elevation (action `mfa.manage`; a user with no factor elevates with their password), except for sessions confined to forced MFA enrollment. 400 `elevation_required` when the token is missing, 401 when invalid, 403 for API keys.
  * @summary Begin registering a security key or passkey
  */
 export const postMeMfaWebauthnRegisterBegin = (
@@ -1076,7 +1077,7 @@ export const getPostMeMfaWebauthnRegisterBeginQueryKey = (
 
 export const getPostMeMfaWebauthnRegisterBeginQueryOptions = <
   TData = Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaWebauthnRegisterBeginBody?: BodyType<PostMeMfaWebauthnRegisterBeginBody>,
   options?: {
@@ -1106,11 +1107,13 @@ export const getPostMeMfaWebauthnRegisterBeginQueryOptions = <
 export type PostMeMfaWebauthnRegisterBeginQueryResult = NonNullable<
   Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>
 >;
-export type PostMeMfaWebauthnRegisterBeginQueryError = ErrorType<void>;
+export type PostMeMfaWebauthnRegisterBeginQueryError = ErrorType<
+  BadRequestResponse | UnauthorizedResponse | void
+>;
 
 export function usePostMeMfaWebauthnRegisterBegin<
   TData = Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaWebauthnRegisterBeginBody: undefined | BodyType<PostMeMfaWebauthnRegisterBeginBody>,
   options: {
@@ -1131,7 +1134,7 @@ export function usePostMeMfaWebauthnRegisterBegin<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMeMfaWebauthnRegisterBegin<
   TData = Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaWebauthnRegisterBeginBody?: BodyType<PostMeMfaWebauthnRegisterBeginBody>,
   options?: {
@@ -1152,7 +1155,7 @@ export function usePostMeMfaWebauthnRegisterBegin<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostMeMfaWebauthnRegisterBegin<
   TData = Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaWebauthnRegisterBeginBody?: BodyType<PostMeMfaWebauthnRegisterBeginBody>,
   options?: {
@@ -1169,7 +1172,7 @@ export function usePostMeMfaWebauthnRegisterBegin<
 
 export function usePostMeMfaWebauthnRegisterBegin<
   TData = Awaited<ReturnType<typeof postMeMfaWebauthnRegisterBegin>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<BadRequestResponse | UnauthorizedResponse | void>,
 >(
   postMeMfaWebauthnRegisterBeginBody?: BodyType<PostMeMfaWebauthnRegisterBeginBody>,
   options?: {

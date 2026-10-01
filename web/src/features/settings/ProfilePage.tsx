@@ -2,6 +2,7 @@
  * Settings → Profile. Edit display name / email, change password (local accounts),
  * and review + revoke active sessions. Available to every authenticated user.
  */
+import { isAxiosError } from 'axios';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -422,6 +423,18 @@ function NewApiKeyDialog({ token, onClose }: { token: string | null; onClose: ()
 }
 
 /**
+ * Starting enrollment needs a `mfa.manage` elevation token (#523), except in a
+ * forced-enrollment session, where the server skips it and /auth/elevate is
+ * off-limits. The web can't tell the two apart, so each start step is tried
+ * bare first and only prompts for step-up on the server's `elevation_required`.
+ */
+function isElevationRequired(err: unknown): boolean {
+  return isAxiosError(err) && (err.response?.data as { code?: string } | undefined)?.code === 'elevation_required';
+}
+
+const elevationOptions = (token: string | null) => (token ? { headers: { 'X-Elevation-Token': token } } : undefined);
+
+/**
  * Settings → Profile → Two-factor authentication (#279, local accounts only).
  * Covers enrollment (QR + manual secret, confirm-with-code, recovery codes
  * shown once), the factor list with a step-up-gated remove action, and a
@@ -435,6 +448,7 @@ function SecuritySection() {
   const [enrolling, setEnrolling] = useState(false);
   const [addingKey, setAddingKey] = useState(false);
   const [keyName, setKeyName] = useState('');
+  const [keyNeedsStepUp, setKeyNeedsStepUp] = useState(false);
   const [toRemove, setToRemove] = useState<MfaFactor | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [newCodes, setNewCodes] = useState<string[] | null>(null);
@@ -464,8 +478,8 @@ function SecuritySection() {
   });
 
   const registerKey = useMutation({
-    mutationFn: async () => {
-      const options = await postMeMfaWebauthnRegisterBegin({ name: keyName.trim() });
+    mutationFn: async (token: string | null) => {
+      const options = await postMeMfaWebauthnRegisterBegin({ name: keyName.trim() }, elevationOptions(token));
       const credential = await registerWebAuthn(options);
       return postMeMfaWebauthnRegisterFinish(credential as unknown as WebAuthnResponse);
     },
@@ -477,7 +491,8 @@ function SecuritySection() {
       if (res.recoveryCodes) setNewCodes(res.recoveryCodes);
     },
     onError: (err) => {
-      if (!isWebAuthnCancel(err)) toast.error(t('settings.security.keyError', { defaultValue: 'Could not add the security key.' }));
+      if (isElevationRequired(err)) setKeyNeedsStepUp(true);
+      else if (!isWebAuthnCancel(err)) toast.error(t('settings.security.keyError', { defaultValue: 'Could not add the security key.' }));
     },
   });
 
@@ -566,8 +581,11 @@ function SecuritySection() {
         </>
       )}
 
-      <Dialog open={addingKey} onClose={() => setAddingKey(false)} title={t('settings.security.addKey', { defaultValue: 'Add security key / passkey' })} size="sm">
-        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); registerKey.mutate(); }}>
+      <Dialog open={addingKey} onClose={() => { setAddingKey(false); setKeyNeedsStepUp(false); }} title={t('settings.security.addKey', { defaultValue: 'Add security key / passkey' })} size="sm">
+        {keyNeedsStepUp ? (
+          <StepUp action="mfa.manage" onElevated={(token) => { setKeyNeedsStepUp(false); registerKey.mutate(token); }} />
+        ) : (
+        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); registerKey.mutate(null); }}>
           <Field label={t('settings.security.keyName', { defaultValue: 'Name' })} htmlFor="security-key-name">
             <TextInput id="security-key-name" value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Security key" />
           </Field>
@@ -575,6 +593,7 @@ function SecuritySection() {
             {t('settings.security.registerKey', { defaultValue: 'Register key' })}
           </Button>
         </form>
+        )}
       </Dialog>
 
       <MfaEnrollDialog open={enrolling} onClose={() => setEnrolling(false)} onEnrolled={invalidate} />
@@ -652,15 +671,19 @@ function MfaEnrollDialog({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [savedCodes, setSavedCodes] = useState<string[] | null>(null);
+  const [needsStepUp, setNeedsStepUp] = useState(false);
 
   const begin = useMutation({
-    mutationFn: () => postMeMfaTotp({}),
+    mutationFn: (token: string | null) => postMeMfaTotp({}, elevationOptions(token)),
     onSuccess: async (res) => {
       setFactor(res);
       const { toDataURL } = await import('qrcode');
       setQrDataUrl(await toDataURL(res.otpauthUrl));
     },
-    onError: () => toast.error(t('settings.security.enrollError', { defaultValue: 'Could not start enrollment.' })),
+    onError: (err) => {
+      if (isElevationRequired(err)) setNeedsStepUp(true);
+      else toast.error(t('settings.security.enrollError', { defaultValue: 'Could not start enrollment.' }));
+    },
   });
 
   const confirm = useMutation({
@@ -685,6 +708,8 @@ function MfaEnrollDialog({
     setQrDataUrl(null);
     setCode('');
     setSavedCodes(null);
+    setNeedsStepUp(false);
+    begin.reset();
     onClose();
   }
 
@@ -695,7 +720,7 @@ function MfaEnrollDialog({
 
   // Kick off enrollment as soon as the dialog opens.
   if (open && !factor && !begin.isPending && !begin.isError) {
-    begin.mutate();
+    begin.mutate(null);
   }
 
   return (
@@ -708,7 +733,11 @@ function MfaEnrollDialog({
       {savedCodes ? (
         <SavedRecoveryCodes codes={savedCodes} onDone={done} />
       ) : !factor ? (
-        <SkeletonRows rows={3} className="p-0" />
+        needsStepUp ? (
+          <StepUp action="mfa.manage" onElevated={(token) => { setNeedsStepUp(false); begin.mutate(token); }} />
+        ) : (
+          <SkeletonRows rows={3} className="p-0" />
+        )
       ) : (
         <form
           className="space-y-4"

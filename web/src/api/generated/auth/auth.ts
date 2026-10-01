@@ -945,7 +945,7 @@ export const getPostAuthElevateQueryKey = (elevationRequest?: BodyType<Elevation
 
 export const getPostAuthElevateQueryOptions = <
   TData = Awaited<ReturnType<typeof postAuthElevate>>,
-  TError = ErrorType<Error | UnauthorizedResponse>,
+  TError = ErrorType<Error | UnauthorizedResponse | void>,
 >(
   elevationRequest: BodyType<ElevationRequest>,
   options?: {
@@ -968,11 +968,11 @@ export const getPostAuthElevateQueryOptions = <
 };
 
 export type PostAuthElevateQueryResult = NonNullable<Awaited<ReturnType<typeof postAuthElevate>>>;
-export type PostAuthElevateQueryError = ErrorType<Error | UnauthorizedResponse>;
+export type PostAuthElevateQueryError = ErrorType<Error | UnauthorizedResponse | void>;
 
 export function usePostAuthElevate<
   TData = Awaited<ReturnType<typeof postAuthElevate>>,
-  TError = ErrorType<Error | UnauthorizedResponse>,
+  TError = ErrorType<Error | UnauthorizedResponse | void>,
 >(
   elevationRequest: BodyType<ElevationRequest>,
   options: {
@@ -991,7 +991,7 @@ export function usePostAuthElevate<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthElevate<
   TData = Awaited<ReturnType<typeof postAuthElevate>>,
-  TError = ErrorType<Error | UnauthorizedResponse>,
+  TError = ErrorType<Error | UnauthorizedResponse | void>,
 >(
   elevationRequest: BodyType<ElevationRequest>,
   options?: {
@@ -1010,7 +1010,7 @@ export function usePostAuthElevate<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostAuthElevate<
   TData = Awaited<ReturnType<typeof postAuthElevate>>,
-  TError = ErrorType<Error | UnauthorizedResponse>,
+  TError = ErrorType<Error | UnauthorizedResponse | void>,
 >(
   elevationRequest: BodyType<ElevationRequest>,
   options?: {
@@ -1025,7 +1025,7 @@ export function usePostAuthElevate<
 
 export function usePostAuthElevate<
   TData = Awaited<ReturnType<typeof postAuthElevate>>,
-  TError = ErrorType<Error | UnauthorizedResponse>,
+  TError = ErrorType<Error | UnauthorizedResponse | void>,
 >(
   elevationRequest: BodyType<ElevationRequest>,
   options?: {

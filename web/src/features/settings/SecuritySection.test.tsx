@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AxiosError } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n';
 import { ProfilePage } from './ProfilePage';
@@ -12,7 +13,8 @@ HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
   this.open = false;
 });
 
-const { postMeMfaTotpMock, confirmMock, beginKeyMock, finishKeyMock, startRegistrationMock } = vi.hoisted(() => ({
+const { postMeMfaTotpMock, confirmMock, beginKeyMock, finishKeyMock, startRegistrationMock, elevateMock } = vi.hoisted(() => ({
+  elevateMock: vi.fn(),
   postMeMfaTotpMock: vi.fn(),
   confirmMock: vi.fn(),
   beginKeyMock: vi.fn(),
@@ -68,7 +70,18 @@ vi.mock('../../api/generated/auth/auth', () => ({
   postAuthApiKeys: vi.fn(),
   deleteAuthApiKeysId: vi.fn(),
   getGetAuthApiKeysQueryKey: () => ['getAuthApiKeys'],
+  useGetAuthElevateMethods: () => ({ data: { methods: ['password'] }, isLoading: false }),
+  postAuthElevate: elevateMock,
+  postAuthElevateWebauthnBegin: vi.fn(),
 }));
+
+// What the server answers when a start-enrollment call lacks X-Elevation-Token.
+function elevationRequired() {
+  return new AxiosError('elevation required', '400', undefined, undefined, {
+    status: 400,
+    data: { code: 'elevation_required' },
+  } as never);
+}
 
 vi.mock('../../api/generated/connectors/connectors', () => ({
   useGetConnectors: () => ({ data: [] }),
@@ -143,9 +156,46 @@ describe('Settings > Profile > Security (#279 enrollment happy path)', () => {
     fireEvent.change(screen.getByPlaceholderText('Security key'), { target: { value: 'Desk key' } });
     fireEvent.click(screen.getByRole('button', { name: /register key/i }));
 
-    await waitFor(() => expect(beginKeyMock).toHaveBeenCalledWith({ name: 'Desk key' }));
+    await waitFor(() => expect(beginKeyMock).toHaveBeenCalledWith({ name: 'Desk key' }, undefined));
     await waitFor(() => expect(startRegistrationMock).toHaveBeenCalledWith({ optionsJSON: { challenge: 'challenge' } }));
     await waitFor(() => expect(finishKeyMock).toHaveBeenCalledWith({ id: 'credential', response: {} }));
     await waitFor(() => expect(screen.getByText('abcde-fghjk')).toBeInTheDocument());
+  });
+
+  it('asks for step-up when starting TOTP enrollment needs it, then retries with the token', async () => {
+    elevateMock.mockResolvedValue({ token: 'elev-1' });
+    postMeMfaTotpMock.mockRejectedValueOnce(elevationRequired());
+    renderProfilePage();
+
+    fireEvent.click(screen.getByRole('button', { name: /set up authenticator app/i }));
+    fireEvent.change(await screen.findByLabelText(/confirm your password/i), { target: { value: 'hunter22' } });
+    fireEvent.click(screen.getByRole('button', { name: /^verify$/i }));
+
+    await waitFor(() => expect(elevateMock).toHaveBeenCalledWith({ password: 'hunter22', action: 'mfa.manage' }));
+    await waitFor(() =>
+      expect(postMeMfaTotpMock).toHaveBeenLastCalledWith({}, { headers: { 'X-Elevation-Token': 'elev-1' } })
+    );
+    await waitFor(() => expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument());
+  });
+
+  it('asks for step-up when registering a security key needs it, then retries with the token', async () => {
+    webauthnAvailable = true;
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+    elevateMock.mockResolvedValue({ token: 'elev-2' });
+    beginKeyMock.mockRejectedValueOnce(elevationRequired()).mockResolvedValue({ publicKey: { challenge: 'challenge' } });
+    startRegistrationMock.mockResolvedValue({ id: 'credential', response: {} });
+    finishKeyMock.mockResolvedValue({ factor: { id: 'k1', type: 'webauthn', name: 'Desk key', createdAt: '2025-01-01T00:00:00Z' } });
+    renderProfilePage();
+
+    fireEvent.click(screen.getByRole('button', { name: /add security key/i }));
+    fireEvent.change(await screen.findByPlaceholderText('Security key'), { target: { value: 'Desk key' } });
+    fireEvent.click(screen.getByRole('button', { name: /register key/i }));
+    fireEvent.change(await screen.findByLabelText(/confirm your password/i), { target: { value: 'hunter22' } });
+    fireEvent.click(screen.getByRole('button', { name: /^verify$/i }));
+
+    await waitFor(() =>
+      expect(beginKeyMock).toHaveBeenLastCalledWith({ name: 'Desk key' }, { headers: { 'X-Elevation-Token': 'elev-2' } })
+    );
+    await waitFor(() => expect(finishKeyMock).toHaveBeenCalled());
   });
 });

@@ -190,6 +190,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Forbidden (API keys cannot reach /auth/elevate*) }
   /auth/elevate/methods:
     get:
       tags: [auth]
@@ -373,6 +374,7 @@ paths:
       responses:
         '204': { description: No Content }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Forbidden (API keys cannot change the password) }
   /me/sessions:
     get:
       tags: [me]
@@ -411,7 +413,11 @@ paths:
       summary: Begin enrolling a TOTP factor
       description: >
         Creates a pending factor (unusable for login/step-up until confirmed).
-        The frontend renders `otpauthUrl` as a QR code client-side.
+        The frontend renders `otpauthUrl` as a QR code client-side. Requires
+        step-up elevation (action `mfa.manage`; a user with no factor elevates
+        with their password), except for sessions confined to forced MFA
+        enrollment. 400 `elevation_required` when the token is missing, 401
+        when invalid, 403 for API keys.
       requestBody:
         content:
           application/json:
@@ -426,6 +432,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TotpEnrollment' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Forbidden (API keys cannot reach /me/mfa/*) }
   /me/mfa/totp/{factorId}/confirm:
     post:
       tags: [me]
@@ -462,6 +470,11 @@ paths:
     post:
       tags: [me]
       summary: Begin registering a security key or passkey
+      description: >
+        Requires step-up elevation (action `mfa.manage`; a user with no factor
+        elevates with their password), except for sessions confined to forced
+        MFA enrollment. 400 `elevation_required` when the token is missing, 401
+        when invalid, 403 for API keys.
       requestBody:
         content:
           application/json:
@@ -475,6 +488,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WebAuthnOptions' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Forbidden (API keys cannot reach /me/mfa/*) }
         '409': { description: WebAuthn is unavailable }
   /me/mfa/webauthn/register/finish:
     post:

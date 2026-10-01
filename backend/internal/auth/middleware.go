@@ -297,6 +297,48 @@ func RequireElevation(jwtSvc *Service, recorder AuditRecorder, action string) fu
 	}
 }
 
+// MFAChecker reports whether a user has a confirmed MFA factor. Implemented
+// by *store.Store.
+type MFAChecker interface {
+	UserHasMFA(ctx context.Context, userID string) (bool, error)
+}
+
+// RequireElevationUnlessEnrollOnly is RequireElevation, except a session
+// confined to forced MFA enrollment whose user has no confirmed factor passes
+// without a token (it just authenticated and can do nothing else).
+func RequireElevationUnlessEnrollOnly(jwtSvc *Service, recorder AuditRecorder, mfa MFAChecker, action string) func(http.Handler) http.Handler {
+	elevate := RequireElevation(jwtSvc, recorder, action)
+	return func(next http.Handler) http.Handler {
+		gated := elevate(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if MFAEnrollOnlyFromContext(r.Context()) {
+				has, err := mfa.UserHasMFA(r.Context(), UserIDFromContext(r.Context()))
+				if err != nil {
+					httputil.Errorf(w, err)
+					return
+				}
+				if !has {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			gated.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RejectAPIKey rejects, with 403, any request authenticated by an API key
+// (restricted or not). Used on account-security routes keys must never reach.
+func RejectAPIKey(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if APIKeyIDFromContext(r.Context()) != "" {
+			httputil.Error(w, http.StatusForbidden, "forbidden", "not available to API keys")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // elevationError carries the HTTP status and body an elevation failure
 // should produce, so ValidateElevationHeader can be called both as
 // middleware and directly from a handler that only elevates conditionally.
