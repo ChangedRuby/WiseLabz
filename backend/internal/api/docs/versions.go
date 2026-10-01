@@ -14,6 +14,9 @@ import (
 // Versions handles GET /api/docs/{id}/versions.
 func (h *Handler) Versions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.loadDocForViewer(w, r, id) {
+		return
+	}
 	versions, err := h.Store.GetDocVersions(r.Context(), id)
 	if err != nil {
 		httputil.Errorf(w, err)
@@ -28,6 +31,9 @@ func (h *Handler) Version(w http.ResponseWriter, r *http.Request) {
 	rev, err := strconv.Atoi(r.PathValue("rev"))
 	if err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid_request", "Invalid rev")
+		return
+	}
+	if !h.loadDocForViewer(w, r, docID) {
 		return
 	}
 

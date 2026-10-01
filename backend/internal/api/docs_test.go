@@ -179,3 +179,60 @@ func TestDocLockConflict(t *testing.T) {
 		t.Errorf("conflict holder = %q, want %q", conflict.UserID, user1)
 	}
 }
+
+func docReadPaths(id string) []string {
+	return []string{"/api/docs/" + id + "/versions", "/api/docs/" + id + "/versions/1", "/api/docs/" + id + "/lock"}
+}
+
+func TestDocHistoryAndLockRequireViewer(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	d := seedDoc(t, app)
+	if err := app.Store.CreateDocVersion(context.Background(), &store.DocVersionRecord{DocID: d.ID, Rev: 1, Content: "hello", Trigger: "save"}); err != nil {
+		t.Fatalf("seed version: %v", err)
+	}
+	_, strangerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	app.connectorGrant(t, viewerID, d.ServiceID, "viewer")
+
+	for _, p := range docReadPaths(d.ID) {
+		if rec := app.req(t, http.MethodGet, p, nil, strangerToken); rec.Code != http.StatusNotFound {
+			t.Errorf("grantless GET %s = %d, want 404: %s", p, rec.Code, rec.Body)
+		}
+		if rec := app.req(t, http.MethodGet, p, nil, viewerToken); rec.Code != http.StatusOK {
+			t.Errorf("viewer GET %s = %d, want 200: %s", p, rec.Code, rec.Body)
+		}
+	}
+	for _, p := range docReadPaths("missing") {
+		if rec := app.req(t, http.MethodGet, p, nil, viewerToken); rec.Code != http.StatusNotFound {
+			t.Errorf("unknown doc GET %s = %d, want 404: %s", p, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestDocHistoryAndLockRestrictedAPIKey(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	userID, token := app.user(t, "operator")
+	allowed := newConnector(t, app, "allowed")
+	other := newConnector(t, app, "other")
+	app.connectorGrant(t, userID, allowed, "operator")
+	app.connectorGrant(t, userID, other, "operator")
+	d := &store.DocRecord{Title: "Doc", Kind: "service", ServiceID: other, Content: "hello"}
+	if err := app.Store.CreateDoc(context.Background(), d); err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+	if err := app.Store.CreateDocVersion(context.Background(), &store.DocVersionRecord{DocID: d.ID, Rev: 1, Content: "hello", Trigger: "save"}); err != nil {
+		t.Fatalf("seed version: %v", err)
+	}
+	raw := createKey(t, app, token, map[string]any{"name": "one", "connectorIds": []string{allowed}})["token"].(string)
+
+	for _, p := range docReadPaths(d.ID) {
+		if rec := app.req(t, http.MethodGet, p, nil, token); rec.Code != http.StatusOK {
+			t.Errorf("owner GET %s = %d, want 200: %s", p, rec.Code, rec.Body)
+		}
+		if rec := app.req(t, http.MethodGet, p, nil, raw); rec.Code != http.StatusNotFound {
+			t.Errorf("restricted key GET %s = %d, want 404: %s", p, rec.Code, rec.Body)
+		}
+	}
+}
