@@ -114,6 +114,11 @@ func (h *Handler) UpdateBackupSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.MaxAgeHours < 0 {
+		httputil.ErrorWithDetails(w, http.StatusBadRequest, "invalid_max_age", "maxAgeHours must not be negative (use 0 to disable age-based pruning)", []httputil.FieldError{{Field: "maxAgeHours", Msg: "must be 0 or greater"}})
+		return
+	}
+
 	// Update database
 	newSched := store.BackupSchedule{
 		CronExpr:    req.CronExpr,
@@ -262,6 +267,27 @@ func (h *Handler) CreateBackupRun(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// applyRetention prunes backup runs per sched and unlinks each pruned run's
+// bundle and manifest sidecar. MaxAgeHours <= 0 disables age-based pruning.
+func (h *Handler) applyRetention(ctx context.Context, sched store.BackupSchedule) ([]store.BackupRun, error) {
+	cutoff := ""
+	if sched.MaxAgeHours > 0 {
+		cutoff = time.Now().UTC().Add(-time.Duration(sched.MaxAgeHours) * time.Hour).Format(time.RFC3339)
+	}
+	pruned, err := h.Store.PruneBackupRuns(ctx, sched.MaxBackups, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range pruned {
+		for _, path := range []string{run.FilePath, backup.ManifestPath(run.FilePath)} {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				slog.Error("delete backup file", "path", path, "error", err)
+			}
+		}
+	}
+	return pruned, nil
+}
+
 // pruneBackups applies the current backup retention policy, deleting old/excess files.
 // Errors are logged but don't fail the request.
 func (h *Handler) pruneBackups(ctx context.Context) {
@@ -271,22 +297,10 @@ func (h *Handler) pruneBackups(ctx context.Context) {
 		return
 	}
 
-	// Compute cutoff time
-	cutoffTime := time.Now().UTC().Add(time.Duration(-sched.MaxAgeHours) * time.Hour)
-	cutoff := cutoffTime.Format(time.RFC3339)
-
-	// Find and delete old runs
-	pruned, err := h.Store.PruneBackupRuns(ctx, sched.MaxBackups, cutoff)
+	pruned, err := h.applyRetention(ctx, sched)
 	if err != nil {
 		slog.Error("prune backup runs", "error", err)
 		return
-	}
-
-	// Delete the actual files
-	for _, run := range pruned {
-		if err := os.Remove(run.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			slog.Error("delete backup file", "path", run.FilePath, "error", err)
-		}
 	}
 
 	// Audit if anything was pruned
@@ -384,17 +398,8 @@ func (h *Handler) runBackupJob(ctx context.Context, sched store.BackupSchedule) 
 	}
 
 	// Apply pruning
-	cutoffTime := time.Now().UTC().Add(time.Duration(-sched.MaxAgeHours) * time.Hour)
-	cutoff := cutoffTime.Format(time.RFC3339)
-	pruned, err := h.Store.PruneBackupRuns(ctx, sched.MaxBackups, cutoff)
-	if err != nil {
+	if _, err := h.applyRetention(ctx, sched); err != nil {
 		slog.Error("prune backup runs", "error", err)
-	} else {
-		for _, prun := range pruned {
-			if err := os.Remove(prun.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				slog.Error("delete backup file", "path", prun.FilePath, "error", err)
-			}
-		}
 	}
 
 	slog.Info("Backup created", "id", run.ID, "size", run.SizeBytes)

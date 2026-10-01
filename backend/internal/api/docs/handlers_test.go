@@ -116,19 +116,19 @@ func TestVersionsOfUnknownDoc(t *testing.T) {
 	req.SetPathValue("id", "missing")
 	rr := httptest.NewRecorder()
 	h.Versions(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
 	}
 }
 
-func TestGetLockNoneHeld(t *testing.T) {
+func TestGetLockOfUnknownDoc(t *testing.T) {
 	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/docs/x/lock", nil)
 	req.SetPathValue("id", "x")
 	rr := httptest.NewRecorder()
 	h.GetLock(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
 	}
 }
 
@@ -198,10 +198,9 @@ func TestVersion(t *testing.T) {
 
 	// Create a doc and versions
 	docRecord := &store.DocRecord{
-		Title:     "Test Doc",
-		Kind:      "service",
-		ServiceID: "test-service",
-		Content:   "v1 content",
+		Title:   "Test Doc",
+		Kind:    "service",
+		Content: "v1 content", // lab-wide (no connector): no viewer grant needed
 	}
 	if err := s.CreateDoc(ctx, docRecord); err != nil {
 		t.Fatalf("create doc: %v", err)
