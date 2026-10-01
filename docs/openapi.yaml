@@ -1930,8 +1930,9 @@ paths:
       tags: [templates]
       summary: Preview this template's impact without persisting changes
       description: >
-        Lists matching connectors and, when connectorId is supplied, renders a
-        detailed preview. This operation does not create or update documents or versions.
+        Lists matching connectors the caller can view and, when connectorId is
+        supplied, renders a detailed preview. A connectorId the caller cannot
+        view returns 404. This operation does not create or update documents or versions.
       parameters: [{ $ref: '#/components/parameters/TemplateId' }]
       requestBody:
         required: false
@@ -1947,6 +1948,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TemplatePreviewResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /templates/{templateId}/versions:
     get:
       tags: [templates]

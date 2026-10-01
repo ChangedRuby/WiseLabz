@@ -9,12 +9,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 func templateRequest(t *testing.T, fn http.HandlerFunc, id, rev, body string, want int) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	return templateRequestCtx(t, context.Background(), fn, id, rev, body, want)
+}
+
+func templateRequestCtx(t *testing.T, ctx context.Context, fn http.HandlerFunc, id, rev, body string, want int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)).WithContext(ctx)
 	req.SetPathValue("id", id)
 	req.SetPathValue("rev", rev)
 	rr := httptest.NewRecorder()
@@ -165,8 +171,16 @@ func TestPreviewDoesNotPersist(t *testing.T) {
 	if err := h.Store.CreateConnector(ctx, conn); err != nil {
 		t.Fatal(err)
 	}
+	user := &store.User{Username: "previewer"}
+	if err := h.Store.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Store.UpsertConnectorGrant(ctx, user.ID, conn.ID, "viewer"); err != nil {
+		t.Fatal(err)
+	}
+	ctx = auth.ContextWithUser(ctx, user.ID, false)
 	// A matching connector without a snapshot produces a per-connector render error.
-	rr := templateRequest(t, h.Preview, tmpl.ID, "", "", 200)
+	rr := templateRequestCtx(t, ctx, h.Preview, tmpl.ID, "", "", 200)
 	if !strings.Contains(rr.Body.String(), `"renderError":"`) {
 		t.Fatalf("missing render error: %s", rr.Body.String())
 	}
@@ -179,7 +193,7 @@ func TestPreviewDoesNotPersist(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		rr = templateRequest(t, h.Preview, tmpl.ID, "", fmt.Sprintf(`{"connectorId":%q}`, conn.ID), 200)
+		rr = templateRequestCtx(t, ctx, h.Preview, tmpl.ID, "", fmt.Sprintf(`{"connectorId":%q}`, conn.ID), 200)
 		var result struct {
 			Affected []struct {
 				HasExistingDoc bool    `json:"hasExistingDoc"`

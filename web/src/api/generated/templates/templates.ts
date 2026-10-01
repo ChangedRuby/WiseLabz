@@ -700,7 +700,7 @@ export function useDeleteTemplatesTemplateId<
 }
 
 /**
- * Lists matching connectors and, when connectorId is supplied, renders a detailed preview. This operation does not create or update documents or versions.
+ * Lists matching connectors the caller can view and, when connectorId is supplied, renders a detailed preview. A connectorId the caller cannot view returns 404. This operation does not create or update documents or versions.
  * @summary Preview this template's impact without persisting changes
  */
 export const postTemplatesTemplateIdPreview = (
@@ -730,7 +730,7 @@ export const getPostTemplatesTemplateIdPreviewQueryKey = (
 
 export const getPostTemplatesTemplateIdPreviewQueryOptions = <
   TData = Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<NotFoundResponse>,
 >(
   templateId: string,
   postTemplatesTemplateIdPreviewBody?: BodyType<PostTemplatesTemplateIdPreviewBody>,
@@ -772,11 +772,11 @@ export const getPostTemplatesTemplateIdPreviewQueryOptions = <
 export type PostTemplatesTemplateIdPreviewQueryResult = NonNullable<
   Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>
 >;
-export type PostTemplatesTemplateIdPreviewQueryError = ErrorType<unknown>;
+export type PostTemplatesTemplateIdPreviewQueryError = ErrorType<NotFoundResponse>;
 
 export function usePostTemplatesTemplateIdPreview<
   TData = Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<NotFoundResponse>,
 >(
   templateId: string,
   postTemplatesTemplateIdPreviewBody: undefined | BodyType<PostTemplatesTemplateIdPreviewBody>,
@@ -798,7 +798,7 @@ export function usePostTemplatesTemplateIdPreview<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostTemplatesTemplateIdPreview<
   TData = Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<NotFoundResponse>,
 >(
   templateId: string,
   postTemplatesTemplateIdPreviewBody?: BodyType<PostTemplatesTemplateIdPreviewBody>,
@@ -820,7 +820,7 @@ export function usePostTemplatesTemplateIdPreview<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function usePostTemplatesTemplateIdPreview<
   TData = Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<NotFoundResponse>,
 >(
   templateId: string,
   postTemplatesTemplateIdPreviewBody?: BodyType<PostTemplatesTemplateIdPreviewBody>,
@@ -838,7 +838,7 @@ export function usePostTemplatesTemplateIdPreview<
 
 export function usePostTemplatesTemplateIdPreview<
   TData = Awaited<ReturnType<typeof postTemplatesTemplateIdPreview>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<NotFoundResponse>,
 >(
   templateId: string,
   postTemplatesTemplateIdPreviewBody?: BodyType<PostTemplatesTemplateIdPreviewBody>,

@@ -67,10 +67,12 @@ func seedPreviewConnector(t *testing.T, app *testApp, name, category, connectorT
 func TestTemplatesPreviewDoesNotCreateDoc(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	opID, opToken := app.user(t, "operator")
+	viewerID, viewerToken := app.user(t, "viewer")
 	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization", "type": "proxmox"})
 	connectorID := seedPreviewConnector(t, app, "pve-1", "virtualization", "proxmox", true)
+	app.connectorGrant(t, viewerID, connectorID, "viewer")
+	app.connectorGrant(t, opID, connectorID, "operator")
 
 	before, err := app.Store.CountDocs(context.Background())
 	if err != nil {
@@ -112,10 +114,10 @@ func TestTemplatesPreviewAffectedConnectors(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
 	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization", "type": "proxmox"})
-	seedPreviewConnector(t, app, "pve-1", "virtualization", "proxmox", true)
-	seedPreviewConnector(t, app, "pve-2", "virtualization", "proxmox", true)
+	app.connectorGrant(t, viewerID, seedPreviewConnector(t, app, "pve-1", "virtualization", "proxmox", true), "viewer")
+	app.connectorGrant(t, viewerID, seedPreviewConnector(t, app, "pve-2", "virtualization", "proxmox", true), "viewer")
 	seedPreviewConnector(t, app, "docker-1", "containers_paas", "docker", true)
 
 	rec := app.req(t, http.MethodPost, "/api/templates/"+template.ID+"/preview", map[string]any{}, viewerToken)
@@ -151,9 +153,10 @@ func TestTemplatesPreviewCapturesMissingSnapshot(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, opToken := app.user(t, "operator")
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
 	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization"})
 	connectorID := seedPreviewConnector(t, app, "pve-1", "virtualization", "proxmox", false)
+	app.connectorGrant(t, viewerID, connectorID, "viewer")
 	if err := app.Store.CreateDoc(context.Background(), &store.DocRecord{
 		Title: "Existing", Kind: "service", ServiceID: connectorID, Content: "old",
 	}); err != nil {
@@ -384,5 +387,68 @@ func TestTemplatesRestoreRoleBoundary(t *testing.T) {
 	rec := app.req(t, http.MethodPost, "/api/templates/"+template.ID+"/versions/1/restore", nil, viewerToken)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestTemplatesPreviewRequiresViewerGrant(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	opID, opToken := app.user(t, "operator")
+	viewerID, viewerToken := app.user(t, "viewer")
+	_, noGrantToken := app.user(t, "viewer")
+	template := seedTemplate(t, app, opToken, map[string]any{"category": "virtualization", "type": "proxmox"})
+	a := seedPreviewConnector(t, app, "pve-a", "virtualization", "proxmox", true)
+	b := seedPreviewConnector(t, app, "pve-b", "virtualization", "proxmox", true)
+	app.connectorGrant(t, viewerID, a, "viewer")
+	app.connectorGrant(t, opID, a, "operator")
+	app.connectorGrant(t, opID, b, "operator")
+	path := "/api/templates/" + template.ID + "/preview"
+
+	type previewBody struct {
+		Affected []struct {
+			ConnectorID string `json:"connectorId"`
+		} `json:"affected"`
+		Detail any `json:"detail"`
+	}
+	preview := func(token string, connectorID string) (int, previewBody) {
+		rec := app.req(t, http.MethodPost, path, map[string]any{"connectorId": connectorID}, token)
+		var body previewBody
+		if rec.Code == http.StatusOK {
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode preview: %v", err)
+			}
+		}
+		return rec.Code, body
+	}
+
+	// No grants: empty affected, detail null, 404 for any connectorId.
+	if code, body := preview(noGrantToken, ""); code != http.StatusOK || len(body.Affected) != 0 || body.Detail != nil {
+		t.Errorf("grantless preview = %d %+v, want 200 with empty affected and null detail", code, body)
+	}
+	if code, _ := preview(noGrantToken, a); code != http.StatusNotFound {
+		t.Errorf("grantless detail = %d, want 404", code)
+	}
+
+	// Grant on A only: B hidden from affected and detail; A visible.
+	if code, body := preview(viewerToken, ""); code != http.StatusOK || len(body.Affected) != 1 || body.Affected[0].ConnectorID != a {
+		t.Errorf("partial-grant preview = %d %+v, want only %s", code, body, a)
+	}
+	if code, _ := preview(viewerToken, b); code != http.StatusNotFound {
+		t.Errorf("detail for ungranted connector = %d, want 404", code)
+	}
+	if code, _ := preview(viewerToken, "does-not-exist"); code != http.StatusNotFound {
+		t.Errorf("detail for nonexistent connector = %d, want 404", code)
+	}
+	if code, body := preview(viewerToken, a); code != http.StatusOK || body.Detail == nil {
+		t.Errorf("detail for granted connector = %d %+v, want 200 with detail", code, body)
+	}
+
+	// Connector-restricted API key: its owner can view both, the key only A.
+	key := mintAPIKey(t, app, opID, "", []string{a})
+	if code, body := preview(key, ""); code != http.StatusOK || len(body.Affected) != 1 || body.Affected[0].ConnectorID != a {
+		t.Errorf("restricted key preview = %d %+v, want only %s", code, body, a)
+	}
+	if code, _ := preview(key, b); code != http.StatusNotFound {
+		t.Errorf("restricted key detail outside restriction = %d, want 404", code)
 	}
 }
