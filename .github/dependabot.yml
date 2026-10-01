@@ -69,6 +69,9 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # React plugin majors require a matching Vite major (v6 requires Vite 8).
+      web-vite:
+        patterns: ["vite", "@vitejs/plugin-react"]
       web-minor-patch:
         update-types: [minor, patch]
       web-major:

@@ -338,7 +338,7 @@ is published, in one grouped PR per ecosystem.
 |---|---|---|---|---|
 | `github-actions` | workflows and `.github/actions/*` | one grouped PR | `ci: ...` | `area:platform` |
 | `gomod` | `/backend` | minor+patch grouped, majors grouped | `chore(deps): ...` | `area:backend` |
-| `bun` | `/web` | minor+patch grouped, majors grouped | `chore(deps): ...` | `area:frontend` |
+| `bun` | `/web` | Vite + React plugin grouped together, other minor+patch grouped, other majors grouped | `chore(deps): ...` | `area:frontend` |
 | `docker` + `docker-compose` | `Dockerfile`, `docker-compose.yml` | one `images` PR for both | `chore(deps): ...` | `area:platform` |
 
 The `golang` image only gets digest updates: the Go version follows `go.mod`

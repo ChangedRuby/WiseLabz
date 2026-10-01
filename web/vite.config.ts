@@ -14,6 +14,8 @@ export default defineConfig({
     },
   },
   build: {
+    // Keep the Vite 7 browser baseline when upgrading the bundler.
+    target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
     chunkSizeWarningLimit: 2000, // Increase warning limit to 2MB to avoid warning while maintaining default stable bundling
   },
 })

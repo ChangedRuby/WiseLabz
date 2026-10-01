@@ -25,8 +25,10 @@ describe('Markdown', () => {
     // to a <pre> wrapper for a mermaid block.
     expect(container.querySelector('pre')).not.toBeInTheDocument();
 
+    // Mermaid loads its renderer lazily; a cold import plus SVG layout can
+    // exceed waitFor's one-second default under coverage.
     await waitFor(() => {
       expect(container.querySelector('svg')).toBeInTheDocument();
-    });
+    }, { timeout: 4000 });
   });
 });
