@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend build test lint migrate-up migrate-down hooks
+.PHONY: dev-backend dev-frontend build test lint migrate-up migrate-down hooks setup dev fmt help
 
 dev-backend:
 	@which air > /dev/null 2>&1 && air -c .air.toml || go run ./backend/cmd/server
@@ -28,3 +28,22 @@ migrate-down:
 
 hooks:
 	lefthook install
+
+# Install every dependency and wire up the git hooks. Run once after cloning.
+setup:
+	npm --prefix web install
+	cd backend && go mod download
+	$(MAKE) hooks
+
+# Run the backend and the frontend dev servers side by side.
+dev:
+	$(MAKE) -j2 dev-backend dev-frontend
+
+# Format the Go backend and the web front-end.
+fmt:
+	gofmt -w backend
+	npm --prefix web run format
+
+# List the available make targets.
+help:
+	@awk '/^[a-zA-Z0-9_-]+:/ {name=$$1; sub(/:.*/, "", name); printf "  %-16s\n", name}' $(MAKEFILE_LIST)
