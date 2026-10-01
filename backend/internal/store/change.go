@@ -485,10 +485,25 @@ func (s *Store) CountAlerts(ctx context.Context) (int, error) {
 	return count, err
 }
 
-// CountAlertsPending returns count of pending alerts.
-func (s *Store) CountAlertsPending(ctx context.Context) (int, error) {
+// idArgs converts ids to query args for an IN (placeholders(len(ids))) list.
+func idArgs(ids []string) []any {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return args
+}
+
+// CountAlertsPending returns the count of pending alerts on the given
+// connectors. An empty set returns 0 without querying.
+func (s *Store) CountAlertsPending(ctx context.Context, connectorIDs []string) (int, error) {
+	if len(connectorIDs) == 0 {
+		return 0, nil
+	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alerts WHERE status = 'pending'`).Scan(&count)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM alerts WHERE status = 'pending' AND service_id IN (`+placeholders(len(connectorIDs))+`)`,
+		idArgs(connectorIDs)...).Scan(&count)
 	return count, err
 }
 
@@ -507,13 +522,18 @@ type ChangeSummary struct {
 // GetLatestChangeSummaries returns the most recent N changes detected at or
 // after since (RFC3339, matching the stored detected_at format), with the
 // connector name resolved in the same query and no diff column. An empty
-// since applies no lower bound.
-func (s *Store) GetLatestChangeSummaries(ctx context.Context, n int, since string) ([]ChangeSummary, error) {
+// since applies no lower bound. Only changes on the given connectors are
+// returned; an empty set returns none without querying.
+func (s *Store) GetLatestChangeSummaries(ctx context.Context, connectorIDs []string, n int, since string) ([]ChangeSummary, error) {
+	if len(connectorIDs) == 0 {
+		return []ChangeSummary{}, nil
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.service_id, COALESCE(k.name, ''), c.change_type, c.severity, c.summary, c.detected_at
 		FROM changes c LEFT JOIN connectors k ON k.id = c.service_id
-		WHERE c.detected_at >= ? ORDER BY c.detected_at DESC LIMIT ?
-	`, since, n)
+		WHERE c.detected_at >= ? AND c.service_id IN (`+placeholders(len(connectorIDs))+`)
+		ORDER BY c.detected_at DESC LIMIT ?
+	`, append(append([]any{since}, idArgs(connectorIDs)...), n)...)
 	if err != nil {
 		return nil, fmt.Errorf("get latest changes: %w", err)
 	}
@@ -533,24 +553,36 @@ func (s *Store) GetLatestChangeSummaries(ctx context.Context, n int, since strin
 	return changes, nil
 }
 
-// GetLastSyncTimestamp returns the most recent sync timestamp across all connectors.
-func (s *Store) GetLastSyncTimestamp(ctx context.Context) (string, error) {
+// GetLastSyncTimestamp returns the most recent sync timestamp across the given
+// connectors. An empty set returns "" without querying.
+func (s *Store) GetLastSyncTimestamp(ctx context.Context, connectorIDs []string) (string, error) {
+	if len(connectorIDs) == 0 {
+		return "", nil
+	}
 	var ts sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(last_sync_at) FROM connectors`).Scan(&ts)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT MAX(last_sync_at) FROM connectors WHERE id IN (`+placeholders(len(connectorIDs))+`)`,
+		idArgs(connectorIDs)...).Scan(&ts)
 	if err != nil {
 		return "", err
 	}
 	return ts.String, nil
 }
 
-// CountConnectorsByStatus counts connectors grouped by status.
-func (s *Store) CountConnectorsByStatus(ctx context.Context) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM connectors GROUP BY status`)
+// CountConnectorsByStatus counts the given connectors grouped by status. An
+// empty set returns all-zero counts without querying.
+func (s *Store) CountConnectorsByStatus(ctx context.Context, connectorIDs []string) (map[string]int, error) {
+	counts := map[string]int{"online": 0, "degraded": 0, "offline": 0, "unknown": 0}
+	if len(connectorIDs) == 0 {
+		return counts, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM connectors WHERE id IN (`+placeholders(len(connectorIDs))+`) GROUP BY status`,
+		idArgs(connectorIDs)...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
-	counts := map[string]int{"online": 0, "degraded": 0, "offline": 0, "unknown": 0}
 	for rows.Next() {
 		var status string
 		var count int
