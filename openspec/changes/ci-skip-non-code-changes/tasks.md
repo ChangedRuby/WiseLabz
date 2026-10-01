@@ -1,0 +1,50 @@
+# Tasks
+
+## 1. Classifier script and fixtures
+
+- [x] 1.1 Create `scripts/ci/changes.sh` with the `classify` subcommand. It reads changed paths on stdin and applies the ordered `case` table from design D2: code exceptions, then ignore rules, then area rules, then the `unclassified` → all fallback. It prints `backend=`, `frontend=`, `compose=`, `workflows=` and `gomod=` lines (design D11), plus a Markdown table (path | rule | areas) on a second stream or into a file. Include a header comment on the `.md` ignore assumption. Verify: `printf 'README.md\n' | scripts/ci/changes.sh classify` prints every key as `false`, and `printf 'backend/go.sum\n'` gives `gomod=true`.
+- [x] 1.2 Implement the `web/package.json` version-only rule (design D3). It is on only when `CI_EVENT=pull_request`, compares `jq -S 'del(.version)'` of `HEAD^1` and `HEAD`, and treats a missing `HEAD^1` as frontend. Verify: on a local branch with a commit that bumps only `version`, `CI_EVENT=pull_request` gives `frontend=false`, while `CI_EVENT=push` and a dependency-change commit both give `frontend=true`.
+- [x] 1.3 Create `scripts/ci/changes-fixtures.txt` with one row per spec scenario path, plus the guard rows from design D4 (`report.md.tmpl`, `docs/openapi.yaml`, `renovate.json`, `web/README.md`, `.golangci.yml`, `.dockerignore`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `.github/codeql/codeql-config.yml`, `graphify-out/GRAPH_REPORT.md`, `openspec/x`, `CHANGELOG.md`, `backend/go.mod`). Add a `check` subcommand that classifies each row alone and reports every mismatch. Verify: `scripts/ci/changes.sh check` exits 0; flipping one expected value makes it exit non-zero and name the row.
+- [x] 1.4 Add the `go-closure` subcommand (design D10). It reads Postgres package roots from `scripts/ci/test-shards.json` plus `./cmd/migrate`, runs `go list -deps -test` in `backend/`, and prints `postgres=true|false` for the changed paths on stdin. It maps each path to its nearest enclosing Go package (design D10), returns `true` for the always-affected paths and on any `go list` failure. Add closure assertions (`@postgres` fixture rows), which run only under `check --go`, since plain `check` must not need Go: `backend/internal/store/doc.go`, `backend/internal/store/migrations/postgres/<any>.sql` and `backend/internal/crypto/<any>.go` → `true`; `backend/internal/api/<any>.go` and `backend/internal/chat/<any>.go` → `false`. Verify: `scripts/ci/changes.sh check` passes locally, and `echo backend/internal/api/router.go | scripts/ci/changes.sh go-closure` prints `postgres=false`.
+- [x] 1.5 Run `shellcheck scripts/ci/changes.sh` and verify it reports no findings.
+
+## 2. Wire the classifier into `ci.yml`
+
+- [x] 2.1 In the `changes` job: checkout with `fetch-depth: 2`; replace the three dorny filters with a single `all: '**'` filter using `list-files: json`; add steps that run `changes.sh check`, then `classify` with `CI_EVENT=${{ github.event_name }}`, writing to `$GITHUB_OUTPUT` and `$GITHUB_STEP_SUMMARY`. Keep the `backend`/`frontend`/`compose` output names and add `workflows`, `gomod` and `draft`. Verify: `actionlint .github/workflows/ci.yml` is clean, and the outputs block still lists `race_shards`/`postgres_shards`.
+- [x] 2.2 Add the conditional Go steps to `changes` (design D10). When `backend == 'true'` and the PR is not a draft, run `./.github/actions/go-cache-restore` with `kind: lint`, which is restore-only (no save step here), then `changes.sh go-closure`, and export the `postgres` output. When they are skipped, set `postgres=false`. Switch `test-backend-postgres`'s `if:` to `needs.changes.outputs.postgres == 'true'`. Verify: actionlint is clean. On the implementation PR the summary shows `postgres=true` (because `ci.yml` changed).
+- [x] 2.3 Switch `govulncheck`'s `if:` to `needs.changes.outputs.gomod == 'true'` (design D11). Keep its cache save, so `main` refreshes the `vuln` cache whenever modules change. Verify: actionlint is clean.
+- [x] 2.4 Add draft gating (design D9). Add `types: [opened, synchronize, reopened, ready_for_review]` to `pull_request`, and `&& needs.changes.outputs.draft != 'true'` to every heavy job: lint-backend, staticcheck, govulncheck, lint-frontend, test-frontend, test-backend, race, postgres, build and compose-smoke. Leave `changes`, `actionlint` and `ci-status` ungated. Add a "draft: heavy jobs deferred" line to the step summary. Verify: actionlint is clean, and `grep -c "outputs.draft != 'true'" .github/workflows/ci.yml` equals 10.
+- [x] 2.5 Add the `actionlint` job (design D6). It is gated on `needs.changes.outputs.workflows == 'true'`, uses a SHA-pinned download script, has `timeout-minutes: 5` and `contents: read`, and is added to `ci-status.needs`. Verify: running actionlint locally over `.github/workflows/` is clean. Fix any pre-existing findings in this PR.
+- [x] 2.6 Check that `ci-status` still fails when `changes` fails (design D5). Verify: in a scratch branch, break one fixture row, open a draft PR (the check runs on drafts too) and confirm `CI Status` is red. Drop the branch.
+
+## 3. Composite Bun action
+
+- [x] 3.1 Create `.github/actions/bun-setup/action.yml` (design D7), keeping the same `setup-bun` pin, cache path and key, and `bun install --frozen-lockfile` on cache miss. Verify: actionlint is clean.
+- [x] 3.2 Replace the three duplicated setup/cache/install blocks in `lint-frontend`, `test-frontend` and `build` with `uses: ./.github/actions/bun-setup`. Verify: `grep -c 'oven-sh/setup-bun' .github/workflows/ci.yml` returns 0, and the PR run shows a `node_modules` cache hit in `lint-frontend`.
+
+## 4. CodeQL workflow
+
+- [x] 4.1 Add `.github/codeql/**` and a trailing `!backend/**/*.md` to both `push.paths` and `pull_request.paths` in `.github/workflows/codeql.yml`. Verify: actionlint is clean, and the order in the YAML has the negation last.
+- [x] 4.2 Add the `concurrency` block from design D8, which cancels in-progress runs on PRs only. Verify: actionlint is clean. In the PR, push two commits quickly and see the first CodeQL run cancelled.
+- [x] 4.3 Add `types: [opened, synchronize, reopened, ready_for_review]` to `pull_request`, and `if: github.event.pull_request.draft != true` to `analyze` (design D9). Verify: actionlint is clean. The scheduled and push triggers are unchanged.
+
+## 5. Nightly vulnerability scan
+
+- [ ] 5.1 Create `.github/workflows/govulncheck-nightly.yml` (design D11). It runs on `schedule: "17 6 * * *"` and `workflow_dispatch`, with `permissions: contents: read` and `timeout-minutes: 10`. It checks out `main`, uses `go-cache-restore` with `kind: vuln`, and runs `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` in `backend/`. Verify: actionlint is clean. After merge, `gh workflow run govulncheck-nightly.yml` completes green, and the run appears under the schedule the next day.
+
+## 6. "CodeQL – Code Quality" check
+
+- [x] 6.1 Spend about 30 minutes checking whether GitHub Code Quality (the `event: dynamic` "CodeQL – Code Quality" runs) supports path or trigger options (design D12). Look at the repository's Settings → Code security → Code quality page, GitHub Docs, and `gh api` on code-quality and code-scanning settings endpoints. Verify: add a short findings note to this change's `design.md` under D12, with the outcome (a or b) and the sources checked.
+- [x] 6.2 Apply the outcome. **(a)** If an option exists, configure it to skip at least `**/*.md`, `docs/**`, `graphify-out/**` and `openspec/**`, and verify on a docs-only PR that no Code Quality run appears. **(b)** If not, change nothing in settings. Both outcomes are documented in task 7.1. Verify: under (a), the docs-only PR run list has no "CodeQL – Code Quality" entry; under (b), nothing to verify beyond 7.1.
+
+## 7. Documentation
+
+- [x] 7.1 Add a "What CI runs" section to `docs/TESTING.md` covering: areas, the ignore list's location (`scripts/ci/changes.sh`), the fail-safe for unknown paths, the release-please version rule, draft-PR behavior, Postgres closure gating, `govulncheck` gating plus the nightly workflow (and that its failures must be watched), the Code Quality outcome from task 6, how to read the change-detection summary, and how to add a rule plus its fixture row (including the embedded-`.md` exception case). Update the existing Postgres-shard paragraph to mention gating. Verify: the documented `scripts/ci/changes.sh check` and `git diff --name-only origin/main... | scripts/ci/changes.sh classify` commands run as written.
+- [x] 7.2 Point to that section from the CI paragraph in `CONTRIBUTING.md`, and mention that marking a PR "ready for review" starts the full suite. Verify: the link resolves in GitHub's Markdown preview.
+
+## 8. End-to-end verification
+
+- [x] 8.1 On the implementation PR itself, opened ready for review (it edits `ci.yml`, so every area is selected), confirm every job ran and passed, and that the change-detection summary lists `.github/workflows/ci.yml → all` with `postgres=true`, `gomod=true`.
+- [x] 8.2 After merge, open throwaway **ready-for-review** PRs and check each against the spec: (a) `README.md` + `docs/ARCHITECTURE.md` only → only `Detect changes` + `CI Status`, green; (b) `.golangci.yml` only → backend lint, unit and race tests run, Postgres and `govulncheck` skipped; (c) `.github/workflows/release.yml` only → only `actionlint` runs; (d) `.dockerignore` only → compose-smoke runs, unit tests skipped; (e) a comment in `backend/internal/api/` → Postgres skipped; (f) a comment in `backend/internal/store/` → Postgres runs. Close them without merging.
+- [x] 8.3 Draft flow: open one of the 8.2 PRs as a draft with a backend change, confirm only `Detect changes` + `CI Status` ran, green; mark it ready for review and confirm the full backend job set runs on the same SHA and its `CI Status` replaces the draft result. Close without merging.
+- [x] 8.4 On the next release-please PR update (#248 or its successor), confirm the heavy jobs are skipped and `CI Status` is green. Record the before/after wall-clock time (about 2.5 min → about 15 s) in the PR description of this change or a follow-up comment.

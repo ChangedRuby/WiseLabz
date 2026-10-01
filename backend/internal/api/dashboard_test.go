@@ -175,10 +175,12 @@ func TestDashboardResetRestoresAdminDefault(t *testing.T) {
 func TestDashboardOverviewDaysWindow(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	_, viewerToken := app.user(t, "viewer")
+	viewerID, viewerToken := app.user(t, "viewer")
+	conn := dashboardConnector(t, app, "svc")
+	app.connectorGrant(t, viewerID, conn, "viewer")
 
 	recent := &store.ChangeRecord{
-		ServiceID: "svc-1", ChangeType: "config", Severity: "info",
+		ServiceID: conn, ChangeType: "config", Severity: "info",
 		Summary: "recent change", Diff: "[]", AffectedDocIDs: "[]",
 		DetectedAt: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -187,7 +189,7 @@ func TestDashboardOverviewDaysWindow(t *testing.T) {
 	}
 
 	old := &store.ChangeRecord{
-		ServiceID: "svc-1", ChangeType: "config", Severity: "info",
+		ServiceID: conn, ChangeType: "config", Severity: "info",
 		Summary: "old change", Diff: "[]", AffectedDocIDs: "[]",
 		DetectedAt: time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339),
 	}
@@ -241,4 +243,102 @@ func TestDashboardOverviewDaysWindow(t *testing.T) {
 	if !foundOld {
 		t.Errorf("days=90 recentChanges missing the old change: %+v", wide.RecentChanges)
 	}
+}
+
+func dashboardConnector(t *testing.T, app *testApp, name string) string {
+	t.Helper()
+	c := &store.ConnectorRecord{Name: name, Category: "virtualization", Type: "proxmox", URL: "https://example.com"}
+	if err := app.Store.CreateConnector(context.Background(), c); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+	if err := app.Store.CreateChange(context.Background(), &store.ChangeRecord{
+		ServiceID: c.ID, ChangeType: "config", Severity: "info", Summary: "chg-" + name,
+		Diff: "[]", AffectedDocIDs: "[]", DetectedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("create change: %v", err)
+	}
+	if err := app.Store.CreateAlert(context.Background(), &store.AlertRecord{
+		ServiceID: c.ID, Severity: "info", Title: "alert-" + name, Status: "pending",
+	}); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+	return c.ID
+}
+
+type scopedOverview struct {
+	PendingAlerts int            `json:"pendingAlerts"`
+	StatusCounts  map[string]int `json:"statusCounts"`
+	RecentChanges []struct {
+		ServiceID string `json:"serviceId"`
+	} `json:"recentChanges"`
+}
+
+func getOverview(t *testing.T, app *testApp, token string) scopedOverview {
+	t.Helper()
+	rec := app.req(t, http.MethodGet, "/api/dashboard/overview", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("overview status = %d, want 200; body = %s", rec.Code, rec.Body)
+	}
+	var o scopedOverview
+	if err := json.Unmarshal(rec.Body.Bytes(), &o); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	return o
+}
+
+func assertOnlyConnector(t *testing.T, o scopedOverview, want string) {
+	t.Helper()
+	total := 0
+	for _, n := range o.StatusCounts {
+		total += n
+	}
+	if total != 1 || o.PendingAlerts != 1 || len(o.RecentChanges) != 1 || o.RecentChanges[0].ServiceID != want {
+		t.Fatalf("overview = %+v, want only connector %s", o, want)
+	}
+}
+
+func TestDashboardOverviewScopedToGrants(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	a := dashboardConnector(t, app, "a")
+	b := dashboardConnector(t, app, "b")
+
+	xID, xToken := app.user(t, "viewer")
+	app.connectorGrant(t, xID, a, "viewer")
+	yID, yToken := app.user(t, "viewer")
+	app.connectorGrant(t, yID, b, "viewer")
+	_, noneToken := app.user(t, "viewer")
+
+	// X then Y inside the cache TTL must each see only their own connector.
+	assertOnlyConnector(t, getOverview(t, app, xToken), a)
+	assertOnlyConnector(t, getOverview(t, app, yToken), b)
+
+	none := getOverview(t, app, noneToken)
+	total := 0
+	for _, n := range none.StatusCounts {
+		total += n
+	}
+	if total != 0 || none.PendingAlerts != 0 || len(none.RecentChanges) != 0 {
+		t.Fatalf("no-grant overview = %+v, want zeros", none)
+	}
+}
+
+func TestDashboardOverviewRestrictedAPIKey(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	a := dashboardConnector(t, app, "a")
+	b := dashboardConnector(t, app, "b")
+	uID, uToken := app.user(t, "viewer")
+	app.connectorGrant(t, uID, a, "viewer")
+	app.connectorGrant(t, uID, b, "viewer")
+
+	assertTotal := func(o scopedOverview, want int) {
+		t.Helper()
+		if len(o.RecentChanges) != want {
+			t.Fatalf("recentChanges = %+v, want %d", o.RecentChanges, want)
+		}
+	}
+	// Unrestricted JWT first, so a shared cache entry would leak to the key.
+	assertTotal(getOverview(t, app, uToken), 2)
+	assertOnlyConnector(t, getOverview(t, app, mintAPIKey(t, app, uID, "", []string{a})), a)
 }

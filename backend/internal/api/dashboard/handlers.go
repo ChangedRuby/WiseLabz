@@ -4,7 +4,10 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
@@ -30,21 +33,53 @@ func NewHandler(s *store.Store) *Handler {
 }
 
 // Overview handles GET /api/dashboard/overview.
-// Returns aggregated dashboard data, cached briefly per ?days= window.
+// Returns aggregated dashboard data over the connectors the caller can view,
+// cached briefly per user, API-key restriction and ?days= window.
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	days := r.URL.Query().Get("days")
-	if cached, ok := h.cache.Get(days); ok {
+	userID := auth.UserIDFromContext(ctx)
+	rs := auth.APIKeyRestrictionFromContext(ctx)
+	// Sorted so the same restriction always yields the same key.
+	connIDs := slices.Sorted(slices.Values(rs.ConnectorIDs))
+	cacheKey := fmt.Sprintf("%s|%t|%s|%s", userID, rs.ReadOnly, strings.Join(connIDs, ","), days)
+	if cached, ok := h.cache.Get(cacheKey); ok {
 		httputil.JSON(w, http.StatusOK, cached)
 		return
 	}
 	since := store.SinceFromDays(days, overviewDefaultDays)
 
-	statusCounts, _ := h.Store.CountConnectorsByStatus(ctx)
-	pendingAlerts, _ := h.Store.CountAlertsPending(ctx)
-	latestChanges, _ := h.Store.GetLatestChangeSummaries(ctx, 5, since)
-	lastSync, _ := h.Store.GetLastSyncTimestamp(ctx)
+	allIDs, err := h.Store.ListConnectorIDs(ctx)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	ids, err := h.Store.FilterConnectorIDsByGrant(ctx, userID, allIDs, "viewer")
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	statusCounts, err := h.Store.CountConnectorsByStatus(ctx, ids)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	pendingAlerts, err := h.Store.CountAlertsPending(ctx, ids)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	latestChanges, err := h.Store.GetLatestChangeSummaries(ctx, ids, 5, since)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
+	lastSync, err := h.Store.GetLastSyncTimestamp(ctx, ids)
+	if err != nil {
+		httputil.Errorf(w, err)
+		return
+	}
 
 	recentChanges := make([]map[string]any, len(latestChanges))
 	for i, c := range latestChanges {
@@ -66,7 +101,7 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		"recentChanges": recentChanges,
 		"lastSyncAt":    lastSync,
 	}
-	h.cache.Set(days, resp)
+	h.cache.Set(cacheKey, resp)
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
