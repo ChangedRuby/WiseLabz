@@ -12,7 +12,7 @@ export interface BackupSchedule {
   cronExpr: string;
   /** Keep at most this many recent backups; 0 or negative disables count-based pruning */
   maxBackups: number;
-  /** Delete backups older than this many hours; 0 or negative disables age-based pruning */
+  /** Delete backups older than this many hours; 0 disables age-based pruning. Negative values are rejected with 400 on write (a legacy stored negative is treated as 0) */
   maxAgeHours: number;
   /** Whether the backup job is registered with the scheduler */
   enabled: boolean;

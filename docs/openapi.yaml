@@ -5290,7 +5290,7 @@ components:
       properties:
         cronExpr: { type: string, description: 5-field or 6-field (with leading seconds) cron expression, example: '0 3 * * *' }
         maxBackups: { type: integer, description: Keep at most this many recent backups; 0 or negative disables count-based pruning }
-        maxAgeHours: { type: integer, description: Delete backups older than this many hours; 0 or negative disables age-based pruning }
+        maxAgeHours: { type: integer, description: Delete backups older than this many hours; 0 disables age-based pruning. Negative values are rejected with 400 on write (a legacy stored negative is treated as 0) }
         enabled: { type: boolean, description: Whether the backup job is registered with the scheduler }
         updatedAt: { type: string, format: date-time }
     BackupRun:
