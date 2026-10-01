@@ -11,9 +11,12 @@ import (
 )
 
 // GetLock handles GET /api/docs/{id}/lock. Returns the current lock, or an
-// empty object if the doc is unlocked/expired. Open to any authenticated role.
+// empty object if the doc is unlocked/expired. Requires viewer access on the doc's connector.
 func (h *Handler) GetLock(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.loadDocForViewer(w, r, id) {
+		return
+	}
 	lock, err := h.Store.GetDocLock(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.JSON(w, http.StatusOK, map[string]any{})

@@ -1,10 +1,12 @@
 package docs
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/WiseLabz/wiselabz/internal/auth"
 	"github.com/WiseLabz/wiselabz/internal/httputil"
+	"github.com/WiseLabz/wiselabz/internal/store"
 )
 
 // requireDocOperator 403s unless the caller may mutate a doc scoped to
@@ -48,4 +50,19 @@ func (h *Handler) requireDocViewer(w http.ResponseWriter, r *http.Request, conne
 		return false
 	}
 	return true
+}
+
+// loadDocForViewer loads the doc and enforces viewer access on its connector,
+// writing a 404 and returning false if it is missing or not viewable.
+func (h *Handler) loadDocForViewer(w http.ResponseWriter, r *http.Request, id string) bool {
+	d, err := h.Store.GetDoc(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "not_found", "Doc not found")
+		return false
+	}
+	if err != nil {
+		httputil.Errorf(w, err)
+		return false
+	}
+	return h.requireDocViewer(w, r, d.ServiceID)
 }
